@@ -1,6 +1,6 @@
 {
   "name": "interflux",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Multi-agent review and research with scored triage, domain detection, content slicing, and knowledge injection. 12 agents, 3 commands, 2 skills, 2 MCP servers. Companion plugin for Clavain.",
   "author": {
     "name": "mistakeknot"
