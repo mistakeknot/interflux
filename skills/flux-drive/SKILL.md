@@ -222,6 +222,23 @@ Do this analysis yourself (no subagents needed). The profile drives triage in St
 
 ### Step 1.2: Select Agents from Roster
 
+#### Step 1.2a.0: Apply routing overrides
+
+Before pre-filtering by content, check for project-level routing overrides:
+
+1. **Read file:** Check if `$FLUX_ROUTING_OVERRIDES_PATH` (default: `.claude/routing-overrides.json`) exists in the project root.
+2. **If missing:** Continue to Step 1.2a with no exclusions.
+3. **If present:**
+   a. Parse JSON. If malformed, log `"WARNING: routing-overrides.json malformed, ignoring overrides"` in triage output, move file to `.claude/routing-overrides.json.corrupted`, and continue with no exclusions.
+   b. Check `version` field. If `version > 1`, log `"WARNING: Routing overrides version N not supported (max 1). Ignoring file."` and continue with no exclusions.
+   c. Read `.overrides[]` array. For each entry with `"action": "exclude"`:
+      - Remove the agent from the candidate pool (they will not appear in pre-filter or scoring)
+      - If the agent is not in the roster (unknown name), log: `"WARNING: Routing override for unknown agent {name} — check spelling or remove entry."`
+      - If the excluded agent is cross-cutting (fd-architecture, fd-quality, fd-safety, fd-correctness), add a **prominent warning** to triage output: `"Warning: Routing override excludes cross-cutting agent {name}. This removes structural/security coverage."`
+4. **Triage table note:** After the scoring table, add: `"N agents excluded by routing overrides: [agent1, agent2, ...]"`
+5. **Discovery nudge:** If the same agent has been overridden 3+ times in the current session (via user declining findings or explicitly overriding), add a note after the triage table: `"Tip: Agent {name} was overridden {N} times this session. Run /interspect:correction to record this pattern. After enough evidence, /interspect can propose permanent exclusions."`
+6. **Continue to Step 1.2a** with the reduced candidate pool.
+
 #### Step 1.2a: Pre-filter agents
 
 Before scoring, eliminate agents that cannot plausibly score ≥1 based on the document/diff profile:
