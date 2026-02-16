@@ -9,7 +9,7 @@ Multi-agent review and research engine for Claude Code. Companion plugin for [Cl
 | Repo | `https://github.com/mistakeknot/interflux` |
 | Namespace | `interflux:` |
 | Manifest | `.claude-plugin/plugin.json` |
-| Components | 12 agents, 3 commands, 2 skills, 2 MCP servers |
+| Components | 13 agents (8 review + 5 research), 3 commands, 2 skills, 2 MCP servers |
 | License | MIT |
 
 ### Release workflow
@@ -25,13 +25,14 @@ Multi-agent review and research engine for Claude Code. Companion plugin for [Cl
 interflux/
 ├── .claude-plugin/plugin.json     # Plugin manifest (name, version, MCP servers)
 ├── agents/
-│   ├── review/                    # 7 review agents (fd-*)
+│   ├── review/                    # 8 review agents (7 technical + 1 cognitive)
 │   │   ├── fd-architecture.md
 │   │   ├── fd-correctness.md
 │   │   ├── fd-game-design.md
 │   │   ├── fd-performance.md
 │   │   ├── fd-quality.md
 │   │   ├── fd-safety.md
+│   │   ├── fd-systems.md           # Cognitive: systems thinking blind spots
 │   │   ├── fd-user-product.md
 │   │   └── references/           # Shared reference material (not agents)
 │   │       └── concurrency-patterns.md
@@ -165,11 +166,12 @@ See `docs/spec/README.md` for the full document index and reading order.
 
 ### Review Agents (fd-*)
 
-- 7 agents, each auto-detects language from input
-- YAML frontmatter: `name`, `description` (with `<example>` blocks), `model: inherit`
+- 8 agents: 7 technical (auto-detect language) + 1 cognitive (fd-systems, documents only)
+- YAML frontmatter: `name`, `description` (with `<example>` blocks), `model: sonnet`
 - Each reads project CLAUDE.md/AGENTS.md for codebase-aware review
 - Findings output uses the Findings Index contract: `SEVERITY | ID | "Section" | Title`
 - Verdict: `safe | needs-changes | risky`
+- **Cognitive agents** (fd-systems) are pre-filtered: only activate for `.md`/`.txt` document reviews (PRDs, brainstorms, plans, strategy docs), never for code or diffs. Use cognitive severity mapping: Blind Spot → P1, Missed Lens → P2, Consider Also → P3
 
 ### Research Agents
 
@@ -202,7 +204,7 @@ uv run pytest tests/structural/test_slicing.py -v    # Content routing tests
 
 ```bash
 # Count components
-ls agents/review/*.md | wc -l         # Should be 7
+ls agents/review/*.md | wc -l         # Should be 8
 ls agents/research/*.md | wc -l       # Should be 5
 ls commands/*.md | wc -l              # Should be 3
 ls skills/*/SKILL.md | wc -l          # Should be 2
