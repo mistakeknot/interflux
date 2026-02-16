@@ -1,0 +1,32 @@
+# Token budget configuration for flux-drive agent dispatch
+# Budgets are in billing tokens (input_tokens + output_tokens) across ALL agents in a run.
+# Override per-project via {PROJECT_ROOT}/.claude/flux-drive-budget.yaml
+
+# Default budgets by input type
+budgets:
+  plan: 150000
+  brainstorm: 80000
+  prd: 120000
+  spec: 150000
+  diff-small: 60000      # diff < 500 lines
+  diff-large: 200000     # diff >= 500 lines
+  repo: 300000
+  other: 150000
+
+# Per-agent token estimates (cold-start fallback)
+# Used when interstat has < 3 runs for an agent+model pair
+agent_defaults:
+  review: 40000           # fd-architecture, fd-safety, fd-correctness, fd-quality, fd-user-product, fd-performance, fd-game-design
+  cognitive: 35000         # fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception
+  research: 15000          # best-practices-researcher, framework-docs-researcher, etc.
+  oracle: 80000            # cross-AI Oracle review
+  generated: 40000         # flux-gen project-specific agents
+
+# Slicing discount: multiply estimate by this factor when document slicing is active
+slicing_multiplier: 0.5
+
+# Minimum agents to always dispatch (regardless of budget)
+min_agents: 2
+
+# Budget enforcement
+enforcement: soft          # soft = warn + offer override | hard = block

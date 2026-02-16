@@ -90,12 +90,72 @@ hard_max = 12
 
 **Stage assignment:** Stage 1 = top 40% of slots (min 2, max 5). Stage 2 = remainder.
 
+### Step 1.2c: Budget-aware agent selection
+
+After scoring and stage assignment, apply budget constraints.
+
+**Step 1.2c.1: Load budget config**
+
+Read `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/budget.yaml`. Look up the budget for the current `INPUT_TYPE`:
+- `file` → use the `Document Profile → Type` value (plan, brainstorm, prd, spec, other)
+- `diff` with < 500 lines → `diff-small`
+- `diff` with >= 500 lines → `diff-large`
+- `directory` → `repo`
+
+If a project-level override exists at `{PROJECT_ROOT}/.claude/flux-drive-budget.yaml`, use that instead.
+
+Store as `BUDGET_TOTAL`.
+
+**Step 1.2c.2: Estimate per-agent costs**
+
+Run the cost estimator:
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/estimate-costs.sh --model {current_model} [--slicing if slicing active]
+```
+
+For each selected agent, look up its estimate:
+1. If `estimates[agent_name]` exists (from interstat, >= 3 runs): use `est_tokens`, note `source: interstat (N runs)`
+2. Else: classify agent (review/cognitive/research/oracle/generated) and use `defaults[type]`, note `source: default`
+3. If slicing is active AND agent is domain-specific (NOT fd-architecture or fd-quality, which always review full content): multiply estimate by `slicing_multiplier`
+
+**Step 1.2c.3: Apply budget cut**
+
+Budget cuts Stage 2 first. Stage 1 agents are always selected (protected). After Stage 1 is fully allocated, add Stage 2 agents by score until budget is exceeded:
+
+```
+cumulative = 0
+# Stage 1 is always selected (protected)
+for agent in stage_1_agents:
+    agent.action = "Selected"
+    cumulative += agent.est_tokens
+
+# Stage 2 fills remaining budget
+for agent in stage_2_agents_sorted_by_score:
+    if cumulative + agent.est_tokens > BUDGET_TOTAL and agents_selected >= min_agents:
+        agent.action = "Deferred (budget)"
+    else:
+        agent.action = "Selected"
+        cumulative += agent.est_tokens
+```
+
+`min_agents` comes from budget.yaml (default 2). Stage 1 always has at least `min_agents`.
+
+**Stage interaction:** If Stage 1 alone exceeds budget, all Stage 1 agents still launch (stage boundaries override budget). Stage 2 agents are deferred by default when budget is tight. The expansion decision (Step 2.2b) will still offer the user the option to override.
+
+**No-data graceful degradation:** If interstat DB doesn't exist or returns no data, use defaults for ALL agents. Log: "Using default cost estimates (no interstat data)." Do NOT skip budget enforcement — defaults provide reasonable bounds.
+
 ### Step 1.3: User Confirmation
 
-Present triage table: Agent | Score | Stage | Reason | Action
+Present triage table with budget context:
 
+Agent | Score | Stage | Est. Tokens | Source | Reason | Action
+
+After the table, add a budget summary line:
+Budget: {cumulative_selected}K / {BUDGET_TOTAL/1000}K ({percentage}%) | Deferred: {N} agents ({deferred_total}K est.)
+
+If agents were deferred, include an override option:
 AskUserQuestion: "Stage 1: [names]. Stage 2: [names]. Launch?"
-Options: Approve, Edit selection, Cancel.
+Options: Approve, Launch all (override budget), Edit selection, Cancel.
 
 ## Agent Roster
 

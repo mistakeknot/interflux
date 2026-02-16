@@ -357,16 +357,27 @@ After selecting agents, assign dispatch stages:
 - **Stage 2**: All remaining selected agents
 - **Expansion pool**: Agents that scored ≥2 but didn't get a slot — these are candidates for domain-aware expansion after Stage 1 (see `phases/launch.md` Step 2.2b)
 
-Present the triage table with a Stage column:
+Present the triage table with budget context:
 
-| Agent | Category | Score | Stage | Reason | Action |
-|-------|----------|-------|-------|--------|--------|
+| Agent | Category | Score | Stage | Est. Tokens | Source | Reason | Action |
+|-------|----------|-------|-------|-------------|--------|--------|--------|
 
 ### Scoring Examples
 
 Read `references/scoring-examples.md` for 4 worked examples covering different document types and domain configurations, plus thin-section threshold definitions.
 
-### Step 1.2c: Document Section Mapping
+### Step 1.2c: Budget-Aware Selection
+
+After scoring and stage assignment, apply budget constraints using `config/flux-drive/budget.yaml` and the cost estimator at `scripts/estimate-costs.sh`. See the compact skill (SKILL-compact.md Step 1.2c) for the complete algorithm.
+
+Key points:
+- Budget lookup by INPUT_TYPE (plan, brainstorm, diff-small, diff-large, repo, etc.)
+- Per-agent cost from interstat historical data, falling back to budget.yaml defaults
+- Slicing multiplier (0.5x) applied for non-cross-cutting agents when slicing is active
+- Minimum 2 agents always selected regardless of budget
+- Deferred agents shown in triage table with override option
+
+### Step 1.2d: Document Section Mapping
 
 **Trigger:** `INPUT_TYPE = file` AND document exceeds 200 lines.
 

@@ -139,6 +139,65 @@ Use the Write tool to create this file. The orchestrator generates this from the
 
 **Verdict logic**: If any finding is P0 → "risky". If any P1 → "needs-changes". Otherwise → "safe".
 
+### Step 3.4b: Generate cost report
+
+After collecting findings and generating findings.json, compile a cost report comparing estimated vs actual token consumption.
+
+**Step 3.4b.1: Collect actual token data**
+
+For each launched agent, query interstat for actual tokens:
+```bash
+sqlite3 ~/.claude/interstat/metrics.db "
+  SELECT agent_name,
+         COALESCE(input_tokens,0) + COALESCE(output_tokens,0) as billing_tokens,
+         COALESCE(input_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_creation_tokens,0) as effective_context
+  FROM agent_runs
+  WHERE session_id = '{current_session_id}'
+    AND agent_name IN ({launched_agents_quoted})
+  ORDER BY agent_name;
+"
+```
+
+**Fallback:** If interstat has no data yet (tokens not backfilled until SessionEnd), use `result_length` as a proxy and note "Actual tokens pending backfill — showing result length."
+
+**Step 3.4b.2: Compute deltas**
+
+For each agent:
+```
+delta_pct = ((actual - estimated) / estimated) * 100
+```
+
+**Step 3.4b.3: Add to findings.json**
+
+Extend the findings.json schema with a `cost_report` field:
+```json
+{
+  "cost_report": {
+    "budget": 150000,
+    "budget_type": "plan",
+    "estimated_total": 120000,
+    "actual_total": 115000,
+    "agents": [
+      {
+        "name": "fd-architecture",
+        "estimated": 42000,
+        "actual": 38000,
+        "delta_pct": -10,
+        "source": "interstat",
+        "slicing_applied": false
+      }
+    ],
+    "deferred": [
+      {
+        "name": "fd-safety",
+        "estimated": 45000,
+        "reason": "budget"
+      }
+    ]
+  }
+}
+```
+
 **Convergence with document slicing:** When document slicing is active (`slicing_map` available from Phase 2), adjust convergence scoring:
 - Only count agents that received the relevant section as `priority` when computing convergence counts. An agent that only saw a context summary cannot meaningfully converge on the same finding.
 - If 2+ agents agree on a finding AND reviewed different priority sections (per `slicing_map`), boost the convergence score by 1. Cross-section agreement is higher confidence than same-section agreement. Tag with `"slicing_boost": true` in findings.json.
@@ -170,6 +229,17 @@ Present the synthesis report using this exact structure. Fill in each section fr
 
 ### Conflicts
 [Any disagreements between agents. If none: "No conflicts detected."]
+
+### Cost Report
+| Agent | Estimated | Actual | Delta | Source |
+|-------|-----------|--------|-------|--------|
+| {agent} | {est}K | {actual}K | {delta}% | {interstat|default} |
+| **TOTAL** | **{est_total}K** | **{actual_total}K** | **{delta}%** | |
+
+Budget: {budget_type} ({BUDGET_TOTAL/1000}K). Used: {actual_total/1000}K ({pct}%).
+[If agents deferred:] Deferred: {N} agents ({deferred_total/1000}K est.) — override available at triage.
+[If actual_total > BUDGET_TOTAL:] Warning: Over budget by {(actual_total - BUDGET_TOTAL)/1000}K.
+[If interstat data unavailable:] *Actual tokens pending backfill — showing estimates only.*
 
 ### Files
 - Summary: `{OUTPUT_DIR}/summary.md`
