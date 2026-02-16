@@ -86,13 +86,17 @@ Prompt trimming for `AGENT_IDENTITY` uses the shared contract in `phases/shared-
 Launch all Codex agents via parallel Bash calls in a single message:
 
 ```bash
-bash "$DISPATCH" \
+CLAVAIN_DISPATCH_PROFILE=clavain bash "$DISPATCH" \
   --template "$REVIEW_TEMPLATE" \
   --prompt-file "$FLUX_TMPDIR/{agent-name}.md" \
   -C "$PROJECT_ROOT" \
   -s workspace-write \
   --tier deep
 ```
+
+Note: in Clavain clodex mode (`.claude/clodex-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
+`gpt-5.3-codex-xhigh` via Clavain dispatch policy. Fast/deep dispatches in Clavain continue to
+follow the same profile from `config/dispatch/tiers.yaml`.
 
 Notes:
 - Set `run_in_background: true` and `timeout: 600000` on each Bash call

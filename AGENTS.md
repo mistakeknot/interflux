@@ -12,6 +12,13 @@ Multi-agent review and research engine for Claude Code. Companion plugin for [Cl
 | Components | 12 agents, 3 commands, 2 skills, 2 MCP servers |
 | License | MIT |
 
+### Release workflow
+
+- Run `scripts/bump-version.sh <version>` (or `/interpub:release <version>` in Claude Code) for any released changes.
+- It updates `.claude-plugin/plugin.json`, `infra/marketplace/.claude-plugin/marketplace.json`, and discovered versioned artifacts.
+- The command commits and pushes both plugin and marketplace repos atomically.
+- Use patch bumps for routine user-facing updates (`0.2.x -> 0.2.x+1`).
+
 ## Architecture
 
 ```
