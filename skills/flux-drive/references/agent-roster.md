@@ -10,7 +10,7 @@ Check if `.claude/agents/fd-*.md` files exist in the project root. If so, includ
 
 **Note:** `general-purpose` agents have full tool access (Read, Grep, Glob, Write, Bash, etc.) — the same as Plugin Agents. The difference is that Plugin Agents get their system prompt from the plugin automatically, while Project Agents need it pasted into the task prompt.
 
-If no Project Agents exist AND clodex mode is active, flux-drive will bootstrap them via Codex (see `phases/launch-codex.md`). If no Project Agents exist and clodex mode is NOT active, skip this category entirely.
+If no Project Agents exist AND interserve mode is active, flux-drive will bootstrap them via Codex (see `phases/launch-codex.md`). If no Project Agents exist and interserve mode is NOT active, skip this category entirely.
 
 ### Plugin Agents (interflux)
 

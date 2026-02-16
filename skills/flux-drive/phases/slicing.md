@@ -188,17 +188,17 @@ For documents under 200 lines, skip section slicing entirely — all agents rece
 
 #### Classification Methods
 
-**Method 1: Semantic (Codex Spark)** — preferred when clodex MCP is available.
+**Method 1: Semantic (Interserve Spark)** — preferred when interserve MCP is available.
 
-1. **Extract sections** — Invoke clodex `extract_sections` tool on the document file. Returns structured JSON with section IDs, headings, and line counts.
-2. **Classify per agent** — Invoke clodex `classify_sections` tool. Codex spark assigns each section to each agent as `priority` or `context` with a confidence score (0.0-1.0).
+1. **Extract sections** — Invoke interserve `extract_sections` tool on the document file. Returns structured JSON with section IDs, headings, and line counts.
+2. **Classify per agent** — Invoke interserve `classify_sections` tool. Interserve spark assigns each section to each agent as `priority` or `context` with a confidence score (0.0-1.0).
 3. **Cross-cutting agents** (fd-architecture, fd-quality) — always receive the full document. Skip classification for these agents.
 4. **Safety override** — Any section mentioning auth, credentials, secrets, tokens, or certificates is always `priority` for fd-safety (enforced in classification prompt).
 5. **80% threshold** — If `agent_priority_lines * 100 / total_lines >= 80` (integer arithmetic), skip slicing for that agent — send full document.
 6. **Domain mismatch guard** — If no agent receives >10% of total lines as priority, classification likely failed. Fall back to full document for all agents.
 7. **Zero priority skip** — If an agent has zero priority sections, do not dispatch that agent at all.
 
-**Method 2: Keyword Matching** — fallback when Codex spark is unavailable or returns low-confidence (<0.6 average).
+**Method 2: Keyword Matching** — fallback when Interserve spark is unavailable or returns low-confidence (<0.6 average).
 
 1. **Extract sections** — Split document by `## ` headings. Each section = heading + content until next heading.
 2. **Classify per agent** — For each selected **domain-specific** agent, classify each section:

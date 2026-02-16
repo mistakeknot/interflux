@@ -10,8 +10,8 @@ DISPATCH=$(find ~/.claude/plugins/cache -path '*/clavain/*/scripts/dispatch.sh' 
 [[ -z "$DISPATCH" ]] && DISPATCH=$(find ~/projects/Clavain -name dispatch.sh -path '*/scripts/*' 2>/dev/null | head -1)
 [[ -z "$DISPATCH" ]] && { echo "FATAL: dispatch.sh not found"; exit 1; }
 
-REVIEW_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/clodex/templates/review-agent.md' 2>/dev/null | head -1)
-[[ -z "$REVIEW_TEMPLATE" ]] && REVIEW_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/clodex/templates/review-agent.md' 2>/dev/null | head -1)
+REVIEW_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/interserve/templates/review-agent.md' 2>/dev/null | head -1)
+[[ -z "$REVIEW_TEMPLATE" ]] && REVIEW_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/interserve/templates/review-agent.md' 2>/dev/null | head -1)
 [[ -z "$REVIEW_TEMPLATE" ]] && { echo "FATAL: review-agent.md template not found"; exit 1; }
 ```
 
@@ -41,8 +41,8 @@ fi
 When `BOOTSTRAP=true`, dispatch a **blocking** Codex agent to create Project Agents:
 
 ```bash
-BOOTSTRAP_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/clodex/templates/create-review-agent.md' 2>/dev/null | head -1)
-[[ -z "$BOOTSTRAP_TEMPLATE" ]] && BOOTSTRAP_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/clodex/templates/create-review-agent.md' 2>/dev/null | head -1)
+BOOTSTRAP_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/interserve/templates/create-review-agent.md' 2>/dev/null | head -1)
+[[ -z "$BOOTSTRAP_TEMPLATE" ]] && BOOTSTRAP_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/interserve/templates/create-review-agent.md' 2>/dev/null | head -1)
 [[ -z "$BOOTSTRAP_TEMPLATE" ]] && { echo "WARNING: create-review-agent.md not found — skipping Project Agent bootstrap"; BOOTSTRAP=false; }
 ```
 
@@ -94,7 +94,7 @@ CLAVAIN_DISPATCH_PROFILE=clavain bash "$DISPATCH" \
   --tier deep
 ```
 
-Note: in Clavain clodex mode (`.claude/clodex-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
+Note: in Clavain interserve mode (`.claude/interserve-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
 `gpt-5.3-codex-xhigh` via Clavain dispatch policy. Fast/deep dispatches in Clavain continue to
 follow the same profile from `config/dispatch/tiers.yaml`.
 

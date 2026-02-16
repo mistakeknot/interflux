@@ -88,7 +88,7 @@ Write the full document content. All agents reference this single file.
 
 #### Case 2: File/directory inputs — document slicing active (>= 200 lines)
 
-1. **Classify sections:** Invoke clodex MCP `classify_sections` tool with `file_path` set to the document path.
+1. **Classify sections:** Invoke interserve MCP `classify_sections` tool with `file_path` set to the document path.
 2. **Check result:** If `status` is `"no_classification"`, fall back to Case 1 (all agents get the original file via shared path).
 3. **Generate per-agent files:** For each agent in `slicing_map`:
    - If agent is cross-cutting (fd-architecture, fd-quality): use the shared `REVIEW_FILE` from Case 1.

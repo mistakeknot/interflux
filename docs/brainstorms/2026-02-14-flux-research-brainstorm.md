@@ -509,7 +509,7 @@ Flux-drive writes to `docs/research/flux-drive/{stem}/`. Flux-research could wri
 
 **Leaning:** Yes, separate directories. Different output formats, different retention policies.
 
-### Q5: Should flux-research support Codex dispatch (clodex mode)?
+### Q5: Should flux-research support Codex dispatch (interserve mode)?
 
 Flux-drive has `launch-codex.md` for dispatching review agents via Codex CLI. Research agents could also benefit from Codex dispatch for parallel execution.
 

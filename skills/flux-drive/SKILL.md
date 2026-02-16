@@ -414,7 +414,7 @@ Read `references/agent-roster.md` for the full agent roster including:
 
 **Read the launch phase file now:**
 - Read `phases/launch.md` (in the flux-drive skill directory)
-- If clodex mode is detected, also read `phases/launch-codex.md`
+- If interserve mode is detected, also read `phases/launch-codex.md`
 
 ## Phase 3: Synthesize
 
@@ -444,4 +444,4 @@ If Oracle participated, read `phases/cross-ai.md` now.
 - `interpeer/references/oracle-reference.md` — Oracle CLI reference
 - `interpeer/references/oracle-troubleshooting.md` — Oracle troubleshooting
 - qmd MCP server — semantic search for project documentation (used in Step 1.0)
-- When clodex mode is active, flux-drive dispatches review agents through Codex CLI instead of Claude subagents. See `clavain:clodex` for Codex dispatch details.
+- When interserve mode is active, flux-drive dispatches review agents through Codex CLI instead of Claude subagents. See `clavain:interserve` for Codex dispatch details.
