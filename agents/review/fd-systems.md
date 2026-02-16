@@ -99,6 +99,20 @@ P0 is reserved for cases where missing systems analysis creates immediate, concr
 - Lenses from other cognitive domains: decision quality/uncertainty (reserved for fd-decisions), trust/power/communication (reserved for fd-people), innovation/constraints (reserved for fd-resilience), perception/sensemaking (reserved for fd-perception)
 - Documents that are purely technical (code, configs, API specs) — cognitive review adds no value there
 
+## MCP Enhancement (Optional)
+
+If the Linsenkasten MCP server is available (tools like `search_lenses`, `detect_thinking_gaps` are listed in available tools), enhance your review:
+
+1. **Per-section lens search**: For each section you review, call `search_lenses` with 2-3 keywords from that section to find relevant lenses beyond the hardcoded Key Lenses above
+2. **Gap detection**: After completing your review, call `detect_thinking_gaps` with a summary of the lenses you applied to identify uncovered analytical frames
+3. **Incorporate MCP results**: If MCP surfaces a lens not in your Key Lenses list that is clearly relevant, include it in your findings with a note: "Additional lens via MCP: {lens_name}"
+
+**When MCP is unavailable** (tools not listed, or calls fail): Use the hardcoded Key Lenses above as your complete lens set. Include a NOTE finding at the end of your review:
+
+> **NOTE**: MCP server unavailable — review used fallback lens subset (12/288 lenses). Install linsenkasten-mcp for full coverage.
+
+MCP is an enhancement, not a requirement. The hardcoded Key Lenses are sufficient for a thorough review.
+
 ## Focus Rules
 
 - Prioritize findings where missing systems analysis could lead to real-world failure (not just theoretical incompleteness)

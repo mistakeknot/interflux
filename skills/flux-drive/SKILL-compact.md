@@ -68,6 +68,7 @@ For diffs: also extract file count, stats (+/-), slicing eligible (>=1000 lines)
 - fd-game-design: skip unless game-simulation domain detected
 - fd-architecture, fd-quality: always pass (domain-general)
 - fd-performance: always pass for file/dir; filter for diffs
+- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input (PRD, brainstorm, plan, strategy) — NEVER for code/diff
 
 **Step 1.2b: Score** (0-7 scale):
 
@@ -107,6 +108,16 @@ Options: Approve, Edit selection, Cancel.
 | fd-user-product | interflux:review:fd-user-product | User flows, UX, value prop, scope |
 | fd-performance | interflux:review:fd-performance | Bottlenecks, resources, algorithmic complexity |
 | fd-game-design | interflux:review:fd-game-design | Balance, pacing, feedback loops, emergent behavior |
+
+**Cognitive Agents** (document review only — `.md`/`.txt` inputs, NEVER code/diff):
+
+| Agent | subagent_type | Domain |
+|-------|--------------|--------|
+| fd-systems | interflux:review:fd-systems | Feedback loops, emergence, systems dynamics |
+| fd-decisions | interflux:review:fd-decisions | Decision traps, biases, uncertainty, paradoxes |
+| fd-people | interflux:review:fd-people | Trust, power, communication, team culture |
+| fd-resilience | interflux:review:fd-resilience | Antifragility, constraints, resource dynamics |
+| fd-perception | interflux:review:fd-perception | Mental models, information quality, sensemaking |
 
 **Project Agents:** `.claude/agents/fd-*.md` — use `subagent_type: general-purpose`, paste file content as prompt.
 

@@ -26,6 +26,20 @@ These agents are provided by the Clavain plugin. They auto-detect project docume
 | fd-performance | interflux:review:fd-performance | Bottlenecks, resource usage, algorithmic complexity, scaling |
 | fd-game-design | interflux:review:fd-game-design | Balance, pacing, player psychology, feedback loops, emergent behavior |
 
+### Cognitive Agents (interflux — document review only)
+
+These agents review documents for cognitive blind spots using analytical lenses from the Linsenkasten framework. They are NEVER included for code or diff reviews — the cognitive pre-filter in SKILL.md Step 1.2a gates them to `.md`/`.txt` document inputs only.
+
+| Agent | subagent_type | Domain |
+|-------|--------------|--------|
+| fd-systems | interflux:review:fd-systems | Feedback loops, emergence, systems dynamics, causal reasoning |
+| fd-decisions | interflux:review:fd-decisions | Decision traps, cognitive biases, uncertainty, strategic paradoxes |
+| fd-people | interflux:review:fd-people | Trust dynamics, power structures, communication, team culture |
+| fd-resilience | interflux:review:fd-resilience | Antifragility, creative constraints, resource dynamics, innovation |
+| fd-perception | interflux:review:fd-perception | Mental models, information quality, temporal reasoning, sensemaking |
+
+**Category**: `cognitive` (distinct from `technical` in triage table). When MCP tools from linsenkasten-mcp are available, these agents enhance their review with dynamic lens search.
+
 ### Cross-AI (Oracle)
 
 **Availability check**: Oracle is available when:

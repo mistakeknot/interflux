@@ -42,6 +42,7 @@ For **malformed** outputs, read the Summary + Issues sections as prose fallback.
 4. **Flag conflicts**: If agents disagree, note both positions
 5. **Priority from project-specific agents**: When a Project Agent and an Plugin Agent give different advice on the same topic, prefer the Project Agent's recommendation
 6. **Slicing awareness** (when slicing was active for diff or document): See `phases/slicing.md` → Synthesis Contracts for convergence adjustment rules, out-of-scope finding tags, and slicing disagreement tracking.
+7. **Cognitive agent dedup**: When multiple cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) flag the same section with similar reasoning, keep findings that reference different lenses as separate entries. Deduplicate only when the same lens AND the same concern appear from multiple agents.
 
 ### Step 3.4: Update the Document
 

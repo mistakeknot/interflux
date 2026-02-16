@@ -257,7 +257,7 @@ Before scoring, eliminate agents that cannot plausibly score ≥1 based on the d
 
 **For all input types (cognitive agent filter):**
 
-5. **Cognitive filter**: Skip fd-systems (and future cognitive agents: fd-decisions, fd-people, fd-resilience, fd-perception) unless ALL of these conditions are met:
+5. **Cognitive filter**: Skip fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception unless ALL of these conditions are met:
    - Input type is `file` or `directory` (NOT `diff`)
    - File extension is `.md` or `.txt` (NOT code: `.go`, `.py`, `.ts`, `.tsx`, `.rs`, `.sh`, `.c`, `.java`, `.rb`)
    - Document type matches: PRD, brainstorm, plan, strategy, vision, roadmap, architecture doc, or research document
@@ -277,7 +277,7 @@ When cognitive agents pass the pre-filter, assign base_score using these heurist
 
 Domain-general agents always pass the filter: fd-architecture, fd-quality, and fd-performance (for file/directory inputs only — for diffs, fd-performance is filtered by routing patterns like other domain agents).
 
-Cognitive agents (fd-systems and future lens agents) are filtered separately by the cognitive filter above and are NEVER included for diff or code file inputs. Cognitive agents display as category `cognitive` in the triage table. Technical agents display as category `technical` (default).
+Cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) are filtered separately by the cognitive filter above and are NEVER included for diff or code file inputs. Cognitive agents display as category `cognitive` in the triage table. Technical agents display as category `technical` (default).
 
 Present only passing agents in the scoring table below.
 
@@ -405,7 +405,7 @@ If user selects "Cancel", stop here.
 
 Read `references/agent-roster.md` for the full agent roster including:
 - Project Agents (`.claude/agents/fd-*.md`)
-- Plugin Agents (7 core fd-* agents with subagent_type mappings)
+- Plugin Agents (7 technical + 5 cognitive fd-* agents with subagent_type mappings)
 - Cross-AI (Oracle CLI invocation, error handling, slot rules)
 
 ---

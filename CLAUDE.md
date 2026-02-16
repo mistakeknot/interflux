@@ -4,7 +4,7 @@
 
 ## Overview
 
-Multi-agent review and research engine — 13 agents (8 review + 5 research), 3 commands, 2 skills, 2 MCP servers. Companion plugin for Clavain. Provides scored triage, domain detection, content slicing, knowledge injection, and parallel multi-agent research.
+Multi-agent review and research engine — 17 agents (12 review + 5 research), 3 commands, 2 skills, 2 MCP servers. Companion plugin for Clavain. Provides scored triage, domain detection, content slicing, knowledge injection, and parallel multi-agent research.
 
 ## Protocol Specification
 
@@ -18,7 +18,7 @@ claude --plugin-dir /root/projects/Interverse/plugins/interflux
 
 # Validate structure
 ls skills/*/SKILL.md | wc -l          # Should be 2
-ls agents/review/*.md | wc -l         # Should be 8
+ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
 ls commands/*.md | wc -l              # Should be 3
 python3 -c "import json; d=json.load(open('.claude-plugin/plugin.json')); print(list(d['mcpServers'].keys()))"  # ['qmd', 'exa']
@@ -29,7 +29,7 @@ python3 -c "import json; json.load(open('.claude-plugin/plugin.json'))"  # Manif
 ## Design Decisions (Do Not Re-Ask)
 
 - Namespace: `interflux:` (companion to Clavain)
-- 8 review agents: 7 technical (fd-architecture, fd-safety, fd-correctness, fd-quality, fd-user-product, fd-performance, fd-game-design) + 1 cognitive (fd-systems) — technical agents auto-detect language, cognitive agents review documents only
+- 12 review agents: 7 technical (fd-architecture, fd-safety, fd-correctness, fd-quality, fd-user-product, fd-performance, fd-game-design) + 5 cognitive (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) — technical agents auto-detect language, cognitive agents review documents only
 - 5 research agents (best-practices-researcher, framework-docs-researcher, git-history-analyzer, learnings-researcher, repo-research-analyst) — orchestrated by flux-research
 - Phase tracking is the **caller's** responsibility — interflux commands do not source lib-gates.sh
 - Knowledge compounding writes to interflux's `config/flux-drive/knowledge/` directory
