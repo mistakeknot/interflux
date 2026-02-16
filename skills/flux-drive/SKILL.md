@@ -5,6 +5,8 @@ description: Use when reviewing documents or codebases with multi-agent analysis
 
 # Flux Drive — Intelligent Document Review
 
+<!-- compact: SKILL-compact.md — if it exists in this directory, load it instead of following the multi-file instructions below. The compact version contains the same triage algorithm, scoring formula, and agent roster in a single file. For launch protocol and synthesis details, read phases/launch.md and phases/synthesize.md as directed by the compact file. -->
+
 You are executing the flux-drive skill. This skill reviews any document (plan, brainstorm, spec, ADR, README) or an entire repository by launching **only relevant** agents selected from a static roster. Follow each phase in order. Do NOT skip phases.
 
 **File organization:** This skill is split across phase files for readability. Read `phases/shared-contracts.md` and `phases/slicing.md` first (defines output format, completion signals, and content routing), then read each phase file as you reach it.
