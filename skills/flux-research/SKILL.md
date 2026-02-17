@@ -231,66 +231,36 @@ Task(interflux:research:{agent-name}):
 
 ## Phase 3: Synthesize
 
-### Step 3.1: Collect agent outputs
+### Step 3.1: Delegate to Synthesis Subagent
 
-Read all `.md` files from `{OUTPUT_DIR}/`. Parse the Sources, Findings, Confidence, and Gaps sections from each.
+**Do NOT read agent output files yourself.** Delegate ALL collection, merging, ranking, and verdict writing to a synthesis subagent. This keeps agent prose entirely out of the host context.
 
-### Step 3.2: Merge with source attribution
+Launch the **intersynth research synthesis agent** (foreground, not background — you need its result):
 
-Combine findings across agents, preserving attribution:
-
-```markdown
-## Research Synthesis: {RESEARCH_QUESTION}
-
-### Key Findings
-
-[Merged findings organized by theme, each attributed:]
-- **[Finding]** — *Source: {agent-name}* ({internal|external}, {confidence level})
-
-### Source Map
-
-| # | Source | Type | Agent | Authority |
-|---|--------|------|-------|-----------|
-| 1 | docs/solutions/... | internal | learnings-researcher | high |
-| 2 | Official React docs | external | framework-docs-researcher | high |
-| 3 | Community blog post | external | best-practices-researcher | medium |
+```
+Task(intersynth:synthesize-research):
+  prompt: |
+    OUTPUT_DIR={OUTPUT_DIR}
+    VERDICT_LIB={CLAUDE_PLUGIN_ROOT}/../../hub/clavain/hooks/lib-verdict.sh
+    RESEARCH_QUESTION={RESEARCH_QUESTION}
+    QUERY_TYPE={type}
+    ESTIMATED_DEPTH={estimated_depth}
 ```
 
-### Step 3.3: Rank sources
+The intersynth agent reads all research agent output files, merges findings with source attribution, ranks sources, writes verdicts, and returns a compact answer. It writes `{OUTPUT_DIR}/synthesis.md`.
 
-Apply source ranking:
-1. **Internal learnings** (docs/solutions/, project memory) — highest authority, project-specific
-2. **Official documentation** (framework docs, API references) — high authority, canonical
-3. **Community conventions** (blog posts, popular repos, Stack Overflow) — medium authority
-4. **Code examples** (GitHub repos, tutorials) — supporting evidence
+After the synthesis subagent returns:
+1. Its return value is the compact answer (~5-10 lines) — display this immediately as the quick answer
+2. Read `{OUTPUT_DIR}/synthesis.md` for the full report to present to the user
+3. The host agent never touched any individual agent output file
 
-When findings conflict, prefer higher-ranked sources. Note the conflict explicitly.
+### Step 3.2-3.4: (Handled by intersynth)
 
-### Step 3.4: Present unified answer
+Source ranking, merging, conflict resolution, and report generation are performed by the intersynth synthesis agent.
 
-Write the final synthesis to `{OUTPUT_DIR}/synthesis.md` and present to user:
+### Step 3.5: Present unified answer
 
-```markdown
-## Research Complete: {RESEARCH_QUESTION}
-
-**Agents used:** {N} ({agent names})
-**Depth:** {estimated_depth}
-**Sources:** {total source count} ({internal count} internal, {external count} external)
-
-### Answer
-
-[Concise, actionable answer synthesized from all agent findings]
-
-### Confidence Assessment
-
-- **High confidence:** [well-supported conclusions]
-- **Medium confidence:** [single-source or indirect conclusions]
-- **Gaps:** [what wasn't found, areas for deeper investigation]
-
-### Detailed Findings
-
-[Full merged findings with attribution — reference {OUTPUT_DIR}/ for individual agent reports]
-```
+Read `{OUTPUT_DIR}/synthesis.md` and present to user. This file was written by the intersynth agent.
 
 ### Output Summary
 

@@ -25,24 +25,31 @@ For each agent's output file, validate structure before reading content:
 
 Report validation results to user: "5/6 agents returned valid Findings Index, 1 failed"
 
-### Step 3.2: Collect Results
+### Step 3.2: Delegate to Synthesis Subagent
 
-For each **valid** agent output, read the **Findings Index** first (first ~30 lines). This gives you a structured list of all issues and improvements without reading full prose. Only read the prose body if:
-- An issue needs more context to understand
-- You need to resolve a conflict between agents
+**Do NOT read agent output files yourself.** Delegate ALL collection, validation, deduplication, and verdict writing to a synthesis subagent. This keeps agent prose entirely out of the host context.
 
-For **malformed** outputs, read the Summary + Issues sections as prose fallback.
+Launch the **intersynth synthesis agent** (foreground, not background — you need its result):
 
-### Step 3.3: Deduplicate and Organize
+```
+Task(intersynth:synthesize-review):
+  prompt: |
+    OUTPUT_DIR={OUTPUT_DIR}
+    VERDICT_LIB={CLAUDE_PLUGIN_ROOT}/../../hub/clavain/hooks/lib-verdict.sh
+    MODE=flux-drive
+    CONTEXT="Reviewing {INPUT_TYPE}: {INPUT_STEM} ({N} agents, {early_stop_note})"
+```
 
-1. **Group findings by section** — organize all agent findings under the section they apply to (or by topic for repo reviews)
-2. **Deduplicate**: If multiple agents flagged the same issue, keep the most specific one (prefer Project Agents over plugin Plugin Agents, since they have deeper project context)
-3. **Track convergence**: Note how many agents flagged each issue (e.g., "4/6 agents"). High convergence (3+ agents) = high confidence. Include convergence counts in the Issues to Address checklist.
-**Partial agent sets**: If Stage 2 was not launched (early stop), adjust convergence counts to reflect the smaller agent set. Report in the summary: "Early stop after Stage 1: N agents ran, M agents skipped as unnecessary."
-4. **Flag conflicts**: If agents disagree, note both positions
-5. **Priority from project-specific agents**: When a Project Agent and an Plugin Agent give different advice on the same topic, prefer the Project Agent's recommendation
-6. **Slicing awareness** (when slicing was active for diff or document): See `phases/slicing.md` → Synthesis Contracts for convergence adjustment rules, out-of-scope finding tags, and slicing disagreement tracking.
-7. **Cognitive agent dedup**: When multiple cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) flag the same section with similar reasoning, keep findings that reference different lenses as separate entries. Deduplicate only when the same lens AND the same concern appear from multiple agents.
+The intersynth agent handles validation, collection, deduplication, verdict writing, and report generation. It writes `{OUTPUT_DIR}/summary.md` and `{OUTPUT_DIR}/findings.json`, then returns a compact ~15-line summary.
+
+After the synthesis subagent returns:
+1. Its return value is the compact summary (~10-15 lines) — display this immediately
+2. Read `{OUTPUT_DIR}/summary.md` for the full report to present to the user
+3. The host agent never touched any individual agent output file
+
+### Step 3.3: (Handled by synthesis subagent)
+
+Deduplication, convergence tracking, conflict detection, and cognitive agent dedup are all performed by the synthesis subagent above. The rules remain the same — they are just executed in the subagent's context instead of the host's.
 
 ### Step 3.4: Update the Document
 
@@ -212,6 +219,11 @@ Present the synthesis report using this exact structure. Fill in each section fr
 
 **Reviewed**: {YYYY-MM-DD} | **Agents**: {N launched}, {M completed} | **Verdict**: {safe|needs-changes|risky}
 [If early stop:] *(Stage 1 only — {K} agents skipped as unnecessary)*
+
+### Verdict Summary
+| Agent | Status | Summary |
+|-------|--------|---------|
+[One row per agent from verdict_parse_all() output. CLEAN agents get a 1-line "no issues" summary. NEEDS_ATTENTION agents get a 1-line finding summary.]
 
 ### Critical Findings (P0)
 [List P0 findings with agent attribution and convergence. If none: "None."]

@@ -4,3 +4,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Ephemeral verdict/review data
+.clavain/verdicts/
+.clavain/quality-gates/
+.clavain/reviews/
