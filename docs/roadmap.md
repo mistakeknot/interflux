@@ -98,14 +98,14 @@ interflux is at stable feature-complete breadth (2 skills, 3 commands, 12 agents
 
 **Theme:** optimize decision quality and move from working stability to adaptive capability.
 
-### P3.1 — Adaptive Selection and Cost Controls
+### P2 — Adaptive Selection and Cost Controls
 
 | ID | Item | Description |
 |---|---|---|
 | IFX-P1 | Agent topology tuning | Compare small/standard/top-heavy rosters with reproducible outcomes. |
 | IFX-P2 | Context-budget controls | Use historical convergence and override signals to tune Stage 1/2 ceilings. |
 
-### P3.2 — Knowledge Hygiene
+### P2 — Knowledge Hygiene
 
 | ID | Item | Description |
 |---|---|---|
@@ -164,3 +164,12 @@ Phase 3: Scale and Evolution
 - Keep open-bead count visible in this section; add bead IDs when created.
 - Record new blockers under explicit dependencies so triage and ordering remain explainable.
 - Update this roadmap whenever protocol conformance level or command semantics change.
+
+## From Interverse Roadmap
+
+Items from the [Interverse roadmap](../../../docs/roadmap.json) that involve this module:
+
+- **iv-qjwz** [Next] AgentDropout — dynamic redundancy elimination (blocked by iv-ynbh)
+- **iv-905u** [Next] Intermediate result sharing between parallel agents
+- **iv-qznx** [Next] Multi-framework interoperability benchmark and scoring harness
+- **iv-wz3j** [Next] Role-aware latent memory safety and lifecycle experiments (blocked by iv-jc4j)
