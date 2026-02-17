@@ -94,7 +94,7 @@ CLAVAIN_DISPATCH_PROFILE=clavain bash "$DISPATCH" \
   --tier deep
 ```
 
-Note: in Clavain interserve mode (`.claude/interserve-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
+Note: in Clavain interserve mode (`.claude/clodex-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
 `gpt-5.3-codex-xhigh` via Clavain dispatch policy. Fast/deep dispatches in Clavain continue to
 follow the same profile from `config/dispatch/tiers.yaml`.
 
