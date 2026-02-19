@@ -69,6 +69,21 @@ For each detected domain (from the Document Profile's `Project domains` field), 
 
 **Performance**: Domain profile files are small (~90-100 lines each). Reading 1-3 files adds negligible overhead. This step should take <1 second.
 
+### Step 2.1d: Load active overlays (interspect Type 1)
+
+For each selected agent, load pre-computed overlay content using the shared library functions from `lib-interspect.sh`. **Do NOT inline YAML parsing** — use the canonical functions to avoid divergence (finding A2).
+
+1. Source `lib-interspect.sh` and call `_interspect_read_overlays "{agent-name}"`
+2. The function handles: directory existence check, file scanning, YAML frontmatter parsing via `_interspect_overlay_is_active`, body extraction via `_interspect_overlay_body`, and concatenation
+3. If the function returns non-empty content, store it as `{OVERLAY_CONTEXT}` for that agent
+4. **Re-sanitize** the returned content before injection (defense-in-depth against hand-edited overlays): call `_interspect_sanitize "$content" 2000`. If sanitization fails (returns non-zero), skip the overlay and log a warning.
+
+**Budget check:** Call `_interspect_count_overlay_tokens "$content"` (canonical: `wc -w * 1.3`). If total exceeds 500 tokens, log `"WARNING: Overlay budget exceeded for {agent}. Using first N of M overlays."` and truncate to the overlays that fit.
+
+**Fallback:** If the overlays directory doesn't exist or contains no active overlays for an agent, skip silently. The Overlay Context section is omitted from that agent's prompt.
+
+**Performance:** Overlay files are tiny (~100 words each, max 500 tokens total per agent). Reading 1-5 files per agent adds negligible overhead.
+
 ### Step 2.1c: Write document to temp file(s)
 
 Write the document (or per-agent slices) to temp files so agents can Read them instead of receiving inline content. This eliminates document duplication across agent prompts.
@@ -332,6 +347,14 @@ Apply these criteria **in addition to** your standard review approach. They high
 
 [If no domains detected OR no criteria found for this agent:]
 (Omit this section entirely — do not include an empty Domain Context header.)
+
+## Overlay Context
+
+[Only include this section if overlays were loaded in Step 2.1d for this agent. If no active overlays exist, omit entirely.]
+
+The following review adjustments have been learned from previous sessions. Apply them in addition to your standard review approach.
+
+{overlay_content}
 
 ## Project Context
 
