@@ -53,40 +53,75 @@ For malformed outputs, extract findings from:
 
 ### Step 3: Deduplication
 
-When multiple agents report the same issue:
+When multiple agents report findings, apply these rules in order:
 
-1. **Match duplicates** by comparing:
-   - Exact section match: `issue1.section === issue2.section`
-   - Fuzzy title match: Levenshtein distance < 0.3, or shared keywords (3+ words in common)
+#### Rule 1: Same file:line + same issue → Merge
 
-2. **Keep the most specific version:**
-   - Prefer Project Agent > Plugin Agent (deeper project context)
-   - Prefer longer description over shorter (more detail)
-   - Preserve all agent attributions in merged metadata
+When two findings reference the same `file:line` AND describe the same issue (fuzzy title match: Levenshtein distance < 0.3, or 3+ shared keywords):
+- Merge into a single finding
+- Credit all reporting agents in the `agents` array
+- Use the highest severity across agents
+- Preserve all descriptions in the `descriptions` map
 
-3. **Merge metadata:**
-   ```json
-   {
-     "id": "P1-1",
-     "severity": "P1",
-     "agents": ["fd-architecture", "fd-safety"],
-     "section": "Authentication",
-     "title": "Session tokens stored in localStorage",
-     "convergence": 2,
-     "descriptions": {
-       "fd-architecture": "...",
-       "fd-safety": "..."
-     }
-   }
-   ```
+#### Rule 2: Same file:line + different issues → Keep separate, tag co-located
 
-4. **Flag conflicts:**
-   If agents disagree on severity for the same issue:
-   - Record both positions: `"severity_conflict": {"fd-architecture": "P1", "fd-quality": "P2"}`
-   - Use most severe rating for verdict computation
-   - Note conflict in summary report
+When two findings reference the same `file:line` but describe different issues:
+- Keep as separate findings (they are distinct problems)
+- Tag both with `"co_located": true` and `"co_located_with": ["<other_finding_id>"]`
+- Co-location is informational — it suggests the code region needs attention
 
-> **Why this works:** Deduplication prevents double-counting the same issue. Preserving all attributions maintains traceability — the user can see which agents independently found the problem.
+#### Rule 3: Same issue + different locations → Keep separate, cross-reference
+
+When two findings describe the same issue (fuzzy title match) but at different `file:line` locations:
+- Keep as separate findings (each location needs its own fix)
+- Add `"cross_references": ["<other_finding_id>"]` to each
+- Cross-references help the user see the pattern across locations
+
+#### Rule 4: Conflicting severity → Use highest
+
+When agents disagree on severity for the same issue:
+- Use the most severe rating for verdict computation
+- Record all positions: `"severity_conflict": {"fd-architecture": "P1", "fd-quality": "P2"}`
+- Note the conflict in the summary report
+
+#### Rule 5: Conflicting recommendations → Preserve both with attribution
+
+When agents disagree on the recommended fix for the same issue:
+- Include both recommendations in the `descriptions` map, keyed by agent name
+- Do NOT pick a winner — the user decides which recommendation to follow
+- Note the conflict in the summary report
+
+#### Matching and merging
+
+**Match duplicates** by comparing:
+- Exact section match: `issue1.section === issue2.section`
+- Fuzzy title match: Levenshtein distance < 0.3, or shared keywords (3+ words in common)
+- File:line match (when available): exact string match on `file:line` reference
+
+**Keep the most specific version** when merging:
+- Prefer Project Agent > Plugin Agent (deeper project context)
+- Prefer longer description over shorter (more detail)
+- Preserve all agent attributions in merged metadata
+
+**Merged metadata example:**
+```json
+{
+  "id": "P1-1",
+  "severity": "P1",
+  "agents": ["fd-architecture", "fd-safety"],
+  "section": "Authentication",
+  "title": "Session tokens stored in localStorage",
+  "convergence": 2,
+  "co_located": false,
+  "cross_references": [],
+  "descriptions": {
+    "fd-architecture": "...",
+    "fd-safety": "..."
+  }
+}
+```
+
+> **Why this works:** Explicit rules prevent ambiguity in edge cases. Rule 1 prevents double-counting. Rule 2 preserves distinct problems that happen to share a location. Rule 3 captures recurring patterns without losing location specificity. Rules 4-5 handle disagreements transparently.
 
 ### Step 4: Convergence Tracking
 
@@ -163,7 +198,9 @@ Generate a machine-readable summary for programmatic access:
       "section": "Authentication",
       "title": "Session tokens stored in localStorage",
       "convergence": 2,
-      "confidence": "medium"
+      "confidence": "medium",
+      "co_located": false,
+      "cross_references": []
     },
     {
       "id": "P0-1",
@@ -173,6 +210,10 @@ Generate a machine-readable summary for programmatic access:
       "title": "SQL injection vulnerability in user search",
       "convergence": 1,
       "confidence": "low",
+      "co_located": true,
+      "co_located_with": ["P2-3"],
+      "cross_references": ["P0-4"],
+      "severity_conflict": {"fd-safety": "P0", "fd-quality": "P1"},
       "note": "Single-agent finding — verify independently"
     }
   ],
@@ -206,6 +247,10 @@ Generate a machine-readable summary for programmatic access:
 - `agents_failed`: Agents that returned Error or Missing outputs
 - `convergence`: Integer count of agents that reported this finding
 - `confidence`: `"high"` (3+) | `"medium"` (2) | `"low"` (1)
+- `co_located`: Boolean — does another finding share the same file:line? (Rule 2)
+- `co_located_with`: Array of finding IDs at the same location (present when `co_located` is true)
+- `cross_references`: Array of finding IDs for the same issue at different locations (Rule 3)
+- `severity_conflict`: Object mapping agent names to their severity ratings (present when agents disagree, Rule 4)
 - `early_stop`: Boolean — was Stage 2 skipped?
 - `content_routing_active`: Boolean — did agents receive different content slices?
 

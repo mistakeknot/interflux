@@ -49,7 +49,13 @@ After the synthesis subagent returns:
 
 ### Step 3.3: (Handled by synthesis subagent)
 
-Deduplication, convergence tracking, conflict detection, and cognitive agent dedup are all performed by the synthesis subagent above. The rules remain the same — they are just executed in the subagent's context instead of the host's.
+Deduplication, convergence tracking, conflict detection, and cognitive agent dedup are all performed by the synthesis subagent above. The 5 dedup rules (defined in `docs/spec/core/synthesis.md` Step 3) are executed in the subagent's context:
+
+1. Same file:line + same issue → merge, credit all agents
+2. Same file:line + different issues → keep separate, tag co-located
+3. Same issue + different locations → keep separate, cross-reference
+4. Conflicting severity → use highest
+5. Conflicting recommendations → preserve both with attribution
 
 ### Step 3.4: Update the Document
 
