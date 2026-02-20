@@ -9,7 +9,7 @@ Multi-agent review and research engine for Claude Code. Companion plugin for [Cl
 | Repo | `https://github.com/mistakeknot/interflux` |
 | Namespace | `interflux:` |
 | Manifest | `.claude-plugin/plugin.json` |
-| Components | 13 agents (8 review + 5 research), 3 commands, 2 skills, 2 MCP servers |
+| Components | 13 agents (8 review + 5 research), 3 commands, 2 skills, 2 MCP servers, 1 hook |
 | License | MIT |
 
 ### Release workflow
@@ -23,7 +23,9 @@ Multi-agent review and research engine for Claude Code. Companion plugin for [Cl
 
 ```
 interflux/
-├── .claude-plugin/plugin.json     # Plugin manifest (name, version, MCP servers)
+├── .claude-plugin/
+│   ├── plugin.json                # Plugin manifest (name, version, MCP servers)
+│   └── integration.json           # Ecosystem integration manifest (dual-mode)
 ├── agents/
 │   ├── review/                    # 8 review agents (7 technical + 1 cognitive)
 │   │   ├── fd-architecture.md
@@ -79,6 +81,10 @@ interflux/
 │       └── knowledge/            # Durable review patterns (knowledge lifecycle)
 │           ├── README.md
 │           └── *.md              # Individual knowledge entries
+├── hooks/
+│   ├── hooks.json                 # Hook declarations (SessionStart)
+│   ├── interbase-stub.sh          # SDK stub — sources live or falls back to no-ops
+│   └── session-start.sh           # Sources interbase, emits ecosystem status
 ├── docs/
 │   └── spec/                     # flux-drive protocol specification (v1.0.0)
 │       ├── README.md             # Conformance levels, reading order
