@@ -104,6 +104,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/budget.yaml`. Look up the budget f
 
 If a project-level override exists at `{PROJECT_ROOT}/.claude/flux-drive-budget.yaml`, use that instead.
 
+**Sprint budget override:** If `FLUX_BUDGET_REMAINING` env var is set and non-zero, apply: `effective_budget = min(yaml_budget, FLUX_BUDGET_REMAINING)`. This allows sprint-level budget constraints to cap flux-drive dispatch. Note in triage summary: `[sprint-constrained]` when sprint budget is tighter.
+
 Store as `BUDGET_TOTAL`.
 
 **Step 1.2c.2: Estimate per-agent costs**
