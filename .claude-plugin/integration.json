@@ -1,0 +1,22 @@
+{
+  "ecosystem": "interverse",
+  "interbase_min_version": "1.0.0",
+  "ecosystem_only": false,
+  "standalone_features": [
+    "Multi-agent code review (12 review agents with domain auto-detection)",
+    "Document review with automatic agent triage and scored findings",
+    "Multi-agent research orchestration with parallel dispatch",
+    "Domain-specific knowledge injection from config profiles"
+  ],
+  "integrated_features": [
+    { "feature": "Phase tracking on review completion", "requires": "interphase" },
+    { "feature": "Sprint gate enforcement for shipping", "requires": "intercore" },
+    { "feature": "Bead-linked review findings", "requires": "beads" },
+    { "feature": "Auto-review on doc drift detection", "requires": "interwatch" },
+    { "feature": "Knowledge compounding from review findings", "requires": "clavain" }
+  ],
+  "companions": {
+    "recommended": ["interwatch", "intersynth"],
+    "optional": ["interphase", "interstat"]
+  }
+}
