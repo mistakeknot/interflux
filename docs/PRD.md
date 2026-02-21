@@ -1,6 +1,6 @@
 # interflux — Product Requirements Document
 
-**Version:** 0.2.14
+**Version:** 0.2.18
 **Last updated:** 2026-02-15
 **Vision:** [`vision.md`](vision.md)
 **Dev guide:** [`AGENTS.md`](../AGENTS.md)
