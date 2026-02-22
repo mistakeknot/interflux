@@ -25,19 +25,20 @@ Clean OUTPUT_DIR of stale `.md` files before starting.
 
 ### Step 1.0.1: Domain Detection
 
-**Cache check:** `{PROJECT_ROOT}/.claude/flux-drive.yaml` — if exists with `domains:`, use cached. If `override: true`, never re-detect.
+**Cache check:** `{PROJECT_ROOT}/.claude/flux-drive.yaml` — if exists with `domains:` and `content_hash:` matches current files, use cached. If `override: true`, never re-detect.
 
-**Detection:** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`
-- Exit 0: domains detected, use output
-- Exit 1: no domains, proceed with core agents only
-- Exit 2: script error, proceed with core agents only
+**Detection:** Launch Haiku subagent (Task tool, `model: haiku`) with README + build file + 2-3 key source files. Prompt asks for `{"domains": [{"name", "confidence", "reasoning"}]}` from 11 known domains. Cache result with `source: llm` and `content_hash`.
 
-**Staleness:** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --check-stale`
-- Exit 0: fresh. Exit 3: stale (re-detect). Exit 4: no cache (detect).
+**Fallback:** If Haiku fails: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`. Mark `source: heuristic`.
+
+**Staleness:** Compare `content_hash` in cache vs current file hashes. No hash or mismatch → stale (re-detect). Match → fresh.
 
 ### Step 1.0.4: Agent Generation
 
-If domains detected but no `{PROJECT_ROOT}/.claude/agents/fd-*.md` exist, generate them using domain profiles from `config/flux-drive/domains/{domain}.md`.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=regenerate-stale --json
+```
+Exit 0: parse JSON report (created/skipped/regenerated/orphaned per agent). Exit 1: no domains. Exit 2: error. Report orphans, don't delete.
 
 ### Step 1.1: Document Profile
 

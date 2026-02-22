@@ -68,100 +68,138 @@ A document-codebase divergence is itself a P0 finding — every agent should be 
 
 ### Step 1.0.1: Classify Project Domain
 
-Detect the project's domain(s) using signals from `config/flux-drive/domains/index.yaml`. This runs once per project and is cached.
+Detect the project's domain(s) for agent selection and domain-specific review criteria injection. Results are cached.
 
-**Cache check:** Look for `{PROJECT_ROOT}/.claude/flux-drive.yaml`. If it exists and contains `domains:` with at least one entry, skip detection and use cached results. If the file also contains `override: true`, never re-detect — the user has manually set their domains.
+**Cache check:** Look for `{PROJECT_ROOT}/.claude/flux-drive.yaml`. If it exists and contains `domains:` with at least one entry, use cached results. If the file also contains `override: true`, never re-detect — the user has manually set their domains.
 
-Note: The detect-domains.py script validates cache_version internally. Callers do not need to check the version field — stale formats are detected automatically via --check-stale.
+**Detection** (when no cache, cache is stale, or `source: heuristic` in cache):
 
-**Detection** (when no cache or cache is stale):
+Launch a Haiku subagent to classify the project:
 
-Run the domain detection script:
+1. Read these files (skip any that don't exist):
+   - `{PROJECT_ROOT}/README.md` (or README.rst, README.txt, README)
+   - The primary build file (first found: `go.mod`, `Cargo.toml`, `package.json`, `pyproject.toml`, `CMakeLists.txt`, `Makefile`)
+   - 2-3 key source files from the main source directory (pick files that reveal purpose, not utility)
+
+2. Dispatch a Haiku subagent (Task tool, `model: haiku`) with this prompt:
+
+   ```
+   Classify this project into one or more of these domains based on its actual purpose.
+   Return ONLY a JSON object, no other text.
+
+   Available domains:
+   - game-simulation (game engines, simulations, ECS, storytelling)
+   - ml-pipeline (ML training, inference, experiment tracking)
+   - web-api (REST/GraphQL/gRPC services, web backends)
+   - cli-tool (command-line tools, terminal utilities)
+   - mobile-app (iOS/Android/cross-platform mobile apps)
+   - embedded-systems (firmware, RTOS, hardware drivers)
+   - library-sdk (reusable libraries, SDKs, packages)
+   - data-pipeline (ETL, data warehousing, stream processing)
+   - claude-code-plugin (Claude Code plugins, skills, hooks)
+   - tui-app (terminal user interfaces, ncurses/bubbletea apps)
+   - desktop-tauri (desktop apps via Tauri/Electron/Wails)
+
+   Project files:
+   <include file contents here>
+
+   Respond with:
+   {"domains": [{"name": "<domain>", "confidence": <0.0-1.0>, "reasoning": "<1 sentence>"}]}
+
+   Rules:
+   - Only include domains with confidence >= 0.3
+   - A project can match multiple domains (e.g., a game server is both game-simulation and web-api)
+   - Set the highest-confidence domain as primary
+   - If no domain matches above 0.3, return {"domains": []}
+   ```
+
+3. Parse the JSON response. Write cache to `{PROJECT_ROOT}/.claude/flux-drive.yaml`:
+   ```yaml
+   cache_version: 2
+   source: llm
+   detected_at: '2026-02-22T12:00:00+00:00'
+   content_hash: 'sha256:<hash of files read by LLM>'
+   domains:
+     - name: game-simulation
+       confidence: 0.85
+       reasoning: "Godot project with ECS architecture and storytelling system"
+       primary: true
+     - name: cli-tool
+       confidence: 0.4
+       reasoning: "Has CLI entry point for development tools"
+   ```
+
+**Heuristic fallback** (when Haiku call fails — timeout, API error, or unparseable response):
+
+Run the legacy heuristic detector:
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json
 ```
+- Exit 0: use output, mark `source: heuristic` in cache
+- Exit 1: no domains detected, proceed with core agents only
+- Exit 2: script error, proceed with core agents only
 
-The script reads `config/flux-drive/domains/index.yaml`, scans directories/files/build-deps/keywords, computes weighted scores (directories 0.3, files 0.2, frameworks 0.3, keywords 0.2), and writes a cache to `{PROJECT_ROOT}/.claude/flux-drive.yaml`. The highest-confidence domain is marked `primary: true`.
+Log: `"Domain detection: LLM unavailable, using heuristic fallback."`
 
-- **Exit 0**: Domains detected — use the JSON output.
-- **Exit 1**: No domains detected — use LLM fallback below (first scan only; does not apply to --check-stale).
-- **Exit 2**: Script error — log warning, proceed without domain classification.
+**Performance budget:** Detection should complete in <5 seconds. Cache check is <10ms.
 
-**LLM fallback** (exit code 1, first scan only): Infer domain from the Document Profile (Step 1.1) or build system files. Set confidence to 0.5 for inferred domains. Write results to `{PROJECT_ROOT}/.claude/flux-drive.yaml`.
+**Output:** The detected domains feed into Step 1.0.2 (staleness), Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection).
 
-**Performance budget:** This step should take <10 seconds. Use `ls` and targeted `grep`, not recursive find. Skip keyword scanning if directory+file+framework signals already exceed min_confidence for at least one domain.
+### Step 1.0.2: Check Staleness
 
-**Output:** The detected domains feed into Step 1.0.2 (staleness check), Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection into agent prompts).
+Check if cached domain detection is outdated by comparing content hashes.
 
-### Step 1.0.2: Check Staleness (pure, no side effects)
+1. Read `content_hash` from `{PROJECT_ROOT}/.claude/flux-drive.yaml`
+2. If no `content_hash` field (old cache format or heuristic source): cache is stale, proceed to Step 1.0.3
+3. Re-hash the same files (README + build file + key source files) using SHA-256
+4. If hashes match: cache is fresh, proceed to Step 1.1
+5. If hashes differ: cache is stale, proceed to Step 1.0.3
 
-Check if the cached domain detection results are outdated due to structural project changes. This uses a three-tier strategy (hash → git → mtime) that completes in <100ms for the common case.
+### Step 1.0.3: Re-detect
+
+When staleness is detected or no cache exists:
+
+1. Read previous domains from cache (if any) for comparison
+2. Run LLM detection (Step 1.0.1 detection flow)
+3. Compare new vs previous:
+   - Unchanged → proceed to Step 1.0.4
+   - Changed → log: `"Domain shift: [old] → [new]"`. Proceed to Step 1.0.4
+
+### Step 1.0.4: Agent Generation
+
+Auto-generate project-specific agents using the shared `generate-agents.py` script. This runs non-interactively within the flux-drive pipeline.
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --check-stale
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=regenerate-stale --json
 ```
 
-Exit codes:
-- **0** → Cache is fresh, use cached domains. Proceed to Step 1.1.
-- **3** → Cache is stale (structural changes detected). Proceed to Step 1.0.3.
-- **4** → No cache exists (first run or deleted). Proceed to Step 1.0.3.
-- **1** → No domains detected. Skip Steps 1.0.3 and 1.0.4 — proceed to Step 1.1 with core plugin agents only.
-- **2** → Script error. Log warning: "Domain detection unavailable (detect-domains.py error). Agent auto-generation skipped. Run /flux-gen manually. Proceeding with core agents only." Proceed to Step 1.1.
+**Exit codes:**
+- **0**: Agents generated or all up-to-date. Parse JSON report from stdout.
+- **1**: No domains in cache. Skip generation, proceed to Step 1.1 with core agents only.
+- **2**: Script error. Log warning, proceed with core agents only.
 
-### Step 1.0.3: Re-detect and Compare (writes cache only)
+**Interpret the JSON report:**
 
-When staleness is detected (exit 3) or no cache exists (exit 4):
+```json
+{
+  "status": "ok",
+  "generated": ["fd-simulation-kernel", "fd-agent-narrative"],
+  "skipped": ["fd-game-systems"],
+  "orphaned": ["fd-old-agent"],
+  "errors": []
+}
+```
 
-1. Read previous domains from cache (if any) before re-detection.
+**Lists to report:**
+- `generated`: Log each: `"Generated: {name}"`
+- `skipped`: Silent (agents are current)
+- `orphaned`: Log each: `"Orphaned: {name}. Delete manually if unwanted."`
+- `errors`: Log as warnings
 
-2. Re-run detection:
-   ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --no-cache --json
-   ```
-   - If exit 1 (no domains): log "No domains detected." Proceed to Step 1.1.
-   - If exit 2 (error): log error, proceed to Step 1.1.
-
-3. Compare new domain list to previous:
-   - Domains unchanged → proceed to Step 1.0.4 (check agents only)
-   - Domains changed → log: "Domain shift: [old] → [new]". Proceed to Step 1.0.4 for domain-shift handling (Step 1.0.4 case b).
-
-### Step 1.0.4: Agent Generation (writes agent files)
-
-Auto-generate project-specific agents when domains are detected but agents are missing. This step is silent (no AskUserQuestion) — it runs non-interactively within the flux-drive pipeline.
-
-1. **Validate domain profiles exist:**
-   For each detected domain, check that `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain}.md` exists AND has an `## Agent Specifications` section.
-   - If profile missing: log warning, remove domain from generation list.
-   - If ALL profiles missing: log error, suggest `--no-cache` re-detect. Skip generation.
-
-2. **Check for existing project agents:**
-   ```bash
-   ls {PROJECT_ROOT}/.claude/agents/fd-*.md 2>/dev/null
-   ```
-
-3. **Decision matrix:**
-   a. Agents exist AND domains unchanged → skip generation. Report "up to date."
-   b. Agents exist AND domains changed →
-      - Identify orphaned agents (domain removed) via YAML frontmatter check: parse `generated_by: flux-gen` and `domain:` fields
-      - Report orphaned agents but do NOT delete them (users may have customized them). Log: "Orphaned agents (domain no longer detected): [list]. These will be excluded from triage. Delete manually if unwanted."
-      - Identify missing agents (new domain added)
-      - Log: "Domain shift: N new agents needed, M agents orphaned."
-      - Generate only missing agents (don't touch existing)
-   c. No agents exist AND domains detected →
-      - Log: "Generating project agents for [domain1, domain2]..."
-      - Generate agents using the template from `/flux-gen` Step 4 (including YAML frontmatter with `generated_by`, `domain`, `generated_at`, `flux_gen_version`)
-
-4. **Track generation status per agent:**
-   - On success: report agent name and focus line
-   - On failure: log error with reason
-   - After loop: "Generated N of M agents. K failed."
-   - If any failed: list failures with reasons. Do NOT abort flux-drive.
-
-5. **Report summary:**
-   ```
-   Domain check: game-simulation (0.65) — fresh (scanned 2026-02-09)
-   Project agents: 2 exist, 1 generated, 0 failed
-   ```
+**Summary line:**
+```
+Domain agents: N exist, M generated, K orphaned
+```
 
 ### Step 1.1: Analyze the Document
 
