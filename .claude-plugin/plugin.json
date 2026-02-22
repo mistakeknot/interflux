@@ -46,6 +46,25 @@
     "./agents/research/learnings-researcher.md",
     "./agents/research/best-practices-researcher.md"
   ],
+  "agentCapabilities": {
+    "./agents/review/fd-architecture.md": ["review:architecture", "review:code", "review:design-patterns"],
+    "./agents/review/fd-safety.md": ["review:safety", "review:security", "review:deployment"],
+    "./agents/review/fd-correctness.md": ["review:correctness", "review:concurrency", "review:data-consistency"],
+    "./agents/review/fd-user-product.md": ["review:user-experience", "review:product", "review:scope"],
+    "./agents/review/fd-quality.md": ["review:quality", "review:style", "review:conventions"],
+    "./agents/review/fd-game-design.md": ["review:game-design", "review:balance", "review:pacing"],
+    "./agents/review/fd-performance.md": ["review:performance", "review:bottlenecks", "review:scaling"],
+    "./agents/review/fd-systems.md": ["review:systems-thinking", "review:feedback-loops", "review:emergence"],
+    "./agents/review/fd-decisions.md": ["review:decisions", "review:cognitive-bias", "review:strategy"],
+    "./agents/review/fd-people.md": ["review:trust", "review:communication", "review:team-dynamics"],
+    "./agents/review/fd-resilience.md": ["review:resilience", "review:antifragility", "review:innovation"],
+    "./agents/review/fd-perception.md": ["review:mental-models", "review:sensemaking", "review:information-quality"],
+    "./agents/research/framework-docs-researcher.md": ["research:docs", "research:frameworks"],
+    "./agents/research/repo-research-analyst.md": ["research:codebase", "research:architecture"],
+    "./agents/research/git-history-analyzer.md": ["research:git-history", "research:code-evolution"],
+    "./agents/research/learnings-researcher.md": ["research:learnings", "research:institutional-knowledge"],
+    "./agents/research/best-practices-researcher.md": ["research:best-practices", "research:industry-standards"]
+  },
   "mcpServers": {
     "qmd": {
       "type": "stdio",
