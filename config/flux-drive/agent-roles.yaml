@@ -1,0 +1,69 @@
+# Agent Role Mappings for Heterogeneous Routing (iv-jc4j)
+#
+# Inspired by Dr. MAS (Dynamic Role Multi-Agent Systems): assigns model tier
+# per agent based on role capability requirements, not uniform per-phase defaults.
+#
+# Roles (from SC-MAS/Dr. MAS taxonomy):
+#   planner   — High-capability model needed (architectural decisions, systems thinking)
+#   reviewer  — Medium-high capability (detailed checking, correctness, safety)
+#   editor    — Medium capability (practical suggestions, UX, performance)
+#   checker   — Lower capability sufficient (pattern matching, format checking)
+#
+# model_tier maps to routing.yaml subagent overrides when complexity routing
+# is in shadow or enforce mode. Currently informational — consumed by
+# experiment scoring, not by lib-routing.sh dispatch.
+#
+# Safety rule (from iv-dthn Loop 4): fd-safety and fd-correctness NEVER
+# route below Sonnet regardless of role assignment.
+
+roles:
+  planner:
+    description: Architectural decisions requiring high reasoning capability
+    model_tier: opus
+    agents:
+      - fd-architecture
+      - fd-systems
+
+  reviewer:
+    description: Detailed checking requiring medium-high capability
+    model_tier: sonnet
+    min_model: sonnet  # safety floor — never downgrade below this
+    agents:
+      - fd-correctness
+      - fd-quality
+      - fd-safety
+
+  editor:
+    description: Practical suggestions and domain-specific analysis
+    model_tier: sonnet
+    agents:
+      - fd-performance
+      - fd-user-product
+      - fd-game-design
+
+  checker:
+    description: Pattern matching and cognitive lens application
+    model_tier: haiku
+    agents:
+      - fd-perception
+      - fd-resilience
+      - fd-decisions
+      - fd-people
+
+# Experiment tracking — which experiments have been run and their status.
+# Updated by experiment execution scripts, read by framework_score.py.
+experiments:
+  exp1_complexity_routing:
+    status: pending    # pending | collecting | complete
+    baseline_runs: 0   # target: 20
+    shadow_runs: 0     # target: 20
+  exp2_role_aware:
+    status: pending
+    baseline_runs: 0
+    shadow_runs: 0
+  exp3_collaboration_modes:
+    status: pending
+    runs_per_mode: 0   # target: 5 per mode
+  exp4_pareto_frontier:
+    status: pending
+    policies_tested: 0  # target: 5
