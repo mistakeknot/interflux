@@ -6,9 +6,9 @@
 
 ---
 
-## What This Is
+## What this Is
 
-Flux-drive is a **domain-aware multi-agent review protocol** — an algorithm for triaging, launching, and synthesizing parallel specialized reviews of documents, codebases, and diffs. This specification extracts the abstract protocol from the interflux reference implementation into standalone, framework-agnostic documents.
+Flux-drive is a **domain-aware multi-agent review protocol**: an algorithm for triaging, launching, and synthesizing parallel specialized reviews of documents, codebases, and diffs. This specification extracts the abstract protocol from the interflux reference implementation into standalone, framework-agnostic documents.
 
 The protocol separates **static triage** (which agents are relevant?) from **dynamic expansion** (do early results justify more agents?) and uses **structured output contracts** to enable synthesis without parsing free-form prose.
 
@@ -16,7 +16,7 @@ The protocol separates **static triage** (which agents are relevant?) from **dyn
 
 This spec serves two audiences:
 
-- **AI tool developers** building multi-agent review systems — in any framework (Claude Code plugins, VS Code extensions, custom CLIs, API-based pipelines). The spec is framework-agnostic; interflux-specific details are confined to "interflux Reference" sections in each document.
+- **AI tool developers** building multi-agent review systems: in any framework (Claude Code plugins, VS Code extensions, custom CLIs, API-based pipelines). The spec is framework-agnostic; interflux-specific details are confined to "interflux Reference" sections in each document.
 
 - **interflux/Clavain contributors** extending the existing system. The spec clarifies what the protocol requires vs. what the implementation happens to do, making it safer to modify without breaking the contract.
 
@@ -45,7 +45,7 @@ This spec serves two audiences:
 | [extensions/domain-detection.md](extensions/domain-detection.md) | 168 | Project classification via weighted signal scoring (directories, files, frameworks, keywords). Multi-domain support, caching, staleness detection. |
 | [extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md) | 141 | Review memory: knowledge accumulation, provenance tracking (independent vs. primed), temporal decay (10 reviews), sanitization. |
 
-## Conformance Levels
+## Conformance levels
 
 An implementation can claim conformance at three levels:
 
@@ -53,7 +53,7 @@ An implementation can claim conformance at three levels:
 
 Implements:
 - 3-phase lifecycle (triage → launch → synthesize)
-- Agent scoring with `base_score` (0-3) and `project_bonus` (0-1) — minimum viable scoring (0-4 range)
+- Agent scoring with `base_score` (0-3) and `project_bonus` (0-1): minimum viable scoring (0-4 range)
 - Dynamic slot ceiling (minimum 4, maximum 12)
 - Two-stage dispatch with expansion decision
 - Findings Index output format
@@ -67,7 +67,7 @@ Core implementations MAY skip `domain_boost` and `domain_agent_bonus` (both requ
 Additionally implements:
 - Weighted signal scoring for domain detection
 - Multi-domain classification
-- `domain_boost` (0-2) and `domain_agent_bonus` (0-1) scoring components — extends scoring range to 0-7
+- `domain_boost` (0-2) and `domain_agent_bonus` (0-1) scoring components: extends scoring range to 0-7
 - Domain-specific criteria injection
 
 ### flux-drive-spec 1.0 Core + Knowledge
@@ -88,21 +88,21 @@ This spec uses [Semantic Versioning](https://semver.org/):
 
 The spec version is independent of interflux's version. An implementation conforming to "flux-drive-spec 1.0" works with any interflux version that also conforms to 1.0.
 
-## Reading Order
+## Reading order
 
 For newcomers, we recommend:
 
-1. **This README** — understand what flux-drive is and the conformance levels
-2. **[core/protocol.md](core/protocol.md)** — the 3-phase lifecycle (the big picture)
-3. **[contracts/findings-index.md](contracts/findings-index.md)** — the output format (the interface)
-4. **[contracts/completion-signal.md](contracts/completion-signal.md)** — how agents signal done
-5. **[core/scoring.md](core/scoring.md)** — how agents are selected
-6. **[core/staging.md](core/staging.md)** — how dispatch adapts to findings
-7. **[core/synthesis.md](core/synthesis.md)** — how results are aggregated
-8. **[extensions/domain-detection.md](extensions/domain-detection.md)** — optional domain awareness
-9. **[extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md)** — optional review memory
+1. **This README**: understand what flux-drive is and the conformance levels
+2. **[core/protocol.md](core/protocol.md)**: the 3-phase lifecycle (the big picture)
+3. **[contracts/findings-index.md](contracts/findings-index.md)**: the output format (the interface)
+4. **[contracts/completion-signal.md](contracts/completion-signal.md)**: how agents signal done
+5. **[core/scoring.md](core/scoring.md)**: how agents are selected
+6. **[core/staging.md](core/staging.md)**: how dispatch adapts to findings
+7. **[core/synthesis.md](core/synthesis.md)**: how results are aggregated
+8. **[extensions/domain-detection.md](extensions/domain-detection.md)**: optional domain awareness
+9. **[extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md)**: optional review memory
 
-## Directory Structure
+## Directory structure
 
 ```
 docs/spec/
