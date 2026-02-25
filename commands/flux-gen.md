@@ -34,9 +34,9 @@ If `$ARGUMENTS` specifies a domain name (e.g., `game-simulation`), skip detectio
 
 **Detection** (no cache or stale cache):
 
-Use the same LLM-based detection as flux-drive. Launch a Haiku subagent (Task tool, `model: haiku`) that reads README + build file + 2-3 key source files and classifies into 11 known domains. Cache the result with `source: llm` and `content_hash`.
+Run deterministic detection: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`. Scans dirs, files, build deps, source keywords against `config/flux-drive/domains/index.yaml`. Auto-caches with structural hash.
 
-**If Haiku fails:** Tell the user domain detection is unavailable and offer to retry or specify a domain manually.
+**If detection returns no domains or fails:** Tell the user domain detection found no matches and offer to specify a domain manually.
 
 If no domains detected and no argument provided, tell the user:
 > No domains detected for this project.

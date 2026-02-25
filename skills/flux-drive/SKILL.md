@@ -74,66 +74,19 @@ Detect the project's domain(s) for agent selection and domain-specific review cr
 
 **Detection** (when no cache, cache is stale, or `source: heuristic` in cache):
 
-Launch a Haiku subagent to classify the project:
+Run the deterministic domain detection script:
 
-1. Read these files (skip any that don't exist):
-   - `{PROJECT_ROOT}/README.md` (or README.rst, README.txt, README)
-   - The primary build file (first found: `go.mod`, `Cargo.toml`, `package.json`, `pyproject.toml`, `CMakeLists.txt`, `Makefile`)
-   - 2-3 key source files from the main source directory (pick files that reveal purpose, not utility)
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json
+```
 
-2. Dispatch a Haiku subagent (Task tool, `model: haiku`) with this prompt:
+This scans directories, files, build-system dependencies, and source keywords against signals defined in `config/flux-drive/domains/index.yaml`. No LLM call needed.
 
-   ```
-   Classify this project into one or more of these domains based on its actual purpose.
-   Return ONLY a JSON object, no other text.
+Parse the JSON output (`{"domains": [...], "source": "deterministic"}`). The script automatically writes the cache to `{PROJECT_ROOT}/.claude/flux-drive.yaml` with structural hash for staleness detection.
 
-   Available domains:
-   - game-simulation (game engines, simulations, ECS, storytelling)
-   - ml-pipeline (ML training, inference, experiment tracking)
-   - web-api (REST/GraphQL/gRPC services, web backends)
-   - cli-tool (command-line tools, terminal utilities)
-   - mobile-app (iOS/Android/cross-platform mobile apps)
-   - embedded-systems (firmware, RTOS, hardware drivers)
-   - library-sdk (reusable libraries, SDKs, packages)
-   - data-pipeline (ETL, data warehousing, stream processing)
-   - claude-code-plugin (Claude Code plugins, skills, hooks)
-   - tui-app (terminal user interfaces, ncurses/bubbletea apps)
-   - desktop-tauri (desktop apps via Tauri/Electron/Wails)
+**If detection returns no domains** (exit code 1 or empty list): proceed with core agents only (no domain-specific agents). Log: `"Domain detection: no domains matched, proceeding with core agents only."`
 
-   Project files:
-   <include file contents here>
-
-   Respond with:
-   {"domains": [{"name": "<domain>", "confidence": <0.0-1.0>, "reasoning": "<1 sentence>"}]}
-
-   Rules:
-   - Only include domains with confidence >= 0.3
-   - A project can match multiple domains (e.g., a game server is both game-simulation and web-api)
-   - Set the highest-confidence domain as primary
-   - If no domain matches above 0.3, return {"domains": []}
-   ```
-
-3. Parse the JSON response. Compute content hash:
-   ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/content-hash.py {PROJECT_ROOT}
-   ```
-   Write cache to `{PROJECT_ROOT}/.claude/flux-drive.yaml`:
-   ```yaml
-   cache_version: 2
-   source: llm
-   detected_at: '2026-02-22T12:00:00+00:00'
-   content_hash: '<output from content-hash.py>'
-   domains:
-     - name: game-simulation
-       confidence: 0.85
-       reasoning: "Godot project with ECS architecture and storytelling system"
-       primary: true
-     - name: cli-tool
-       confidence: 0.4
-       reasoning: "Has CLI entry point for development tools"
-   ```
-
-**If Haiku call fails** (timeout, API error, or unparseable response): proceed with core agents only (no domain-specific agents). Log: `"Domain detection: LLM unavailable, proceeding with core agents only."`
+**If detection fails** (exit code 2): proceed with core agents only. Log: `"Domain detection: script error, proceeding with core agents only."`
 
 **Performance budget:** Detection should complete in <5 seconds. Cache check is <10ms.
 

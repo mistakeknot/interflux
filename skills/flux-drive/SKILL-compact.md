@@ -27,9 +27,9 @@ Clean OUTPUT_DIR of stale `.md` files before starting.
 
 **Cache check:** `{PROJECT_ROOT}/.claude/flux-drive.yaml` — if exists with `domains:` and `content_hash:` matches current files, use cached. If `override: true`, never re-detect.
 
-**Detection:** Launch Haiku subagent (Task tool, `model: haiku`) with README + build file + 2-3 key source files. Prompt asks for `{"domains": [{"name", "confidence", "reasoning"}]}` from 11 known domains. Compute hash: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/content-hash.py {PROJECT_ROOT}`. Cache result with `source: llm` and `content_hash`.
+**Detection:** Run deterministic script: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`. Scans dirs, files, build deps, source keywords against `config/flux-drive/domains/index.yaml`. Auto-caches with structural hash.
 
-**If Haiku fails:** Proceed with core agents only (no domain-specific agents).
+**If detection returns no domains or fails:** Proceed with core agents only (no domain-specific agents).
 
 **Staleness:** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/content-hash.py {PROJECT_ROOT} --check <cached_hash>`. Exit 0 → fresh. Exit 1 → stale (re-detect).
 
