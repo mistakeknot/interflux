@@ -11,11 +11,14 @@ The scoring algorithm selects and prioritizes review agents based on relevance t
 ### Score Formula
 
 ```
-final_score = base_score + domain_boost + project_bonus + domain_agent_bonus
-max_possible = 3 + 2 + 1 + 1 = 7
+raw_score = base_score + domain_boost + project_bonus + domain_agent_bonus
+final_score = raw_score * trust_multiplier
+max_possible = (3 + 2 + 1 + 1) * 1.0 = 7
 ```
 
-Each component is computed independently and summed. Agents are ranked by `final_score` descending, then selected up to the slot ceiling.
+Each additive component is computed independently and summed into `raw_score`. The `trust_multiplier` (0.05-1.0) scales the raw score based on agent reputation from interspect feedback. Agents are ranked by `final_score` descending, then selected up to the slot ceiling.
+
+**Trust multiplier:** Loaded from interspect `trust_feedback` table via `_trust_scores_batch(project)`. Defaults to 1.0 when no feedback data exists or interspect is unavailable. See [Trust Multiplier](#trust-multiplier-005-10) below.
 
 **Conformance note:** Core implementations require `base_score` (0-3) and `project_bonus` (0-1), yielding a 0-4 range. The `domain_boost` and `domain_agent_bonus` components require domain detection (see [extensions/domain-detection.md](../extensions/domain-detection.md)) and are part of the Core + Domains conformance level. Implementations without domain detection set both to 0.
 
@@ -106,6 +109,35 @@ Use routing patterns from domain profiles:
 If an agent has no matching patterns for the diff, it is filtered out (base_score = 0 before scoring begins).
 
 Domain-general agents (architecture, quality, performance) always pass diff filtering.
+
+### Trust Multiplier (0.05-1.0)
+
+The trust multiplier scales the raw additive score based on historical agent performance. It is loaded from interspect's `trust_feedback` table, which records whether each agent's findings were accepted or discarded during `/resolve`.
+
+| Condition | Multiplier |
+|-----------|------------|
+| No feedback data (new agent or new project) | 1.0 (neutral) |
+| High precision (>80% accepted, 10+ reviews) | 0.85-1.0 |
+| Medium precision (50-80% accepted) | 0.50-0.85 |
+| Low precision (<50% accepted) | 0.05-0.50 |
+
+**Loading trust scores:**
+
+```bash
+INTERSPECT_PLUGIN=$(find ~/.claude/plugins/cache -path "*/interspect/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
+if [[ -n "$INTERSPECT_PLUGIN" ]]; then
+    source "$INTERSPECT_PLUGIN"
+    TRUST_SCORES=$(_trust_scores_batch "$PROJECT")
+fi
+```
+
+For each agent, look up its trust score from `TRUST_SCORES`. If not found, default to 1.0.
+
+**Debug output** (when `FLUX_DEBUG=1`): Display trust scores for all candidate agents before ranking.
+
+**Conformance note:** Trust multiplier is optional. Implementations without interspect set all multipliers to 1.0, yielding identical behavior to the base scoring algorithm.
+
+> **Why this works:** Multiplicative (not additive) integration ensures trust cannot override base relevance. An agent with base_score=0 (irrelevant) stays at 0 regardless of trust. An agent with base_score=3 (core) and trust=0.15 (low precision) gets 0.45, which typically falls below the slot ceiling cutoff. The 0.05 floor prevents permanent exclusion, allowing agents to recover reputation over time.
 
 ### Dynamic Slot Ceiling
 

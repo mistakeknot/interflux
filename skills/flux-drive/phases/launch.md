@@ -134,11 +134,33 @@ AGENT_NAME = <the agent's short name, e.g., fd-safety>
 
 The orchestrator performs string substitution when building the Task prompt — replacing `{FINDINGS_HELPER}` with the absolute path and `{AGENT_NAME}` with the agent's short name. Same pattern as `{OUTPUT_DIR}` and `{REVIEW_FILE}`.
 
+### Step 2.1e: Apply trust multiplier (interspect feedback)
+
+Before ranking agents for dispatch, load trust scores and apply as a multiplier on each agent's triage score. See scoring spec: [Trust Multiplier](../../docs/spec/core/scoring.md#trust-multiplier-005-10).
+
+```bash
+INTERSPECT_PLUGIN=$(find ~/.claude/plugins/cache -path "*/interspect/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
+if [[ -n "$INTERSPECT_PLUGIN" ]]; then
+    source "$INTERSPECT_PLUGIN"
+    PROJECT=$(_interspect_project_name)
+    TRUST_SCORES=$(_trust_scores_batch "$PROJECT")
+fi
+```
+
+For each candidate agent, look up its trust score from `TRUST_SCORES` (tab-separated `agent\tscore` lines). Multiply the agent's raw triage score by its trust score. If no trust data: use 1.0 (no change).
+
+**Debug output** (when `FLUX_DEBUG=1`):
+```
+Trust: fd-safety=0.85, fd-correctness=0.92, fd-game-design=0.15, fd-quality=0.78
+```
+
+**Fallback:** If lib-trust.sh not found or `_trust_scores_batch` fails, skip entirely (all multipliers = 1.0). Trust is progressive enhancement, never a gate.
+
 ### Step 2.2: Stage 1 — Launch top agents
 
 **Condition**: Use this step when `DISPATCH_MODE = task` (default).
 
-Launch Stage 1 agents (top 2-3 by triage score) as parallel Task calls with `run_in_background: true`.
+Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as parallel Task calls with `run_in_background: true`.
 
 Wait for Stage 1 agents to complete (use the polling from Step 2.3).
 
