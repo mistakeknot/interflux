@@ -162,11 +162,43 @@ Choice:
 
 **Justification requirement:** When recommending expansion, the orchestrator MUST cite specific findings and adjacency relationships that drove the recommendation. "Launch fd-correctness (score: 5)" is insufficient. "Launch fd-correctness — P0 SQL injection in safety domain + P1 architecture finding in adjacent domains" is correct.
 
+### AgentDropout — Redundancy Filter
+
+**Trigger:** After Stage 1 completes (and optional research dispatch), before the expansion decision.
+
+AgentDropout dynamically eliminates Stage 2 / expansion pool agents whose domains are already well-covered by Stage 1 output. Inspired by the AgentDropout paper (arxiv:2503.18891), which demonstrated 21.6% prompt token reduction and 18.4% completion token reduction in multi-agent systems by identifying and removing redundant agents.
+
+**Redundancy Score (0.0 – 1.0):**
+
+For each Stage 2 / expansion pool candidate:
+
+| Signal | Score | Condition |
+|--------|-------|-----------|
+| Domain convergence | +0.4 | Agent's primary domain already produced P0/P1 findings in Stage 1 |
+| Adjacency saturation | +0.3 | All of this agent's neighbors (per adjacency map) ran in Stage 1 |
+| Finding density | +0.2 | ≥3 P0/P1 findings exist from agents adjacent to this candidate |
+| Low trust | +0.1 | Agent's trust multiplier < 0.5 (poor historical precision) |
+
+**Dropout threshold:** Default 0.7 (configurable via `budget.yaml → dropout.threshold`). Agents at or above the threshold are dropped from the candidate pool.
+
+**Exempt agents:** Agents in `budget.yaml → exempt_agents` (fd-safety, fd-correctness) are never dropped regardless of redundancy score. This prevents the invisible failure mode where a safety-critical agent is silently removed.
+
+**Logging:** All dropout decisions are logged prominently — dropped agents, retained agents, exempt agents, scores, and estimated token savings. Users always see what was removed and why.
+
+**Override:** If the user selects "Launch all Stage 2" in the expansion decision, dropped agents are restored. Dropout is advisory, never a hard gate.
+
+**Skip conditions:**
+- Only 1 Stage 2 candidate (nothing to prune)
+- Stage 1 produced zero findings (no convergence signal)
+- `budget.yaml → dropout.enabled` is `false`
+
+> **Why this works:** AgentDropout operates at a different granularity than pre-filtering (content-based) and staging (score-based). It uses *actual Stage 1 output* to assess redundancy — "did we already find issues in this domain?" not "might this domain be relevant?" The 0.7 threshold requires at least domain convergence (0.4) plus one additional signal, preventing over-aggressive pruning. The exempt list ensures safety-critical coverage is never compromised. Combined with the existing two-stage architecture, this creates three layers of agent count reduction: pre-filter → stage selection → dropout.
+
 ### Stage 2 — Conditional Launch
 
 **Trigger:** User approves expansion (full or subset).
 
-**Agent Selection:** User-approved subset of expansion pool agents.
+**Agent Selection:** User-approved subset of expansion pool agents, minus any agents dropped by AgentDropout (unless user explicitly overrides with "Launch all").
 
 **Dispatch Behavior:**
 - All approved Stage 2 agents dispatch in parallel
@@ -229,12 +261,18 @@ Choice:
   - Completion signal format
   - Polling intervals and timeouts
 
+- **AgentDropout:** `skills/flux-drive/phases/launch.md` (Step 2.2a.5)
+  - Redundancy scoring algorithm
+  - Dropout threshold and exempt agents
+  - Configuration: `config/flux-drive/budget.yaml` → `dropout` section
+
 **Implementation Notes:**
 
 - Expansion scoring is computed in the orchestrator's context (single turn), not delegated to agents
 - Domain adjacency map is hardcoded in `launch.md` (not dynamically learned)
 - Research dispatch is optional progressive enhancement — if research agents are not available (model tier limit, quota exhaustion), expansion proceeds without research context
 - Stage 2 agents receive research results via prompt injection (appended to task description), not via separate context files
+- AgentDropout redundancy scoring reuses the same adjacency map and trust scores already loaded for expansion scoring — no additional data loading required
 
 ## Conformance
 
@@ -253,6 +291,7 @@ Implementations of the flux-drive staging protocol:
 - Support research dispatch between stages for context enrichment
 - Use threshold values ≥3 (recommend), 2 (offer), ≤1 (recommend stop)
 - Poll for completion signals every 30 seconds with 5m/10m timeouts
+- Implement AgentDropout redundancy filter between Stage 1 completion and expansion decision
 
 **MAY:**
 - Use different threshold values (calibrate for specific domains or cost models)
@@ -260,8 +299,10 @@ Implementations of the flux-drive staging protocol:
 - Use different adjacency maps (domain-specific or learned from review history)
 - Support weighted scoring (e.g., P0 in own domain worth more than P0 in adjacent domain)
 - Auto-expand in specific cases IF documented in orchestrator's initial prompt (e.g., "always launch all agents in high-risk domains")
+- Use different AgentDropout thresholds (calibrate for project risk tolerance)
 
 **MUST NOT:**
 - Auto-expand without user approval (violates cost control principle)
 - Skip Stage 1 and launch all agents immediately (defeats staging purpose)
 - Block expansion based on Stage 1 findings alone (user always has override)
+- Drop exempt agents (safety-critical) via AgentDropout or budget cuts

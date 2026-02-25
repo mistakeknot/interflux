@@ -207,7 +207,20 @@ Extend the findings.json schema with a `cost_report` field:
         "estimated": 45000,
         "reason": "budget"
       }
-    ]
+    ],
+    "dropout": {
+      "evaluated": 4,
+      "dropped": ["fd-quality"],
+      "retained": ["fd-performance", "fd-game-design"],
+      "exempt": ["fd-safety"],
+      "estimated_savings": 40000,
+      "scores": {
+        "fd-quality": 0.7,
+        "fd-performance": 0.4,
+        "fd-game-design": 0.1,
+        "fd-safety": 0.8
+      }
+    }
   }
 }
 ```
@@ -257,6 +270,7 @@ Present the synthesis report using this exact structure. Fill in each section fr
 
 Budget: {budget_type} ({BUDGET_TOTAL/1000}K). Used: {actual_total/1000}K ({pct}%).
 [If agents deferred:] Deferred: {N} agents ({deferred_total/1000}K est.) — override available at triage.
+[If dropout active:] AgentDropout: {dropped_count} agents pruned, saving ~{dropout_savings/1000}K tokens.
 [If actual_total > BUDGET_TOTAL:] Warning: Over budget by {(actual_total - BUDGET_TOTAL)/1000}K.
 [If interstat data unavailable:] *Actual tokens pending backfill — showing estimates only.*
 

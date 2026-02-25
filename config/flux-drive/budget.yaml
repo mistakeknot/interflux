@@ -36,3 +36,11 @@ enforcement: soft          # soft = warn + offer override | hard = block
 exempt_agents:
   - fd-safety
   - fd-correctness
+
+# AgentDropout — dynamic redundancy elimination (Step 2.2a.5)
+# Prunes Stage 2/expansion pool agents whose domains are already well-covered by Stage 1
+dropout:
+  enabled: true
+  threshold: 0.7            # redundancy score (0.0-1.0) at which an agent is dropped
+                            # Lower = more aggressive pruning, higher = more conservative
+                            # 0.7 requires at least domain convergence (0.4) + one additional signal

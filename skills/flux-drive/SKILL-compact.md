@@ -145,7 +145,7 @@ for agent in stage_2_agents_sorted_by_score:
 
 **Stage interaction:** If Stage 1 alone exceeds budget, all Stage 1 agents still launch (stage boundaries override budget). Stage 2 agents are deferred by default when budget is tight. The expansion decision (Step 2.2b) will still offer the user the option to override.
 
-**Exempt agents:** `exempt_agents` in budget.yaml (fd-safety, fd-correctness) are never deferred by budget cuts or future AgentDropout. They always run regardless of budget constraints.
+**Exempt agents:** `exempt_agents` in budget.yaml (fd-safety, fd-correctness) are never deferred by budget cuts or AgentDropout. They always run regardless of budget constraints or redundancy signals.
 
 **No-data graceful degradation:** If interstat DB doesn't exist or returns no data, use defaults for ALL agents. Log: "Using default cost estimates (no interstat data)." Do NOT skip budget enforcement — defaults provide reasonable bounds.
 
@@ -199,6 +199,7 @@ Read `phases/launch.md` for the full launch protocol:
 - Step 2.1b: For slicing-eligible diffs, apply diff slicing per `phases/slicing.md`
 - Step 2.1c: For documents >200 lines, apply document slicing (section_map per agent)
 - Step 2.2: Monitor completion, expand Stage 2 if severity warrants
+- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates using Stage 1 convergence signals (exempt agents: fd-safety, fd-correctness). See `budget.yaml → dropout` config.
 - All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-drive:complete -->` sentinel
 
 ## Phase 3: Synthesize

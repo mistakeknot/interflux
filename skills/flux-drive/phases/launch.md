@@ -196,9 +196,106 @@ After Stage 1 agents complete but BEFORE the expansion decision (Step 2.2b), che
 - User selected "Stop here" (no Stage 2 planned)
 - No Stage 1 findings reference external patterns or frameworks
 
+### Step 2.2a.5: AgentDropout — redundancy filter
+
+After Stage 1 completes (and optional research dispatch), apply a lightweight redundancy check to the Stage 2 and expansion pool candidates. This step prunes agents whose domains are already well-covered by Stage 1 findings, saving tokens without losing coverage.
+
+**When to run:** Always run this step before the expansion decision (Step 2.2b). It modifies the candidate pool that expansion scoring operates on.
+
+**Exempt agents:** Never drop agents listed in `budget.yaml → exempt_agents` (currently `fd-safety`, `fd-correctness`). These always survive dropout regardless of redundancy signals.
+
+#### Redundancy scoring algorithm
+
+For each Stage 2 / expansion pool agent, compute a redundancy score (0.0 – 1.0) based on Stage 1 output:
+
+```
+redundancy_score = 0.0
+
+# 1. Domain convergence — Stage 1 already covered this agent's domain
+stage1_domains = set of domains that produced P0/P1 findings in Stage 1
+if agent's primary domain ∈ stage1_domains:
+    redundancy_score += 0.4
+
+# 2. Adjacency saturation — all of this agent's neighbors ran in Stage 1
+agent_neighbors = adjacency_map[agent]
+neighbors_in_stage1 = [n for n in agent_neighbors if n ran in Stage 1]
+if len(neighbors_in_stage1) == len(agent_neighbors):
+    redundancy_score += 0.3   # all neighbors already covered
+
+# 3. Finding density — Stage 1 produced many findings in adjacent domains
+adjacent_finding_count = count of P0+P1 findings from agents adjacent to this agent
+if adjacent_finding_count >= 3:
+    redundancy_score += 0.2   # adjacent domains are well-explored
+
+# 4. Low trust signal — agent has poor historical precision
+trust_score = trust_multiplier for this agent (from Step 2.1e, default 1.0)
+if trust_score < 0.5:
+    redundancy_score += 0.1   # low-trust agents are weaker candidates
+```
+
+#### Dropout decision
+
+```
+DROPOUT_THRESHOLD = 0.7  (from budget.yaml → dropout.threshold, default 0.7)
+
+for each candidate in Stage 2 + expansion pool:
+    if candidate in exempt_agents:
+        continue  # never dropped
+    if redundancy_score >= DROPOUT_THRESHOLD:
+        mark candidate as DROPPED
+```
+
+#### Logging (always)
+
+After computing dropout decisions, log the results prominently so users can see what was removed and why:
+
+```
+AgentDropout: Evaluated N candidates
+  ✓ fd-performance (redundancy: 0.4) — retained
+  ✗ fd-quality (redundancy: 0.7) — DROPPED (domain converged + neighbors saturated)
+  🛡 fd-safety (redundancy: 0.8) — EXEMPT (safety-critical)
+  ✓ fd-game-design (redundancy: 0.1) — retained
+Dropped: 1 agent. Estimated savings: ~40K tokens.
+```
+
+**Estimated savings** = sum of `agent_defaults[category]` from `budget.yaml` for each dropped agent (adjusted by `slicing_multiplier` if slicing is active).
+
+#### Token savings tracking
+
+Record dropout decisions in the cost report data for Step 3.4b:
+
+```json
+{
+  "dropout": {
+    "evaluated": 4,
+    "dropped": ["fd-quality"],
+    "retained": ["fd-performance", "fd-game-design"],
+    "exempt": ["fd-safety"],
+    "estimated_savings": 40000,
+    "scores": {
+      "fd-quality": 0.7,
+      "fd-performance": 0.4,
+      "fd-game-design": 0.1,
+      "fd-safety": 0.8
+    }
+  }
+}
+```
+
+#### Override
+
+If the user selects "Launch all Stage 2 anyway" in Step 2.2b, dropped agents are restored — dropout is advisory, never a hard gate. Log: `"AgentDropout override: restoring N dropped agents per user request."`
+
+#### Skip conditions
+
+Skip this step entirely when:
+- Only 1 Stage 2 candidate exists (nothing to drop)
+- Stage 1 produced zero findings (no convergence signal — expansion scoring handles this case)
+- `budget.yaml → dropout.enabled` is `false`
+
 ### Step 2.2b: Domain-aware expansion decision
 
-After Stage 1 completes, read the Findings Index from each Stage 1 output file. Then use the **expansion scoring algorithm** to recommend which Stage 2 agents (and expansion pool agents) to launch.
+After Stage 1 completes (and AgentDropout filtering), read the Findings Index from each Stage 1 output file. Then use the **expansion scoring algorithm** to recommend which Stage 2 agents (and expansion pool agents not dropped by AgentDropout) to launch.
 
 #### Domain adjacency map
 
