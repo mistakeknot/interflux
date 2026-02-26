@@ -1,7 +1,7 @@
 {
   "name": "interflux",
   "version": "0.2.29",
-  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 4 commands, 1 skill (unified flux-drive with review/research modes), 2 MCP servers. Companion plugin for Clavain.",
+  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 4 commands, 1 skill (unified flux-drive with review/research modes), 1 MCP server. Companion plugin for Clavain.",
   "author": {
     "name": "mistakeknot"
   },
@@ -47,13 +47,6 @@
     "./agents/research/best-practices-researcher.md"
   ],
   "mcpServers": {
-    "qmd": {
-      "type": "stdio",
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/launch-qmd.sh",
-      "args": [
-        "mcp"
-      ]
-    },
     "exa": {
       "type": "stdio",
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/launch-exa.sh",

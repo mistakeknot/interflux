@@ -564,5 +564,5 @@ If Oracle participated, read `phases/cross-ai.md` now.
 **See also:**
 - `interpeer/references/oracle-reference.md` — Oracle CLI reference
 - `interpeer/references/oracle-troubleshooting.md` — Oracle troubleshooting
-- qmd MCP server — semantic search for project documentation (used in Step 1.0)
+- qmd MCP server (via interknow plugin) — semantic search for project documentation and knowledge entries (used in Steps 1.0 and 2.1)
 - When interserve mode is active, flux-drive dispatches review agents through Codex CLI instead of Claude subagents. See `clavain:interserve` for Codex dispatch details.

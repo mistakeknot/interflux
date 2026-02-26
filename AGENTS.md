@@ -78,9 +78,7 @@ interflux/
 │       │   ├── mobile-app.md
 │       │   ├── embedded-systems.md
 │       │   └── ml-pipeline.md
-│       └── knowledge/            # Durable review patterns (knowledge lifecycle)
-│           ├── README.md
-│           └── *.md              # Individual knowledge entries
+│       └── knowledge/            # Legacy — moved to interknow plugin
 ├── hooks/
 │   ├── hooks.json                 # Hook declarations (SessionStart)
 │   ├── interbase-stub.sh          # SDK stub — sources live or falls back to no-ops
@@ -98,7 +96,7 @@ interflux/
 │       │   └── completion-signal.md # Agent completion protocol
 │       └── extensions/           # Optional enhancements
 │           ├── domain-detection.md # Weighted signal scoring
-│           └── knowledge-lifecycle.md # Review memory with decay
+│           └── knowledge-lifecycle.md # Review memory with decay (see interknow)
 ├── scripts/
 │   ├── content-hash.py            # Deterministic content hash for cache staleness
 │   ├── generate-agents.py         # Deterministic agent file generation from domain profiles
@@ -147,10 +145,11 @@ LLM-based classification — a Haiku subagent reads README + build files + key s
 
 ### Knowledge Lifecycle
 
-Durable patterns from past reviews, stored in `config/flux-drive/knowledge/`:
+Durable patterns from past reviews, managed by the **interknow** plugin:
 - **Provenance tracking** — `independent` (re-discovered without prompting) vs `primed` (re-confirmed while in context)
 - **Temporal decay** — entries not independently confirmed in 10 reviews are archived
-- **Injection** — top 5 relevant entries injected into agent prompts via semantic search (qmd)
+- **Injection** — top 5 relevant entries injected into agent prompts via semantic search (qmd, served by interknow)
+- **Compounding** — new patterns extracted from review findings and saved via interknow
 
 ## Intermediate Finding Sharing
 
@@ -172,8 +171,9 @@ During parallel flux-drive reviews, agents can share high-severity findings via 
 
 | Server | Type | Purpose |
 |--------|------|---------|
-| **qmd** | stdio | Semantic search for project documentation. Used for knowledge injection and doc retrieval. |
 | **exa** | stdio | External web research via Exa API. Progressive enhancement — requires `EXA_API_KEY`. Falls back to Context7 + WebSearch if unavailable. |
+
+**Note:** qmd MCP server (semantic search for knowledge) has moved to the **interknow** plugin.
 
 ## Protocol Specification
 
@@ -238,7 +238,7 @@ ls skills/*/SKILL.md | wc -l          # Should be 2
 grep -l '## Research Directives' config/flux-drive/domains/*.md | wc -l  # Should be 11
 
 # Manifest
-python3 -c "import json; d=json.load(open('.claude-plugin/plugin.json')); print(list(d['mcpServers'].keys()))"  # ['qmd', 'exa']
+python3 -c "import json; d=json.load(open('.claude-plugin/plugin.json')); print(list(d['mcpServers'].keys()))"  # ['exa']
 
 # Namespace check — no stale clavain: references
 uv run pytest tests/structural/test_namespace.py -v

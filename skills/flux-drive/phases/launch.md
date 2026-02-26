@@ -18,17 +18,17 @@ Use a timestamped `OUTPUT_DIR` only when you intentionally need to preserve prev
 
 ### Step 2.1: Retrieve knowledge context
 
-Before launching agents, retrieve relevant knowledge entries for each selected agent. This step is OPTIONAL — if qmd is unavailable, skip and proceed to Step 2.2.
+Before launching agents, retrieve relevant knowledge entries for each selected agent. This step is OPTIONAL — if qmd (via interknow plugin) is unavailable, skip and proceed to Step 2.2.
 
 **For each selected agent**, construct a retrieval query:
 1. Combine the agent's domain keywords with the document summary from Phase 1
-2. Use the qmd MCP tool to search:
+2. Use the qmd MCP tool (provided by interknow) to search:
    ```
-   Tool: mcp__plugin_interflux_qmd__vsearch
+   Tool: mcp__plugin_interknow_qmd__vsearch
    Parameters:
-     collection: "interflux"
+     collection: "interknow"
      query: "{agent domain} {document summary keywords}"
-     path: "config/flux-drive/knowledge/"
+     path: "config/knowledge/"
      limit: 5
    ```
 3. If qmd returns results, format them as a knowledge context block
