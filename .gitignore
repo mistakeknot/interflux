@@ -12,3 +12,6 @@ __pycache__/
 
 # Flux-drive review outputs (may contain security findings — T4.1)
 docs/research/flux-drive/
+
+# Local workspace artifacts
+.claude/
