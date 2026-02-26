@@ -1,8 +1,10 @@
 # Phase 2: Launch (Task Dispatch)
 
+This phase respects the `MODE` parameter set in Phase 1. Steps marked **[review only]** are skipped in research mode. Steps marked **[research only]** are skipped in review mode. Unmarked steps apply to both modes.
+
 ### Step 2.0: Prepare output directory
 
-Create the research output directory before launching agents. Resolve to an absolute path:
+Create the output directory before launching agents. Resolve to an absolute path:
 ```bash
 mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research/flux-drive/my-doc-name
 ```
@@ -48,9 +50,81 @@ Before launching agents, retrieve relevant knowledge entries for each selected a
 
 **Pipelining**: Start qmd queries before agent dispatch. While queries run, prepare agent prompts. Inject results when both are ready.
 
-### Step 2.1a: Load domain-specific review criteria
+### Step 2.1-research: Build research prompts and dispatch [research only]
 
-**Skip this step if Step 1.0.1 detected no domains** (document profile shows "none detected").
+**Skip this entire section in review mode.** In research mode, after Step 2.1 (knowledge context), build per-agent research prompts and dispatch all agents in a single stage.
+
+For each selected research agent, construct a prompt:
+
+```
+## Research Task
+
+Question: {RESEARCH_QUESTION}
+
+Query profile:
+- Type: {type}
+- Keywords: {keywords}
+- Scope: {scope}
+- Depth: {estimated_depth}
+
+## Project Context
+
+Project root: {PROJECT_ROOT}
+
+[If domains detected AND Research Directives exist for this agent:]
+
+## Domain Research Directives
+
+This project is classified as: {domain1} ({confidence1}), {domain2} ({confidence2}), ...
+
+Search directives for your focus area in these project types:
+
+### {domain1-name}
+{bullet points from domain profile's ### {agent-name} section under ## Research Directives}
+
+### {domain2-name}
+{bullet points from domain profile's ### {agent-name} section under ## Research Directives}
+
+Use these directives to guide your search queries and prioritize relevant sources.
+
+[End domain section]
+
+## Output
+
+Write your findings to `{OUTPUT_DIR}/{agent-name}.md.partial`. Rename to `.md` when done.
+Add `<!-- flux-research:complete -->` as the last line before renaming.
+
+Structure your output as:
+
+### Sources
+- [numbered list of sources with type: internal/external, authority level]
+
+### Findings
+[Your research findings, organized by relevance]
+
+### Confidence
+- High confidence: [findings well-supported by multiple sources]
+- Medium confidence: [findings from single source or indirect evidence]
+- Low confidence: [inferences, gaps in available information]
+
+### Gaps
+[What you couldn't find or areas needing deeper investigation]
+```
+
+Dispatch all selected agents via Task tool with `run_in_background: true`. Then skip to **Step 2.3** (monitor and verify completion).
+
+**Timeouts by depth** (research mode):
+| Depth | Per-agent timeout |
+|-------|------------------|
+| quick | 30 seconds |
+| standard | 2 minutes |
+| deep | 5 minutes |
+
+---
+
+### Step 2.1a: Load domain-specific review criteria [review only]
+
+**Skip this step if Step 1.0.1 detected no domains** (document profile shows "none detected"). **Skip this step in research mode** (research agents receive domain directives via the research prompt template above).
 
 For each detected domain (from the Document Profile's `Project domains` field), load the corresponding domain profile and extract per-agent injection criteria:
 
@@ -69,7 +143,7 @@ For each detected domain (from the Document Profile's `Project domains` field), 
 
 **Performance**: Domain profile files are small (~90-100 lines each). Reading 1-3 files adds negligible overhead. This step should take <1 second.
 
-### Step 2.1d: Load active overlays (interspect Type 1)
+### Step 2.1d: Load active overlays (interspect Type 1) [review only]
 
 For each selected agent, load pre-computed overlay content using the shared library functions from `lib-interspect.sh`. **Do NOT inline YAML parsing** — use the canonical functions to avoid divergence (finding A2).
 
@@ -84,7 +158,7 @@ For each selected agent, load pre-computed overlay content using the shared libr
 
 **Performance:** Overlay files are tiny (~100 words each, max 500 tokens total per agent). Reading 1-5 files per agent adds negligible overhead.
 
-### Step 2.1c: Write document to temp file(s)
+### Step 2.1c: Write document to temp file(s) [review only]
 
 Write the document (or per-agent slices) to temp files so agents can Read them instead of receiving inline content. This eliminates document duplication across agent prompts.
 
@@ -134,15 +208,17 @@ AGENT_NAME = <the agent's short name, e.g., fd-safety>
 
 The orchestrator performs string substitution when building the Task prompt — replacing `{FINDINGS_HELPER}` with the absolute path and `{AGENT_NAME}` with the agent's short name. Same pattern as `{OUTPUT_DIR}` and `{REVIEW_FILE}`.
 
-### Step 2.1e: Apply trust multiplier (interspect feedback)
+### Step 2.1e: Apply trust multiplier (intertrust feedback) [review only]
 
 Before ranking agents for dispatch, load trust scores and apply as a multiplier on each agent's triage score. See scoring spec: [Trust Multiplier](../../docs/spec/core/scoring.md#trust-multiplier-005-10).
 
 ```bash
-INTERSPECT_PLUGIN=$(find ~/.claude/plugins/cache -path "*/interspect/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
-if [[ -n "$INTERSPECT_PLUGIN" ]]; then
-    source "$INTERSPECT_PLUGIN"
-    PROJECT=$(_interspect_project_name)
+# Try intertrust first (extracted plugin), fall back to legacy interspect location
+TRUST_PLUGIN=$(find ~/.claude/plugins/cache -path "*/intertrust/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
+[[ -z "$TRUST_PLUGIN" ]] && TRUST_PLUGIN=$(find ~/.claude/plugins/cache -path "*/interspect/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
+if [[ -n "$TRUST_PLUGIN" ]]; then
+    source "$TRUST_PLUGIN"
+    PROJECT=$(_trust_project_name)
     TRUST_SCORES=$(_trust_scores_batch "$PROJECT")
 fi
 ```
@@ -156,7 +232,9 @@ Trust: fd-safety=0.85, fd-correctness=0.92, fd-game-design=0.15, fd-quality=0.78
 
 **Fallback:** If lib-trust.sh not found or `_trust_scores_batch` fails, skip entirely (all multipliers = 1.0). Trust is progressive enhancement, never a gate.
 
-### Step 2.2: Stage 1 — Launch top agents
+### Step 2.2: Stage 1 — Launch top agents [review only]
+
+**Skip this step in research mode** — research mode dispatches all agents in Step 2.1-research above.
 
 **Condition**: Use this step when `DISPATCH_MODE = task` (default).
 
@@ -164,7 +242,9 @@ Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as paral
 
 Wait for Stage 1 agents to complete (use the polling from Step 2.3).
 
-### Step 2.2a: Research context dispatch (optional, between stages)
+### Step 2.2a: Research context dispatch (optional, between stages) [review only]
+
+**Skip this step in research mode** — research agents ARE the context providers; dispatching them to research themselves is circular.
 
 After Stage 1 agents complete but BEFORE the expansion decision (Step 2.2b), check if any Stage 1 findings would benefit from research context.
 
@@ -196,7 +276,9 @@ After Stage 1 agents complete but BEFORE the expansion decision (Step 2.2b), che
 - User selected "Stop here" (no Stage 2 planned)
 - No Stage 1 findings reference external patterns or frameworks
 
-### Step 2.2a.5: AgentDropout — redundancy filter
+### Step 2.2a.5: AgentDropout — redundancy filter [review only]
+
+**Skip this step in research mode** — research mode uses single-stage dispatch with no candidate pool to prune.
 
 After Stage 1 completes (and optional research dispatch), apply a lightweight redundancy check to the Stage 2 and expansion pool candidates. This step prunes agents whose domains are already well-covered by Stage 1 findings, saving tokens without losing coverage.
 
@@ -293,7 +375,9 @@ Skip this step entirely when:
 - Stage 1 produced zero findings (no convergence signal — expansion scoring handles this case)
 - `budget.yaml → dropout.enabled` is `false`
 
-### Step 2.2b: Domain-aware expansion decision
+### Step 2.2b: Domain-aware expansion decision [review only]
+
+**Skip this step in research mode** — all research agents dispatch in a single stage.
 
 After Stage 1 completes (and AgentDropout filtering), read the Findings Index from each Stage 1 output file. Then use the **expansion scoring algorithm** to recommend which Stage 2 agents (and expansion pool agents not dropped by AgentDropout) to launch.
 
@@ -367,7 +451,9 @@ AskUserQuestion:
 
 If the user chooses expansion, launch only the recommended agents (not all Stage 2) unless they explicitly select "Launch all."
 
-### Step 2.2c: Stage 2 — Remaining agents (if expanded)
+### Step 2.2c: Stage 2 — Remaining agents (if expanded) [review only]
+
+**Skip this step in research mode.**
 
 Launch Stage 2 agents with `run_in_background: true`. Wait for completion using the same polling mechanism.
 
@@ -393,9 +479,9 @@ Launch Stage 2 agents with `run_in_background: true`. Wait for completion using 
 
 **Prompt trimming**: See `phases/shared-contracts.md` for trimming rules.
 
-### Step 2.1b: Prepare sliced content for agent prompts
+### Step 2.1b: Prepare sliced content for agent prompts [review only]
 
-**Skip this step if no slicing is active** (diff < 1000 lines, or document < 200 lines — all agents receive full content).
+**Skip this step in research mode** (research agents don't review documents). **Skip this step if no slicing is active** (diff < 1000 lines, or document < 200 lines — all agents receive full content).
 
 Read `phases/slicing.md` now. It contains the complete slicing algorithm for both diff and document inputs, including:
 - Routing patterns (which file/section patterns map to which agents)
@@ -565,7 +651,7 @@ If you encounter a pattern, library, or practice during review where external co
 - Maximum 1 research escalation per review (budget constraint)
 - Include the research result in your finding as "Context: [source] confirms/contradicts..."
 
-## Peer Findings Protocol
+## Peer Findings Protocol [review only — omit this section entirely in research mode]
 
 Other reviewer agents are analyzing this artifact in parallel. You can share and receive high-severity findings via a shared findings file.
 
@@ -613,7 +699,9 @@ After each stage launch, tell the user:
 
 ### Step 2.3: Monitor and verify agent completion
 
-This step implements the shared monitoring contract.
+This step applies to both review and research modes.
+
+**[research mode]**: Use the completion sentinel `<!-- flux-research:complete -->` instead of `<!-- flux-drive:complete -->`. Use depth-based timeouts (quick=30s, standard=2min, deep=5min) instead of the fixed 5-minute timeout.
 
 After dispatching a stage of agents, report the initial status and then poll for completion:
 

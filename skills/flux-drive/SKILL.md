@@ -1,19 +1,39 @@
 ---
 name: flux-drive
-description: Use when reviewing documents or codebases with multi-agent analysis — triages relevant agents from roster, launches only what matters in background mode
+description: Use when reviewing documents or codebases with multi-agent analysis, or researching topics with multi-agent research — triages relevant agents from roster, launches only what matters in background mode
 ---
 
-# Flux Drive — Intelligent Document Review
+# Flux Drive — Intelligent Multi-Agent Review & Research
 
 <!-- compact: SKILL-compact.md — if it exists in this directory, load it instead of following the multi-file instructions below. The compact version contains the same triage algorithm, scoring formula, and agent roster in a single file. For launch protocol and synthesis details, read phases/launch.md and phases/synthesize.md as directed by the compact file. -->
 
-You are executing the flux-drive skill. This skill reviews any document (plan, brainstorm, spec, ADR, README) or an entire repository by launching **only relevant** agents selected from a static roster. Follow each phase in order. Do NOT skip phases.
+You are executing the flux-drive skill. This skill operates in two modes:
+
+- **review** (default): Reviews any document (plan, brainstorm, spec, ADR, README) or an entire repository by launching **only relevant** review agents selected from a static roster.
+- **research**: Answers research questions by dispatching **only relevant** research agents, collecting findings in parallel, and synthesizing a unified answer with source attribution.
+
+Follow each phase in order. Do NOT skip phases.
 
 **File organization:** This skill is split across phase files for readability. Read `phases/shared-contracts.md` and `phases/slicing.md` first (defines output format, completion signals, and content routing), then read each phase file as you reach it.
 
+## Mode
+
+Determine the mode from the user's invocation:
+
+- If invoked via `/interflux:flux-drive` → `MODE = review`
+- If invoked via `/interflux:flux-research` → `MODE = research`
+- If the user explicitly passes `--mode=research` or `--mode=review` → use that
+- Default: `MODE = review`
+
+The mode gates behavior throughout all phases. Look for **[review only]** and **[research only]** markers below.
+
 ## Input
 
-The user provides a file or directory path as an argument. If no path is provided, ask for one using AskUserQuestion.
+**[review mode]**: The user provides a file or directory path as an argument. If no path is provided, ask for one using AskUserQuestion.
+
+**[research mode]**: The user provides a research question as an argument. If no question is provided, ask for one using AskUserQuestion.
+
+### Review mode input detection
 
 Detect the input type and derive paths for use throughout all phases:
 
@@ -32,6 +52,16 @@ INPUT_TYPE    = file | directory | diff
 INPUT_STEM    = <filename without extension, or directory basename for repo reviews>
 PROJECT_ROOT  = <nearest ancestor directory containing .git, or INPUT_DIR>
 OUTPUT_DIR    = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}
+```
+
+### Research mode input detection
+
+```
+RESEARCH_QUESTION = <the question the user provided>
+PROJECT_ROOT      = <git root of the current working directory>
+INPUT_STEM        = <question converted to kebab-case, max 50 chars, alphanumeric + hyphens>
+OUTPUT_DIR        = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}
+INPUT_TYPE        = research
 ```
 
 **Run isolation:** Before launching agents, clean or verify the output directory:
@@ -152,9 +182,36 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=r
 Domain agents: N exist, M generated, K orphaned
 ```
 
-### Step 1.1: Analyze the Document
+### Step 1.1: Analyze the Input
 
-For **file inputs**: Read the file at `INPUT_FILE`.
+**[research mode]**: Skip the document profile. Instead build a query profile:
+
+```yaml
+query_profile:
+  type: <one of: onboarding, how-to, why-is-it, what-changed, best-practice, debug-context, exploratory>
+  keywords: [list of key terms extracted from the question]
+  scope: <narrow | medium | broad>
+  project_domains: [from Step 1.0, if any]
+  estimated_depth: <quick | standard | deep>
+```
+
+Type detection heuristics:
+- "how do I..." / "what's the best way to..." → `how-to`
+- "why does..." / "why is..." → `why-is-it`
+- "what changed..." / "when did..." → `what-changed`
+- "best practice for..." / "conventions for..." → `best-practice`
+- "help me understand this codebase..." / "how is this organized..." → `onboarding`
+- "I'm debugging..." / "context for this bug..." → `debug-context`
+- No clear pattern → `exploratory`
+
+Depth estimation:
+- `quick` (30s per agent): simple factual lookups, single-source answers
+- `standard` (2min per agent): multi-source synthesis, pattern matching
+- `deep` (5min per agent): comprehensive survey, cross-referencing, analysis
+
+Then skip to **Step 1.2** (research agent scoring).
+
+**[review mode]**: For **file inputs**: Read the file at `INPUT_FILE`.
 For **repo reviews**: Read README.md (or equivalent), build system files (go.mod, package.json, Cargo.toml, etc.), directory structure (`ls` key directories), and 2-3 key source files.
 
 Extract a structured profile:
@@ -212,6 +269,28 @@ The `Review goal` adapts to document type:
 Do this analysis yourself (no subagents needed). The profile drives triage in Step 1.2.
 
 ### Step 1.2: Select Agents from Roster
+
+**[research mode]**: Skip the review agent scoring below. Instead, use the research agent affinity table:
+
+Score each research agent on a 3-point scale using the query-type → agent affinity table:
+
+| Query Type | Primary (score=3) | Secondary (score=2) | Skip (score=0) |
+|---|---|---|---|
+| onboarding | repo-research-analyst | learnings-researcher, framework-docs-researcher | best-practices-researcher, git-history-analyzer |
+| how-to | best-practices-researcher, framework-docs-researcher | learnings-researcher | repo-research-analyst, git-history-analyzer |
+| why-is-it | git-history-analyzer, repo-research-analyst | learnings-researcher | best-practices-researcher, framework-docs-researcher |
+| what-changed | git-history-analyzer | repo-research-analyst | best-practices-researcher, framework-docs-researcher, learnings-researcher |
+| best-practice | best-practices-researcher | framework-docs-researcher, learnings-researcher | repo-research-analyst, git-history-analyzer |
+| debug-context | learnings-researcher, git-history-analyzer | repo-research-analyst, framework-docs-researcher | best-practices-researcher |
+| exploratory | repo-research-analyst, best-practices-researcher | git-history-analyzer, framework-docs-researcher, learnings-researcher | — |
+
+**Domain bonus**: If a detected domain has Research Directives for `best-practices-researcher` or `framework-docs-researcher`, add +1 to their score (these agents benefit most from domain-specific search terms).
+
+**Selection**: Launch all agents with score >= 2. Agents with score 0 are skipped entirely. No staged dispatch — all selected agents launch in a single stage.
+
+Then skip to **Step 1.3** (user confirmation).
+
+**[review mode]**: Use the review agent scoring below.
 
 #### Step 1.2a.0: Apply routing overrides
 
@@ -389,7 +468,25 @@ Read `phases/slicing.md` → Document Slicing for the complete classification al
 
 ### Step 1.3: User Confirmation
 
-First, present the triage table showing all agents, tiers, scores, stages, reasons, and Launch/Skip actions.
+**[research mode]**: Present the triage result via AskUserQuestion:
+
+```
+AskUserQuestion:
+  question: "Research plan for: '{RESEARCH_QUESTION}'. Query type: {type}. Launching {N} agents ({agent_names}). Estimated depth: {estimated_depth}. Proceed?"
+  header: "Research"
+  options:
+    - label: "Launch (Recommended)"
+      description: "Dispatch {N} agents in parallel for {estimated_depth} research"
+    - label: "Edit agents"
+      description: "Add or remove specific agents before launch"
+    - label: "Cancel"
+      description: "Abort research"
+```
+
+If user selects "Edit agents", present a multi-select AskUserQuestion with all 5 agents and let them toggle.
+If user selects "Cancel", stop immediately.
+
+**[review mode]**: First, present the triage table showing all agents, tiers, scores, stages, reasons, and Launch/Skip actions.
 
 Then use **AskUserQuestion** to get approval:
 
@@ -412,10 +509,20 @@ If user selects "Cancel", stop here.
 
 ## Agent Roster
 
-Read `references/agent-roster.md` for the full agent roster including:
+**[review mode]**: Read `references/agent-roster.md` for the full review agent roster including:
 - Project Agents (`.claude/agents/fd-*.md`)
 - Plugin Agents (7 technical + 5 cognitive fd-* agents with subagent_type mappings)
 - Cross-AI (Oracle CLI invocation, error handling, slot rules)
+
+**[research mode]**: Use the research agent roster:
+
+| Agent | subagent_type |
+|-------|--------------|
+| best-practices-researcher | interflux:best-practices-researcher |
+| framework-docs-researcher | interflux:framework-docs-researcher |
+| git-history-analyzer | interflux:git-history-analyzer |
+| learnings-researcher | interflux:learnings-researcher |
+| repo-research-analyst | interflux:repo-research-analyst |
 
 ---
 
@@ -423,14 +530,18 @@ Read `references/agent-roster.md` for the full agent roster including:
 
 **Read the launch phase file now:**
 - Read `phases/launch.md` (in the flux-drive skill directory)
-- If interserve mode is detected, also read `phases/launch-codex.md`
+- The launch phase respects the `MODE` parameter — research mode uses single-stage dispatch without AgentDropout, expansion, or peer findings
+- **[review mode only]**: If interserve mode is detected, also read `phases/launch-codex.md`
 
 ## Phase 3: Synthesize
 
 **Read the synthesis phase file now:**
 - Read `phases/synthesize.md` (in the flux-drive skill directory)
+- The synthesis phase respects the `MODE` parameter — research mode delegates to `intersynth:synthesize-research` and skips bead creation and knowledge compounding
 
 ## Phase 4: Cross-AI Comparison (Optional)
+
+**[review mode only]** — skip entirely in research mode.
 
 **Skip this phase if Oracle was not in the review roster.** For cross-AI options without Oracle, mention `/clavain:interpeer` in the Phase 3 report.
 
@@ -440,14 +551,15 @@ If Oracle participated, read `phases/cross-ai.md` now.
 
 ## Integration
 
-**Chains to (user-initiated, after Phase 4 consent gate):**
+**Chains to (user-initiated, after Phase 4 consent gate) [review mode]:**
 - `interpeer` — when user wants to investigate cross-AI disagreements
 
-**Suggests (when Oracle absent, in Phase 3 report):**
+**Suggests (when Oracle absent, in Phase 3 report) [review mode]:**
 - `interpeer` — lightweight cross-AI second opinion
 
 **Called by:**
-- `/interflux:flux-drive` command
+- `/interflux:flux-drive` command (mode=review)
+- `/interflux:flux-research` command (mode=research)
 
 **See also:**
 - `interpeer/references/oracle-reference.md` — Oracle CLI reference

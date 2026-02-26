@@ -1,16 +1,33 @@
-# Flux Drive — Compact Review Instructions
+# Flux Drive — Compact Review & Research Instructions
 
-Multi-agent document/codebase review. Follow phases in order.
+Multi-agent document/codebase review and research. Follow phases in order.
+
+## Mode
+
+- Invoked via `/interflux:flux-drive` → `MODE = review`
+- Invoked via `/interflux:flux-research` → `MODE = research`
+- Explicit `--mode=review|research` overrides
+- Default: `MODE = review`
 
 ## Input
 
-User provides a file or directory path. Detect type:
+**[review mode]**: User provides a file or directory path. Detect type:
 
 ```
 INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/")
 INPUT_STEM = filename without extension, or dir basename
 PROJECT_ROOT = nearest .git ancestor or INPUT_DIR
 OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}  (absolute path!)
+```
+
+**[research mode]**: User provides a research question.
+
+```
+RESEARCH_QUESTION = <the question>
+PROJECT_ROOT = git root of CWD
+INPUT_STEM = question as kebab-case (max 50 chars)
+OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}  (absolute path!)
+INPUT_TYPE = research
 ```
 
 Clean OUTPUT_DIR of stale `.md` files before starting.
@@ -40,9 +57,26 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=r
 ```
 Exit 0: parse JSON report (created/skipped/regenerated/orphaned per agent). Exit 1: no domains. Exit 2: error. Report orphans, don't delete.
 
-### Step 1.1: Document Profile
+### Step 1.1: Analyze Input
 
-Read the input. Extract:
+**[research mode]**: Build a query profile instead of document profile:
+
+```yaml
+query_profile:
+  type: <onboarding|how-to|why-is-it|what-changed|best-practice|debug-context|exploratory>
+  keywords: [key terms]
+  scope: <narrow|medium|broad>
+  project_domains: [from 1.0.1]
+  estimated_depth: <quick|standard|deep>
+```
+
+Type heuristics: "how do I..." → how-to, "why does..." → why-is-it, "what changed..." → what-changed, "best practice..." → best-practice, "understand this codebase..." → onboarding, "debugging..." → debug-context, else → exploratory.
+
+Depth: quick (30s/agent), standard (2min), deep (5min).
+
+Skip to Step 1.2.
+
+**[review mode]**: Read the input. Extract:
 
 ```
 Type: [plan|brainstorm|spec|prd|README|repo-review|diff|other]
@@ -59,6 +93,22 @@ Review goal: [1 sentence]
 For diffs: also extract file count, stats (+/-), slicing eligible (>=1000 lines).
 
 ### Step 1.2: Select Agents
+
+**[research mode]**: Use the research agent affinity table:
+
+| Query Type | Primary (3) | Secondary (2) | Skip (0) |
+|---|---|---|---|
+| onboarding | repo-research-analyst | learnings-researcher, framework-docs-researcher | best-practices-researcher, git-history-analyzer |
+| how-to | best-practices-researcher, framework-docs-researcher | learnings-researcher | repo-research-analyst, git-history-analyzer |
+| why-is-it | git-history-analyzer, repo-research-analyst | learnings-researcher | best-practices-researcher, framework-docs-researcher |
+| what-changed | git-history-analyzer | repo-research-analyst | best-practices-researcher, framework-docs-researcher, learnings-researcher |
+| best-practice | best-practices-researcher | framework-docs-researcher, learnings-researcher | repo-research-analyst, git-history-analyzer |
+| debug-context | learnings-researcher, git-history-analyzer | repo-research-analyst, framework-docs-researcher | best-practices-researcher |
+| exploratory | repo-research-analyst, best-practices-researcher | git-history-analyzer, framework-docs-researcher, learnings-researcher | — |
+
+Domain bonus: +1 for best-practices/framework-docs if detected domain has Research Directives. Launch all agents with score >= 2. Single-stage dispatch (no Stage 1/2 split). Skip to Step 1.3.
+
+**[review mode]**:
 
 **Step 1.2a.0: Routing Overrides** — Read `.claude/routing-overrides.json` if exists. Exclude any agent with `"action":"exclude"`. If override has `scope` (domains/file_patterns), only exclude when scope matches current input (AND logic; reject `..` or `/`-prefixed patterns). Entries with `"action":"propose"` are informational only (not excluded). Warn if excluded agent covers a cross-cutting domain (architecture, quality, safety, correctness) — also warn if scope contains only `**`. Show canary snapshot `[canary: created <status>, expires <date>]` and confidence `(<value>)` in triage notes when present. Canary is a creation-time snapshot; run `/interspect:status` for live state.
 
@@ -151,7 +201,9 @@ for agent in stage_2_agents_sorted_by_score:
 
 ### Step 1.3: User Confirmation
 
-Present triage table with budget context:
+**[research mode]**: AskUserQuestion: "Research plan for: '{RESEARCH_QUESTION}'. Query type: {type}. Launching {N} agents ({names}). Estimated depth: {depth}. Proceed?" Options: Launch (Recommended), Edit agents, Cancel.
+
+**[review mode]**: Present triage table with budget context:
 
 Agent | Score | Stage | Est. Tokens | Source | Reason | Action
 
@@ -189,29 +241,59 @@ Options: Approve, Launch all (override budget), Edit selection, Cancel.
 **Oracle:** `env DISPLAY=:99 CHROME_PATH=/usr/local/bin/google-chrome-wrapper oracle --wait --timeout 1800 --write-output {OUTPUT_DIR}/oracle-council.md.partial -p "<prompt>" -f "<files>"`
 Never use `> file` redirect or external `timeout` with Oracle.
 
-**Research agents** (on-demand, not scored): best-practices-researcher, framework-docs-researcher, git-history-analyzer, learnings-researcher, repo-research-analyst.
+**Research agents** [research mode roster, or on-demand in review mode]:
+
+| Agent | subagent_type |
+|-------|--------------|
+| best-practices-researcher | interflux:best-practices-researcher |
+| framework-docs-researcher | interflux:framework-docs-researcher |
+| git-history-analyzer | interflux:git-history-analyzer |
+| learnings-researcher | interflux:learnings-researcher |
+| repo-research-analyst | interflux:repo-research-analyst |
 
 ## Phase 2: Launch
 
-Read `phases/launch.md` for the full launch protocol:
+Read `phases/launch.md` for the full launch protocol. The launch phase respects `MODE`:
+
+**[review mode]**:
 - Step 2.1: Dispatch Stage 1 agents in parallel via Task tool (background mode)
 - Step 2.1a: Inject domain-specific criteria from domain profiles
 - Step 2.1b: For slicing-eligible diffs, apply diff slicing per `phases/slicing.md`
 - Step 2.1c: For documents >200 lines, apply document slicing (section_map per agent)
 - Step 2.2: Monitor completion, expand Stage 2 if severity warrants
-- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates using Stage 1 convergence signals (exempt agents: fd-safety, fd-correctness). See `budget.yaml → dropout` config.
+- Step 2.2a: Research context dispatch between stages
+- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates
+- Step 2.2b-c: Staged expansion decision
 - All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-drive:complete -->` sentinel
+
+**[research mode]**:
+- Step 2.0: Prepare output directory (same)
+- Step 2.1: Build per-agent research prompts with query profile, domain directives
+- Step 2.2: Single-stage dispatch — all selected agents via Task tool (background mode)
+- Skip: AgentDropout, staged expansion, peer findings, research context dispatch, slicing
+- All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-research:complete -->` sentinel
+- Timeouts by depth: quick=30s, standard=2min, deep=5min
 
 ## Phase 3: Synthesize
 
-Read `phases/synthesize.md` for the full synthesis protocol:
+Read `phases/synthesize.md` for the full synthesis protocol. The synthesis phase respects `MODE`:
+
+**[review mode]**:
 - Collect all agent outputs from OUTPUT_DIR
-- Deduplicate findings across agents
-- Score findings (P0-P3)
-- Compute verdict: APPROVE / APPROVE_WITH_FINDINGS / REVISE / REJECT
-- Write synthesis to `{OUTPUT_DIR}/synthesis.md`
+- Delegate to `intersynth:synthesize-review`
+- Score findings (P0-P3), compute verdict
+- Create beads from P0/P1 findings
+- Silent knowledge compounding
+
+**[research mode]**:
+- Delegate to `intersynth:synthesize-research`
+- Merge findings with source attribution, rank sources
+- Write `{OUTPUT_DIR}/synthesis.md`
+- Skip: bead creation, knowledge compounding
 
 ## Phase 4: Cross-AI (Optional)
+
+**[review mode only]** — skip entirely in research mode.
 
 Skip if Oracle was not in roster. Otherwise read `phases/cross-ai.md`.
 

@@ -1,9 +1,18 @@
 ---
 name: flux-research
-description: Use when researching a topic with multi-agent analysis — triages relevant research agents, dispatches in parallel, synthesizes answer with source attribution
+description: "DEPRECATED — use flux-drive with mode=research instead. This skill is kept for backward compatibility."
 ---
 
-# Flux Research — Multi-Agent Research Orchestration
+# Flux Research — DEPRECATED
+
+> **This skill has been merged into flux-drive.** Use `interflux:flux-drive` with `mode=research` instead.
+>
+> The `/interflux:flux-research` command automatically routes to flux-drive in research mode.
+> This file is retained for reference only — it will be removed in a future release.
+
+---
+
+## Original Implementation (archived)
 
 You are executing the flux-research skill. This skill answers research questions by dispatching **only relevant** research agents from the roster, collecting their findings in parallel, and synthesizing a unified answer with source attribution. Follow each phase in order. Do NOT skip phases.
 

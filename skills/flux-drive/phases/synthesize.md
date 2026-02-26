@@ -1,5 +1,7 @@
 # Phase 3: Synthesize
 
+This phase respects the `MODE` parameter set in Phase 1. Steps marked **[review only]** are skipped in research mode. Steps marked **[research only]** are skipped in review mode. Unmarked steps apply to both modes.
+
 ### Step 3.0: Verify all agents completed
 
 Phase 2 (Step 2.3) guarantees one `.md` file per launched agent — either findings or an error stub. Verify:
@@ -12,7 +14,15 @@ Confirm N files (one per launched agent). If count < N, Phase 2 did not complete
 
 ### Step 3.1: Validate Agent Output
 
-For each agent's output file, validate structure before reading content:
+**[research mode]**: Validate that each research agent's output contains `### Sources`, `### Findings`, `### Confidence`, and `### Gaps` sections. Check for `<!-- flux-research:complete -->` sentinel. Classification:
+- **Valid**: All sections present with sentinel → proceed
+- **Error/Missing**: Agent failed → create error stub (same as review mode)
+
+Report: "{N}/{M} research agents completed successfully"
+
+Then skip to **Step 3.2**.
+
+**[review mode]**: For each agent's output file, validate structure before reading content:
 
 1. Check the file starts with `### Findings Index` (first non-empty line)
 2. Verify index lines match `- SEVERITY | ID | "Section" | Title` pattern
@@ -29,7 +39,27 @@ Report validation results to user: "5/6 agents returned valid Findings Index, 1 
 
 **Do NOT read agent output files yourself.** Delegate ALL collection, validation, deduplication, and verdict writing to a synthesis subagent. This keeps agent prose entirely out of the host context.
 
-Launch the **intersynth synthesis agent** (foreground, not background — you need its result):
+**[research mode]**: Launch the **intersynth research synthesis agent**:
+
+```
+Task(intersynth:synthesize-research):
+  prompt: |
+    OUTPUT_DIR={OUTPUT_DIR}
+    VERDICT_LIB={CLAUDE_PLUGIN_ROOT}/../../os/clavain/hooks/lib-verdict.sh
+    RESEARCH_QUESTION={RESEARCH_QUESTION}
+    QUERY_TYPE={type}
+    ESTIMATED_DEPTH={estimated_depth}
+```
+
+The intersynth agent reads all research agent output files, merges findings with source attribution, ranks sources, writes verdicts, and returns a compact answer. It writes `{OUTPUT_DIR}/synthesis.md`.
+
+After the synthesis subagent returns:
+1. Its return value is the compact answer (~5-10 lines) — display this immediately as the quick answer
+2. Read `{OUTPUT_DIR}/synthesis.md` for the full report to present to the user
+3. The host agent never touched any individual agent output file
+4. Skip to **Step 3.5-research** (present research output)
+
+**[review mode]**: Launch the **intersynth review synthesis agent**:
 
 ```
 Task(intersynth:synthesize-review):
@@ -230,7 +260,23 @@ Extend the findings.json schema with a `cost_report` field:
 - If 2+ agents agree on a finding AND reviewed different priority sections (per `slicing_map`), boost the convergence score by 1. Cross-section agreement is higher confidence than same-section agreement. Tag with `"slicing_boost": true` in findings.json.
 - Track "Request full section" annotations: count total across all agent outputs. Quality target: ≤5% of agent outputs contain section requests after 10 reviews. Include this request verbatim in synthesis output (v1 — do NOT re-dispatch or re-read sections).
 
-### Step 3.5: Report to User
+### Step 3.5-research: Present Research Output [research only]
+
+Read `{OUTPUT_DIR}/synthesis.md` and present to user. When complete, display:
+
+```
+Research complete!
+
+Output: {OUTPUT_DIR}/synthesis.md
+Agents: {N} dispatched, {M} completed, {K} failed
+Sources: {total} ({internal} internal, {external} external)
+
+Key answer: [1-2 sentence summary]
+```
+
+Then skip to **Step 3.7** (cleanup). Steps 3.5, 3.6, and post-synthesis compounding are review-only.
+
+### Step 3.5: Report to User [review mode]
 
 Present the synthesis report using this exact structure. Fill in each section from the collected findings.
 
@@ -297,7 +343,9 @@ See `phases/slicing.md` → Slicing Report Template for the full table format an
 - **needs-changes**: "Review P1 findings. Run `/interflux:flux-drive` again after changes to verify."
 - **safe**: "No blocking issues found. Individual reports available for detailed review."
 
-### Step 3.6: Create Beads from Findings
+### Step 3.6: Create Beads from Findings [review only]
+
+**Skip this step in research mode** — research findings don't create tracked work items.
 
 After presenting the report, create beads issues to track actionable findings. This ensures review work isn't lost.
 
@@ -370,7 +418,9 @@ This cleanup runs after synthesis, not before — agents may still be reading te
 
 ---
 
-## Post-Synthesis: Silent Compounding
+## Post-Synthesis: Silent Compounding [review only]
+
+**Skip this section in research mode** — research findings don't compound into the knowledge base.
 
 After presenting the review to the user (Step 3.5), run a compounding step in the background. This step is SILENT — no user-visible output. The user's last interaction is the Step 3.5 report.
 
