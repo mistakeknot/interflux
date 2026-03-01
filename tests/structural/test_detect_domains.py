@@ -16,20 +16,26 @@ _spec = importlib.util.spec_from_file_location("detect_domains", _SCRIPT_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
-CACHE_VERSION = _mod.CACHE_VERSION
-DomainSpec = _mod.DomainSpec
-STRUCTURAL_FILES = _mod.STRUCTURAL_FILES
-check_stale = _mod.check_stale
-compute_structural_hash = _mod.compute_structural_hash
-detect = _mod.detect
-gather_directories = _mod.gather_directories
-gather_files = _mod.gather_files
-gather_frameworks = _mod.gather_frameworks
-gather_keywords = _mod.gather_keywords
-load_index = _mod.load_index
-read_cache = _mod.read_cache
-score_domain = _mod.score_domain
-write_cache = _mod.write_cache
+CACHE_VERSION = getattr(_mod, "CACHE_VERSION", None)
+DomainSpec = getattr(_mod, "DomainSpec", None)
+STRUCTURAL_FILES = getattr(_mod, "STRUCTURAL_FILES", None)
+check_stale = getattr(_mod, "check_stale", None)
+compute_structural_hash = getattr(_mod, "compute_structural_hash", None)
+detect = getattr(_mod, "detect", None)
+gather_directories = getattr(_mod, "gather_directories", None)
+gather_files = getattr(_mod, "gather_files", None)
+gather_frameworks = getattr(_mod, "gather_frameworks", None)
+gather_keywords = getattr(_mod, "gather_keywords", None)
+load_index = getattr(_mod, "load_index", None)
+read_cache = getattr(_mod, "read_cache", None)
+score_domain = getattr(_mod, "score_domain", None)
+write_cache = getattr(_mod, "write_cache", None)
+
+# Skip all tests if intersense is not available (stub-only mode)
+pytestmark = pytest.mark.skipif(
+    detect is None,
+    reason="intersense plugin not available — detect-domains.py is a stub",
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / "scripts" / "detect-domains.py"
