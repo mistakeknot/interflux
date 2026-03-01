@@ -94,6 +94,57 @@ if [[ -f "$DB_PATH" ]]; then
   fi
 fi
 
+# --- Fleet registry fallback for agents not in interstat (>= 3 runs) ---
+_find_lib_fleet() {
+  local candidates=(
+    "${CLAVAIN_SOURCE_DIR:-}/scripts/lib-fleet.sh"
+  )
+  # Plugin cache discovery
+  local cache_dir="${HOME}/.claude/plugins/cache"
+  if [[ -d "$cache_dir" ]]; then
+    local latest
+    latest="$(ls -d "$cache_dir"/*/clavain/*/scripts/lib-fleet.sh 2>/dev/null | tail -1)"
+    [[ -n "$latest" ]] && candidates+=("$latest")
+  fi
+  # Relative to this script (interverse/interflux/scripts → os/clavain/scripts)
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  candidates+=("$script_dir/../../../os/clavain/scripts/lib-fleet.sh")
+  for f in "${candidates[@]}"; do
+    if [[ -f "$f" ]]; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_FLEET_AVAILABLE=false
+LIB_FLEET="$(_find_lib_fleet 2>/dev/null)" || LIB_FLEET=""
+if [[ -n "$LIB_FLEET" ]]; then
+  # Source lib-fleet.sh; it requires yq which we don't mandate here,
+  # so suppress errors and check if it loaded successfully
+  source "$LIB_FLEET" 2>/dev/null && _FLEET_AVAILABLE=true || true
+fi
+
+if [[ "$_FLEET_AVAILABLE" == true ]]; then
+  # Get all agents in registry that aren't already in interstat estimates
+  fleet_agents="$(fleet_list 2>/dev/null)" || fleet_agents=""
+  while IFS= read -r fleet_agent; do
+    [[ -z "$fleet_agent" ]] && continue
+    # Skip if already in interstat estimates (>= 3 runs)
+    if echo "$ESTIMATES" | jq -e --arg a "$fleet_agent" '.[$a]' >/dev/null 2>&1; then
+      continue
+    fi
+    # Try fleet registry (actual_tokens or cold_start_tokens)
+    fleet_est="$(INTERSTAT_DB="$DB_PATH" fleet_cost_estimate_live "$fleet_agent" "$MODEL" 2>/dev/null)" || continue
+    if [[ -n "$fleet_est" && "$fleet_est" != "0" ]]; then
+      ESTIMATES="$(echo "$ESTIMATES" | jq -c --arg a "$fleet_agent" --argjson t "$fleet_est" \
+        '. + {($a): {est_tokens: $t, sample_size: 0, source: "fleet-registry"}}')"
+    fi
+  done <<< "$fleet_agents"
+fi
+
 # Apply slicing multiplier if active
 MULTIPLIER="1.0"
 if [[ "$SLICING" == "true" ]]; then
