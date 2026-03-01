@@ -37,6 +37,12 @@ if [[ -z "$MODEL" ]]; then
   MODEL="claude-opus-4-6"
 fi
 
+# Validate MODEL before SQL interpolation (SEC-001)
+if [[ ! "$MODEL" =~ ^[a-zA-Z0-9_.:-]+$ ]]; then
+  echo "Error: invalid model name '$MODEL'" >&2
+  exit 1
+fi
+
 # Read default estimates from budget.yaml using simple grep (no yq dependency)
 get_default() {
   local agent_type="$1"
@@ -75,11 +81,12 @@ classify_agent() {
 ESTIMATES="{}"
 if [[ -f "$DB_PATH" ]]; then
   # Query agents with >= 3 runs for reliable estimates
+  # Use total_tokens for consistency with fleet registry enrichment (SEMANTICS-001)
   INTERSTAT_DATA=$(sqlite3 -json "$DB_PATH" "
-    SELECT agent_name, CAST(ROUND(AVG(COALESCE(input_tokens,0) + COALESCE(output_tokens,0))) AS INTEGER) as est_tokens, COUNT(*) as sample_size
+    SELECT agent_name, CAST(ROUND(AVG(total_tokens)) AS INTEGER) as est_tokens, COUNT(*) as sample_size
     FROM agent_runs
     WHERE (model = '${MODEL}' OR model IS NULL)
-      AND (input_tokens IS NOT NULL OR output_tokens IS NOT NULL)
+      AND total_tokens IS NOT NULL
     GROUP BY agent_name
     HAVING COUNT(*) >= 3
     ORDER BY agent_name;
@@ -96,17 +103,17 @@ fi
 
 # --- Fleet registry fallback for agents not in interstat (>= 3 runs) ---
 _find_lib_fleet() {
-  local candidates=(
-    "${CLAVAIN_SOURCE_DIR:-}/scripts/lib-fleet.sh"
-  )
-  # Plugin cache discovery
+  local candidates=()
+  # 1. Explicit env var (highest priority, works in all deployment contexts)
+  [[ -n "${CLAVAIN_SOURCE_DIR:-}" ]] && candidates+=("${CLAVAIN_SOURCE_DIR}/scripts/lib-fleet.sh")
+  # 2. Plugin cache (deployed context)
   local cache_dir="${HOME}/.claude/plugins/cache"
   if [[ -d "$cache_dir" ]]; then
     local latest
     latest="$(ls -d "$cache_dir"/*/clavain/*/scripts/lib-fleet.sh 2>/dev/null | tail -1)"
     [[ -n "$latest" ]] && candidates+=("$latest")
   fi
-  # Relative to this script (interverse/interflux/scripts → os/clavain/scripts)
+  # 3. Monorepo relative path (development context, last resort)
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   candidates+=("$script_dir/../../../os/clavain/scripts/lib-fleet.sh")
