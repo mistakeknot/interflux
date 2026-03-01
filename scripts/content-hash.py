@@ -4,6 +4,7 @@
 This file is kept for backward compatibility. The canonical version
 lives in the intersense plugin.
 """
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -16,9 +17,18 @@ _INTERSENSE_CANDIDATES = [
     *sorted(Path.home().glob(".claude/plugins/cache/*/intersense/*/scripts/content-hash.py"), reverse=True),
 ]
 
-for candidate in _INTERSENSE_CANDIDATES:
-    if candidate.exists():
-        os.execv(sys.executable, [sys.executable, str(candidate)] + sys.argv[1:])
+_INTERSENSE_PATH = next((c for c in _INTERSENSE_CANDIDATES if c.exists()), None)
 
-print("intersense plugin not found — run content-hash.py from intersense directly", file=sys.stderr)
-sys.exit(2)
+# Re-export symbols from intersense for importability
+if _INTERSENSE_PATH is not None:
+    _spec = importlib.util.spec_from_file_location("_intersense_content_hash", _INTERSENSE_PATH)
+    _real = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_real)
+    compute_hash = _real.compute_hash
+    discover_files = _real.discover_files
+
+if __name__ == "__main__":
+    if _INTERSENSE_PATH is not None:
+        os.execv(sys.executable, [sys.executable, str(_INTERSENSE_PATH)] + sys.argv[1:])
+    print("intersense plugin not found — run content-hash.py from intersense directly", file=sys.stderr)
+    sys.exit(2)

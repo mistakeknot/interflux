@@ -14,8 +14,14 @@ _spec = importlib.util.spec_from_file_location("content_hash", _SCRIPT_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
-compute_hash = _mod.compute_hash
-discover_files = _mod.discover_files
+compute_hash = getattr(_mod, "compute_hash", None)
+discover_files = getattr(_mod, "discover_files", None)
+
+# Skip all tests if intersense is not available (stub-only mode)
+pytestmark = pytest.mark.skipif(
+    compute_hash is None,
+    reason="intersense plugin not available — content-hash.py is a stub",
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / "scripts" / "content-hash.py"
