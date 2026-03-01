@@ -9,9 +9,9 @@
 #   editor    — Medium capability (practical suggestions, UX, performance)
 #   checker   — Lower capability sufficient (pattern matching, format checking)
 #
-# model_tier maps to routing.yaml subagent overrides when complexity routing
-# is in shadow or enforce mode. Currently informational — consumed by
-# experiment scoring, not by lib-routing.sh dispatch.
+# model_tier: declared preference for experiment scoring and cost analysis.
+# min_model: ENFORCED safety floor — lib-routing.sh clamps resolved model
+# to at least this tier. Added iv-db5pc (2026-03-01).
 #
 # Safety rule (from iv-dthn Loop 4): fd-safety and fd-correctness NEVER
 # route below Sonnet regardless of role assignment.
@@ -20,6 +20,7 @@ roles:
   planner:
     description: Architectural decisions requiring high reasoning capability
     model_tier: opus
+    min_model: sonnet   # safety floor — never downgrade below this
     agents:
       - fd-architecture
       - fd-systems

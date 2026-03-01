@@ -16,6 +16,41 @@ find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o
 
 Use a timestamped `OUTPUT_DIR` only when you intentionally need to preserve previous run artifacts.
 
+### Step 2.0.5: Resolve agent models
+
+Before launching agents, resolve the model tier for each triaged agent from `config/routing.yaml` via Clavain's routing library. This ensures routing.yaml is the single source of truth for model selection — agent frontmatter serves as fallback only when routing.yaml is absent.
+
+1. **Source lib-routing.sh**: Find the Clavain plugin and source its routing library:
+   ```bash
+   CLAVAIN_ROOT=$(find ~/.claude/plugins/cache -maxdepth 3 -name "lib-routing.sh" -path "*/clavain/*/scripts/*" 2>/dev/null | head -1)
+   [[ -n "$CLAVAIN_ROOT" ]] && source "$CLAVAIN_ROOT"
+   ```
+
+2. **Determine current phase**: Check sprint phase via intercore state, default to `executing`:
+   ```bash
+   PHASE=$(ic state get sprint.phase "$CLAVAIN_RUN_ID" 2>/dev/null || echo "executing")
+   ```
+
+3. **Call routing_resolve_agents**: Pass the comma-separated list of triaged agent short names:
+   ```bash
+   MODEL_MAP=$(routing_resolve_agents --phase "$PHASE" --agents "fd-safety,fd-architecture,fd-quality")
+   ```
+   Returns JSON: `{"fd-safety":"sonnet","fd-architecture":"sonnet","fd-quality":"sonnet"}`
+
+4. **Apply to agent launches**: When launching each agent (Steps 2.2/2.2c), pass the `model:` parameter:
+   ```
+   Agent(subagent_type: "interflux:review:fd-safety", model: "sonnet", run_in_background: true, prompt: "...")
+   ```
+   The `model:` parameter on the Agent tool overrides agent frontmatter, so routing.yaml takes control.
+
+**Fallback**: If lib-routing.sh is not found or `routing_resolve_agents` returns `{}`, skip model injection — agents fall back to their frontmatter defaults. Model routing is progressive enhancement, never a gate.
+
+**Debug output** (when `FLUX_DEBUG=1`):
+```
+Model routing: phase=executing
+  fd-safety=sonnet, fd-architecture=sonnet, fd-quality=sonnet
+```
+
 ### Step 2.1: Retrieve knowledge context
 
 Before launching agents, retrieve relevant knowledge entries for each selected agent. This step is OPTIONAL — if qmd (via interknow plugin) is unavailable, skip and proceed to Step 2.2.

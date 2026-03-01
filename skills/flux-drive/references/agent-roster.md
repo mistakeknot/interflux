@@ -12,6 +12,12 @@ Check if `.claude/agents/fd-*.md` files exist in the project root. If so, includ
 
 If no Project Agents exist AND interserve mode is active, flux-drive will bootstrap them via Codex (see `phases/launch-codex.md`). If no Project Agents exist and interserve mode is NOT active, skip this category entirely.
 
+### Model Routing
+
+Agent models are resolved at launch time from Clavain's `config/routing.yaml` via `routing_resolve_agents()` (see Step 2.0.5 in `phases/launch.md`). The resolution chain is: agent override > phase+category > phase > default category > default model, with safety floors enforced for critical agents (fd-safety, fd-correctness never run below sonnet).
+
+The `model:` line in agent frontmatter (`.md` files) serves as a fallback when routing.yaml is absent or lib-routing.sh cannot be sourced. In normal operation, the `model:` parameter passed to the Agent tool call overrides frontmatter.
+
 ### Plugin Agents (interflux)
 
 These agents are provided by the Clavain plugin. They auto-detect project documentation: when CLAUDE.md/AGENTS.md exist, they provide codebase-aware analysis; otherwise they fall back to general best practices.

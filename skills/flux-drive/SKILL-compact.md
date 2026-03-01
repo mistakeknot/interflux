@@ -256,6 +256,7 @@ Never use `> file` redirect or external `timeout` with Oracle.
 Read `phases/launch.md` for the full launch protocol. The launch phase respects `MODE`:
 
 **[review mode]**:
+- Step 2.0.5: Resolve agent models via `routing_resolve_agents()` from Clavain's `lib-routing.sh`. Pass `model:` param to each Agent tool call. Fallback: skip if lib-routing.sh unavailable (agents use frontmatter defaults).
 - Step 2.1: Dispatch Stage 1 agents in parallel via Task tool (background mode)
 - Step 2.1a: Inject domain-specific criteria from domain profiles
 - Step 2.1b: For slicing-eligible diffs, apply diff slicing per `phases/slicing.md`
@@ -268,6 +269,7 @@ Read `phases/launch.md` for the full launch protocol. The launch phase respects 
 
 **[research mode]**:
 - Step 2.0: Prepare output directory (same)
+- Step 2.0.5: Resolve agent models (same as review mode)
 - Step 2.1: Build per-agent research prompts with query profile, domain directives
 - Step 2.2: Single-stage dispatch — all selected agents via Task tool (background mode)
 - Skip: AgentDropout, staged expansion, peer findings, research context dispatch, slicing
