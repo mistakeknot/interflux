@@ -16,6 +16,33 @@ find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o
 
 Use a timestamped `OUTPUT_DIR` only when you intentionally need to preserve previous run artifacts.
 
+### Step 2.0.4: Composer dispatch plan (optional)
+
+If the Composer is available, use it instead of manual triage + routing:
+
+```bash
+source "${CLAVAIN_SOURCE_DIR:-$CLAUDE_PLUGIN_ROOT}/scripts/lib-compose.sh" 2>/dev/null
+if compose_available 2>/dev/null; then
+    COMPOSE_PLAN=$(compose_dispatch "${CLAVAIN_BEAD_ID:-}" "$PHASE")
+fi
+```
+
+If `COMPOSE_PLAN` is non-empty JSON with `.agents | length > 0`:
+- Skip the triage scoring in Step 2.1 — the Composer already selected agents
+- Skip `routing_resolve_agents` in Step 2.0.5 — models are in the plan
+- Go directly to Step 2.2 and iterate the plan:
+  ```bash
+  echo "$COMPOSE_PLAN" | jq -c '.agents[]' | while read -r agent; do
+      agent_id=$(echo "$agent" | jq -r '.subagent_type')
+      model=$(echo "$agent" | jq -r '.model')
+      # Dispatch via Agent() tool with these values
+  done
+  ```
+- Log any warnings: `echo "$COMPOSE_PLAN" | jq -r '.warnings[]'`
+
+If `COMPOSE_PLAN` is empty or Composer unavailable:
+- Fall through to existing Steps 2.0.5–2.2 (backward compatible)
+
 ### Step 2.0.5: Resolve agent models
 
 Before launching agents, resolve the model tier for each triaged agent from `config/routing.yaml` via Clavain's routing library. This ensures routing.yaml is the single source of truth for model selection — agent frontmatter serves as fallback only when routing.yaml is absent.
