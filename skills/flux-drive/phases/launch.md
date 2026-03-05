@@ -18,32 +18,58 @@ Use a timestamped `OUTPUT_DIR` only when you intentionally need to preserve prev
 
 ### Step 2.0.4: Composer dispatch plan (optional)
 
-If the Composer is available, use it instead of manual triage + routing:
+If the Composer is available and returns a plan with agents, it is **authoritative** — skip manual triage (Steps 2.0.5–2.2) entirely and dispatch directly from the plan.
+
+**lib-compose.sh is already sourced** via the transitive chain: `session-start.sh` → `sprint-scan.sh` → `lib-sprint.sh` → `lib-compose.sh`. Do NOT source it again.
 
 ```bash
-source "${CLAVAIN_SOURCE_DIR:-$CLAUDE_PLUGIN_ROOT}/scripts/lib-compose.sh" 2>/dev/null
-if compose_available 2>/dev/null; then
-    COMPOSE_PLAN=$(compose_dispatch "${CLAVAIN_BEAD_ID:-}" "$PHASE")
+COMPOSER_ACTIVE=0
+COMPOSE_PLAN=""
+
+if [[ "${_COMPOSE_LIB_SOURCED:-}" == "1" ]]; then
+    COMPOSE_PLAN=$(compose_dispatch "${CLAVAIN_BEAD_ID:-}" "${PHASE:-review}" 2>/dev/null) || COMPOSE_PLAN=""
+    if compose_has_agents "$COMPOSE_PLAN" 2>/dev/null; then
+        COMPOSER_ACTIVE=1
+    else
+        compose_warn_if_expected "compose_dispatch returned no agents for phase=${PHASE:-review}"
+    fi
 fi
 ```
 
-If `COMPOSE_PLAN` is non-empty JSON with `.agents | length > 0`:
-- Skip the triage scoring in Step 2.1 — the Composer already selected agents
-- Skip `routing_resolve_agents` in Step 2.0.5 — models are in the plan
-- Go directly to Step 2.2 and iterate the plan:
-  ```bash
-  echo "$COMPOSE_PLAN" | jq -c '.agents[]' | while read -r agent; do
-      agent_id=$(echo "$agent" | jq -r '.subagent_type')
-      model=$(echo "$agent" | jq -r '.model')
-      # Dispatch via Agent() tool with these values
-  done
-  ```
-- Log any warnings: `echo "$COMPOSE_PLAN" | jq -r '.warnings[]'`
+If `COMPOSER_ACTIVE=1`:
+1. **Log the plan**: Display agent count and any warnings:
+   ```bash
+   agent_count=$(echo "$COMPOSE_PLAN" | jq '.agents | length')
+   echo "Composer: dispatching $agent_count agents (phase=${PHASE:-review})"
+   echo "$COMPOSE_PLAN" | jq -r '.warnings[]?' 2>/dev/null | while read -r w; do
+       echo "  WARNING: $w"
+   done
+   ```
 
-If `COMPOSE_PLAN` is empty or Composer unavailable:
-- Fall through to existing Steps 2.0.5–2.2 (backward compatible)
+2. **Skip Steps 2.0.5 through 2.1e** — the Composer already selected agents and models. Jump directly to Step 2.1c (write document to temp files) and then dispatch:
+
+3. **Dispatch agents from the plan** (replaces Step 2.2 staging):
+   ```
+   compose_agents_json "$COMPOSE_PLAN" | jq -c '.[]' | while read -r agent; do
+       agent_id=$(echo "$agent" | jq -r '.agent_id')
+       subagent_type=$(echo "$agent" | jq -r '.subagent_type')
+       model=$(echo "$agent" | jq -r '.model')
+       # Dispatch via Task tool:
+       #   subagent_type: "$subagent_type"
+       #   model: "$model"
+       #   run_in_background: true
+       #   prompt: <standard review prompt with REVIEW_FILE>
+   done
+   ```
+
+4. **Skip to Step 2.3** (monitor and verify completion).
+
+If `COMPOSER_ACTIVE=0`:
+- Fall through to existing Steps 2.0.5–2.2 (backward compatible — no agency-spec or Composer unavailable)
 
 ### Step 2.0.5: Resolve agent models
+
+**Skip this step if `COMPOSER_ACTIVE=1`** — the Composer plan already includes model assignments per agent.
 
 Before launching agents, resolve the model tier for each triaged agent from `config/routing.yaml` via Clavain's routing library. This ensures routing.yaml is the single source of truth for model selection — agent frontmatter serves as fallback only when routing.yaml is absent.
 
@@ -295,6 +321,8 @@ Trust: fd-safety=0.85, fd-correctness=0.92, fd-game-design=0.15, fd-quality=0.78
 **Fallback:** If lib-trust.sh not found or `_trust_scores_batch` fails, skip entirely (all multipliers = 1.0). Trust is progressive enhancement, never a gate.
 
 ### Step 2.2: Stage 1 — Launch top agents [review only]
+
+**Skip this step if `COMPOSER_ACTIVE=1`** — agents were already dispatched in Step 2.0.4.
 
 **Skip this step in research mode** — research mode dispatches all agents in Step 2.1-research above.
 
