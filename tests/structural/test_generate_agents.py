@@ -125,10 +125,10 @@ def _write_profile(tmp_path: Path, filename: str, content: str) -> Path:
 
 
 def _setup_cache(project: Path, domains: list[dict]) -> None:
-    """Write a flux-drive.yaml cache in the project."""
+    """Write an intersense.yaml cache in the project."""
     cache_dir = project / ".claude"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / "flux-drive.yaml"
+    cache_path = cache_dir / "intersense.yaml"
     data = {
         "cache_version": 1,
         "domains": domains,
@@ -420,7 +420,7 @@ class TestGenerate:
         project.mkdir()
         cache_dir = project / ".claude"
         cache_dir.mkdir(parents=True)
-        (cache_dir / "flux-drive.yaml").write_text(
+        (cache_dir / "intersense.yaml").write_text(
             "domains: []\n", encoding="utf-8",
         )
         report = generate(project)

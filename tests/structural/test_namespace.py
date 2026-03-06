@@ -52,17 +52,17 @@ def test_agent_roster_uses_interflux_namespace(project_root: Path):
     assert "Plugin Agents (interflux)" in roster
 
 
-def test_launch_uses_interflux_mcp(project_root: Path):
-    """launch.md uses mcp__plugin_interflux_qmd__ prefix."""
+def test_launch_uses_interknow_mcp(project_root: Path):
+    """launch.md uses mcp__plugin_interknow_qmd__ prefix (qmd moved to interknow)."""
     launch = (project_root / "skills" / "flux-drive" / "phases" / "launch.md").read_text()
-    assert "mcp__plugin_interflux_qmd__" in launch
+    assert "mcp__plugin_interknow_qmd__" in launch
     assert "mcp__plugin_clavain_qmd__" not in launch
 
 
-def test_launch_uses_interflux_collection(project_root: Path):
-    """launch.md uses interflux qmd collection name."""
+def test_launch_uses_interknow_collection(project_root: Path):
+    """launch.md uses interknow qmd collection name."""
     launch = (project_root / "skills" / "flux-drive" / "phases" / "launch.md").read_text()
-    assert '"interflux"' in launch
+    assert '"interknow"' in launch
 
 
 def test_flux_drive_command_uses_interflux(project_root: Path):
