@@ -15,3 +15,4 @@ docs/research/flux-drive/
 
 # Local workspace artifacts
 .claude/
+.clavain/
