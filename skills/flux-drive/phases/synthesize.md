@@ -45,7 +45,7 @@ Report validation results to user: "5/6 agents returned valid Findings Index, 1 
 Task(intersynth:synthesize-research):
   prompt: |
     OUTPUT_DIR={OUTPUT_DIR}
-    VERDICT_LIB={CLAUDE_PLUGIN_ROOT}/../../os/clavain/hooks/lib-verdict.sh
+    VERDICT_LIB=auto
     RESEARCH_QUESTION={RESEARCH_QUESTION}
     QUERY_TYPE={type}
     ESTIMATED_DEPTH={estimated_depth}
@@ -65,7 +65,7 @@ After the synthesis subagent returns:
 Task(intersynth:synthesize-review):
   prompt: |
     OUTPUT_DIR={OUTPUT_DIR}
-    VERDICT_LIB={CLAUDE_PLUGIN_ROOT}/../../os/clavain/hooks/lib-verdict.sh
+    VERDICT_LIB=auto
     MODE=flux-drive
     CONTEXT="Reviewing {INPUT_TYPE}: {INPUT_STEM} ({N} agents, {early_stop_note})"
     FINDINGS_TIMELINE={OUTPUT_DIR}/peer-findings.jsonl
