@@ -84,13 +84,28 @@ Before launching agents, resolve the model tier for each triaged agent from `con
    PHASE=$(ic state get sprint.phase "$CLAVAIN_RUN_ID" 2>/dev/null || echo "executing")
    ```
 
-3. **Call routing_resolve_agents**: Pass the comma-separated list of triaged agent short names:
+3. **Measure review complexity signals** (B2 — progressive enhancement):
+   Measure complexity signals from the review target. These are passed as raw values to `routing_resolve_agents` — classification happens inside the routing library.
    ```bash
-   MODEL_MAP=$(routing_resolve_agents --phase "$PHASE" --agents "fd-safety,fd-architecture,fd-quality")
+   # Approximate token count from review file size (chars / 4)
+   REVIEW_TOKENS=0
+   if [[ -n "${REVIEW_FILE:-}" && -f "$REVIEW_FILE" ]]; then
+     REVIEW_TOKENS=$(( $(wc -c < "$REVIEW_FILE") / 4 ))
+   fi
+   # File count from changed files (newline-separated diff output)
+   REVIEW_FILE_COUNT=$(git diff --name-only HEAD 2>/dev/null | wc -l || echo "0")
+   # Reasoning depth: neutral baseline (let token count and file count drive classification)
+   REVIEW_DEPTH=1
+   ```
+
+4. **Call routing_resolve_agents**: Pass the comma-separated list of triaged agent short names with complexity signals:
+   ```bash
+   MODEL_MAP=$(routing_resolve_agents --phase "$PHASE" --agents "fd-safety,fd-architecture,fd-quality" \
+     --prompt-tokens "$REVIEW_TOKENS" --file-count "$REVIEW_FILE_COUNT" --reasoning-depth "$REVIEW_DEPTH")
    ```
    Returns JSON: `{"fd-safety":"sonnet","fd-architecture":"sonnet","fd-quality":"sonnet"}`
 
-4. **Apply to agent launches**: When launching each agent (Steps 2.2/2.2c), pass the `model:` parameter:
+5. **Apply to agent launches**: When launching each agent (Steps 2.2/2.2c), pass the `model:` parameter:
    ```
    Agent(subagent_type: "interflux:review:fd-safety", model: "sonnet", run_in_background: true, prompt: "...")
    ```
@@ -100,7 +115,7 @@ Before launching agents, resolve the model tier for each triaged agent from `con
 
 **Debug output** (when `FLUX_DEBUG=1`):
 ```
-Model routing: phase=executing
+Model routing: phase=executing, tokens=${REVIEW_TOKENS}, files=${REVIEW_FILE_COUNT}
   fd-safety=sonnet, fd-architecture=sonnet, fd-quality=sonnet
 ```
 
