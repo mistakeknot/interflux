@@ -517,7 +517,7 @@ Add a note in the Step 3.5 report template: after the Files section, add:
 ### Failure Handling
 
 If the compounding Task fails:
-- Do NOT report the failure to the user
-- Do NOT retry
+- Silently swallow the error — compounding is best-effort
+- Skip retry attempts
 - The review is complete regardless of compounding success
 - Log the error internally for debugging
