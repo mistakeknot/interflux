@@ -2,16 +2,16 @@
 
 ```
 interflux/
-├── agents/review/       # 8 fd-* review agents (7 technical + fd-systems cognitive)
+├── agents/review/       # 12 fd-* review agents (7 technical + 5 cognitive)
 ├── agents/research/     # 5 research agents (best-practices, framework-docs, git-history, learnings, repo-research)
-├── commands/            # 3 commands: flux-drive, flux-gen, flux-research
+├── commands/            # 4 commands: flux-drive, flux-research, flux-gen, fetch-findings
 ├── skills/flux-drive/   # Review orchestration (triage, launch phases, synthesis) + references/
 ├── skills/flux-research/# Research orchestration
 ├── config/flux-drive/domains/  # 11 domain detection profiles + index.yaml
-├── docs/spec/           # flux-drive protocol spec v1.0.0 (9 documents)
+├── docs/spec/           # flux-drive protocol spec v1.0.0 (8 documents)
 ├── hooks/               # SessionStart (interbase-aware)
 ├── scripts/             # content-hash, generate-agents, validate-roster
-└── tests/structural/    # 120 pytest tests
+└── tests/structural/    # pytest tests (agents, commands, skills, namespace, slicing, domains, content-hash, generate-agents)
 ```
 
 ## flux-drive (Review Orchestration)

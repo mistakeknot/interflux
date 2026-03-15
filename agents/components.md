@@ -2,12 +2,14 @@
 
 ## Review Agents (fd-*)
 
-- 8 agents: 7 technical (auto-detect language) + 1 cognitive (fd-systems, documents only)
+- 12 agents: 7 technical (auto-detect language) + 5 cognitive (documents only)
+- Technical: fd-architecture, fd-safety, fd-correctness, fd-quality, fd-user-product, fd-performance, fd-game-design
+- Cognitive: fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception
 - YAML frontmatter: `name`, `description` (with `<example>` blocks), `model: sonnet`
 - Each reads project CLAUDE.md/AGENTS.md for codebase-aware review
 - Findings output uses the Findings Index contract: `SEVERITY | ID | "Section" | Title`
 - Verdict: `safe | needs-changes | risky`
-- **Cognitive agents** (fd-systems) are pre-filtered: only activate for `.md`/`.txt` document reviews (PRDs, brainstorms, plans, strategy docs), never for code or diffs. Use cognitive severity mapping: Blind Spot → P1, Missed Lens → P2, Consider Also → P3
+- **Cognitive agents** are pre-filtered: only activate for `.md`/`.txt` document reviews (PRDs, brainstorms, plans, strategy docs), never for code or diffs. Use cognitive severity mapping: Blind Spot -> P1, Missed Lens -> P2, Consider Also -> P3
 
 ## Research Agents
 
