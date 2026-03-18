@@ -96,90 +96,42 @@ INPUT_TYPE        = research
 
 A document-codebase divergence is itself a P0 finding — every agent should be told about it.
 
-### Step 1.0.1: Classify Project Domain
+### Step 1.0.1: Classify Project Domains (LLM)
 
-Detect the project's domain(s) for agent selection and domain-specific review criteria injection. Results are cached.
+Based on your Step 1.0 project understanding (README, build files, CLAUDE.md/AGENTS.md, source files), classify the project into domain(s) for agent selection and domain-specific review criteria injection.
 
-**Cache check:** Look for `{PROJECT_ROOT}/.claude/intersense.yaml`. If it exists and contains `domains:` with at least one entry, use cached results. If the file also contains `override: true`, never re-detect — the user has manually set their domains.
+Output as part of your analysis:
 
-**Detection** (when no cache, cache is stale, or `source: heuristic` in cache):
+```
+Project domains: [comma-separated from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]
+```
 
-Run the deterministic domain detection script:
+A project can match multiple domains simultaneously (e.g., a monorepo with CLIs, TUI tools, and plugins). If no predefined domain fits, output `Project domains: none`. No external scripts needed — you already have the context from Step 1.0.
+
+**Override:** If `{PROJECT_ROOT}/.claude/intersense.yaml` exists with `override: true`, read its `domains:` entries instead of classifying. This lets users pin domains manually.
+
+**Output:** The classified domains feed into Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection).
+
+### Step 1.0.4: Ensure Project Agents (flux-gen dispatch)
+
+Check if project-specific review agents exist:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json
+ls {PROJECT_ROOT}/.claude/agents/fd-*.md 2>/dev/null | head -1
 ```
 
-This scans directories, files, build-system dependencies, and source keywords against signals defined in domain profiles (shipped with the intersense plugin, with a local fallback at `config/flux-drive/domains/index.yaml`). No LLM call needed.
+- **If agents exist:** Proceed to Step 1.1. The generated agents in `.claude/agents/fd-*.md` are the durable cache — they persist across sessions and don't need regeneration unless the user runs `/interflux:flux-gen` manually to refresh them.
 
-Parse the JSON output (`{"domains": [...], "source": "deterministic"}`). The script automatically writes the cache to `{PROJECT_ROOT}/.claude/intersense.yaml` with structural hash for staleness detection.
-
-**If detection returns no domains** (exit code 1 or empty list): proceed with core agents only (no domain-specific agents). Log: `"Domain detection: no domains matched, proceeding with core agents only."`
-
-**If detection fails** (exit code 2): proceed with core agents only. Log: `"Domain detection: script error, proceeding with core agents only."`
-
-**Performance budget:** Detection should complete in <5 seconds. Cache check is <10ms.
-
-**Output:** The detected domains feed into Step 1.0.2 (staleness), Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection).
-
-### Step 1.0.2: Check Staleness
-
-Check if cached domain detection is outdated using the deterministic content hash helper.
-
-1. Read `content_hash` from `{PROJECT_ROOT}/.claude/intersense.yaml`
-2. If no `content_hash` field (old cache format): cache is stale, proceed to Step 1.0.3
-3. Run the hash helper to compare:
-   ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/content-hash.py {PROJECT_ROOT} --check <cached_hash>
-   ```
-   - Exit 0: cache is fresh, proceed to Step 1.1
-   - Exit 1: cache is stale (hash mismatch or no hashable files), proceed to Step 1.0.3
-   - Exit 2: script error, treat as stale, proceed to Step 1.0.3
-
-### Step 1.0.3: Re-detect
-
-When staleness is detected or no cache exists:
-
-1. Read previous domains from cache (if any) for comparison
-2. Run LLM detection (Step 1.0.1 detection flow)
-3. Compare new vs previous:
-   - Unchanged → proceed to Step 1.0.4
-   - Changed → log: `"Domain shift: [old] → [new]"`. Proceed to Step 1.0.4
-
-### Step 1.0.4: Agent Generation
-
-Auto-generate project-specific agents using the shared `generate-agents.py` script. This runs non-interactively within the flux-drive pipeline.
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=regenerate-stale --json
-```
-
-**Exit codes:**
-- **0**: Agents generated or all up-to-date. Parse JSON report from stdout.
-- **1**: No domains in cache. Skip generation, proceed to Step 1.1 with core agents only.
-- **2**: Script error. Log warning, proceed with core agents only.
-
-**Interpret the JSON report:**
-
-```json
-{
-  "status": "ok",
-  "generated": ["fd-simulation-kernel", "fd-agent-narrative"],
-  "skipped": ["fd-game-systems"],
-  "orphaned": ["fd-old-agent"],
-  "errors": []
-}
-```
-
-**Lists to report:**
-- `generated`: Log each: `"Generated: {name}"`
-- `skipped`: Silent (agents are current)
-- `orphaned`: Log each: `"Orphaned: {name}. Delete manually if unwanted."`
-- `errors`: Log as warnings
+- **If no agents exist:** Invoke `/interflux:flux-gen` with a task derived from the input being reviewed. This delegates agent authoring to its canonical owner (composition through contracts):
+  - **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
+  - **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
+  - **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
+  - flux-gen's prompt mode designs task-specific agents via LLM, writes them to `.claude/agents/fd-*.md`, and returns. This is non-blocking — proceed after generation completes.
+  - If flux-gen fails or user cancels generation, proceed with core agents only (graceful degradation).
 
 **Summary line:**
 ```
-Domain agents: N exist, M generated, K orphaned
+Project agents: N found in .claude/agents/ [M newly generated via flux-gen]
 ```
 
 ### Step 1.1: Analyze the Input
@@ -223,7 +175,7 @@ Document Profile:
 - Languages: [from codebase, not just the document]
 - Frameworks: [from codebase, not just the document]
 - Domains touched: [architecture, security, performance, UX, data, API, etc.]
-- Project domains: [from Step 1.0.1 — e.g., "game-simulation (0.65), cli-tool (0.35)" or "none detected"]
+- Project domains: [from Step 1.0.1 — e.g., "game-simulation, cli-tool" or "none"]
 - Technologies: [specific tech mentioned]
 - Divergence: [none | description — only for documents that describe code]
 - Key codebase files: [list 3-5 actual files agents should read]
@@ -245,7 +197,7 @@ Diff Profile:
 - Binary files: [list any binary file changes]
 - Languages detected: [from file extensions in the diff]
 - Domains touched: [architecture, security, performance, UX, data, API, etc.]
-- Project domains: [from Step 1.0.1 — e.g., "game-simulation (0.65), cli-tool (0.35)" or "none detected"]
+- Project domains: [from Step 1.0.1 — e.g., "game-simulation, cli-tool" or "none"]
 - Renamed files: [list of old → new renames]
 - Key files: [top 5 files by change size]
 - Commit message: [if available from diff header]

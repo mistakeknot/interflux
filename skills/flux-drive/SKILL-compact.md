@@ -40,22 +40,33 @@ Clean OUTPUT_DIR of stale `.md` files before starting.
 2. Read CLAUDE.md/AGENTS.md if present
 3. If qmd MCP available, search for project conventions
 
-### Step 1.0.1: Domain Detection
+### Step 1.0.1: Classify Domains (LLM)
 
-**Cache check:** `{PROJECT_ROOT}/.claude/intersense.yaml` — if exists with `domains:` and `content_hash:` matches current files, use cached. If `override: true`, never re-detect.
+Based on your Step 1.0 project understanding (README, build files, CLAUDE.md/AGENTS.md, source files), classify the project's domain(s). Output as part of your analysis:
 
-**Detection:** Run deterministic script: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`. Scans dirs, files, build deps, source keywords against domain signals (intersense plugin, fallback `config/flux-drive/domains/index.yaml`). Auto-caches to `.claude/intersense.yaml` with structural hash.
+```
+Project domains: [comma-separated list from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]
+```
 
-**If detection returns no domains or fails:** Proceed with core agents only (no domain-specific agents).
+A project can match multiple domains (e.g., a monorepo with CLIs, TUI tools, and plugins). If no domain fits, output `Project domains: none`. No external scripts needed — you already have the context.
 
-**Staleness:** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/content-hash.py {PROJECT_ROOT} --check <cached_hash>`. Exit 0 → fresh. Exit 1 → stale (re-detect).
+**Override:** If `{PROJECT_ROOT}/.claude/intersense.yaml` exists with `override: true`, read its `domains:` entries instead of classifying. This lets users pin domains manually.
 
-### Step 1.0.4: Agent Generation
+### Step 1.0.4: Ensure Project Agents
+
+Check if project-specific review agents exist:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=regenerate-stale --json
+ls {PROJECT_ROOT}/.claude/agents/fd-*.md 2>/dev/null | head -1
 ```
-Exit 0: parse JSON report (created/skipped/regenerated/orphaned per agent). Exit 1: no domains. Exit 2: error. Report orphans, don't delete.
+
+- **If agents exist:** Proceed to Step 1.1 (agents are the durable cache — no regeneration needed unless stale).
+- **If no agents exist:** Invoke `/interflux:flux-gen` with a task derived from the input document:
+  - **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
+  - **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
+  - **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
+  - flux-gen generates task-specific agents in `.claude/agents/fd-*.md`. This is non-blocking — proceed after generation completes.
+  - If flux-gen fails or user cancels, proceed with core agents only (graceful degradation).
 
 ### Step 1.1: Analyze Input
 
