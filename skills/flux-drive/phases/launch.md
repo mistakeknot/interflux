@@ -423,7 +423,7 @@ if trust_score < 0.5:
 #### Dropout decision
 
 ```
-DROPOUT_THRESHOLD = 0.7  (from budget.yaml → dropout.threshold, default 0.7)
+DROPOUT_THRESHOLD = 0.6  (from budget.yaml → dropout.threshold, default 0.6)
 
 for each candidate in Stage 2 + expansion pool:
     if candidate in exempt_agents:
@@ -437,12 +437,13 @@ for each candidate in Stage 2 + expansion pool:
 After computing dropout decisions, log the results prominently so users can see what was removed and why:
 
 ```
-AgentDropout: Evaluated N candidates
+AgentDropout: Evaluated N candidates (threshold: 0.6)
   ✓ fd-performance (redundancy: 0.4) — retained
   ✗ fd-quality (redundancy: 0.7) — DROPPED (domain converged + neighbors saturated)
+  ✗ fd-user-product (redundancy: 0.6) — DROPPED (domain converged + finding density)
   🛡 fd-safety (redundancy: 0.8) — EXEMPT (safety-critical)
   ✓ fd-game-design (redundancy: 0.1) — retained
-Dropped: 1 agent. Estimated savings: ~40K tokens.
+Dropped: 2 agents. Estimated savings: ~80K tokens.
 ```
 
 **Estimated savings** = sum of `agent_defaults[category]` from `budget.yaml` for each dropped agent (adjusted by `slicing_multiplier` if slicing is active).
@@ -454,13 +455,14 @@ Record dropout decisions in the cost report data for Step 3.4b:
 ```json
 {
   "dropout": {
-    "evaluated": 4,
-    "dropped": ["fd-quality"],
+    "evaluated": 5,
+    "dropped": ["fd-quality", "fd-user-product"],
     "retained": ["fd-performance", "fd-game-design"],
     "exempt": ["fd-safety"],
-    "estimated_savings": 40000,
+    "estimated_savings": 80000,
     "scores": {
       "fd-quality": 0.7,
+      "fd-user-product": 0.6,
       "fd-performance": 0.4,
       "fd-game-design": 0.1,
       "fd-safety": 0.8

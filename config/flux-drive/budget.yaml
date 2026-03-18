@@ -41,6 +41,7 @@ exempt_agents:
 # Prunes Stage 2/expansion pool agents whose domains are already well-covered by Stage 1
 dropout:
   enabled: true
-  threshold: 0.7            # redundancy score (0.0-1.0) at which an agent is dropped
+  threshold: 0.6            # redundancy score (0.0-1.0) at which an agent is dropped
                             # Lower = more aggressive pruning, higher = more conservative
-                            # 0.7 requires at least domain convergence (0.4) + one additional signal
+                            # 0.6 requires domain convergence (0.4) + finding density (0.2)
+                            # Lowered from 0.7 (Demarch-1x9l.3) — saves 15-40K tokens per dropped agent
