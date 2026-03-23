@@ -139,15 +139,16 @@ final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_
 ```
 
 - base 3=core domain overlap, 2=adjacent, 1=tangential, 0=excluded
-- domain_boost: +2 if agent has >=3 injection criteria for detected domain, +1 for 1-2
+- domain_boost: +2 if agent has injection criteria section in domain profile, +0 otherwise (binary)
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin Agents), +1 for Project Agents
-- Selection: all >=3 included, >=2 if slots remain, >=1 only for thin sections
+- Selection: base_score determines inclusion (>=3 always, >=2 if slots, >=1 for thin). Bonuses affect ranking/staging only.
+- Deduplication: exact name match → prefer Project Agent. Partial domain overlap → keep both (Plugin in Stage 2).
 
 **Dynamic slot ceiling:**
 
 ```
-total = 4(base) + scope(file:0, small-diff:1, large-diff:2, repo:3) + domain(0:0, 1:1, 2+:2) + generated(flux-gen:2, none:0)
-hard_max = 12
+total = 4(base) + scope(file:0, small-diff:1, large-diff:2, repo:3) + domain(0:0, 1:1, 2+:2)
+hard_max = 10
 ```
 
 **Stage assignment:** Stage 1 = top 40% of slots (min 2, max 5). Stage 2 = remainder.
@@ -274,8 +275,9 @@ Read `phases/launch.md` for the full launch protocol. The launch phase respects 
 - Step 2.1c: For documents >200 lines, apply document slicing (section_map per agent)
 - Step 2.2: Monitor completion, expand Stage 2 if severity warrants
 - Step 2.2a: Research context dispatch between stages
-- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates
-- Step 2.2b-c: Staged expansion decision
+- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates (threshold 0.6)
+- Step 2.2a.6: **Incremental expansion** — speculative Stage 2 launch (max 2) as Stage 1 results arrive
+- Step 2.2b-c: Staged expansion decision (excludes already-launched speculative agents)
 - All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-drive:complete -->` sentinel
 
 **[research mode]**:
