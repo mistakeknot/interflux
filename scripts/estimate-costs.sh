@@ -83,11 +83,13 @@ if [[ -f "$DB_PATH" ]]; then
   # Query agents with >= 3 runs for reliable estimates
   # Use total_tokens for consistency with fleet registry enrichment (SEMANTICS-001)
   INTERSTAT_DATA=$(sqlite3 -json "$DB_PATH" "
-    SELECT agent_name, CAST(ROUND(AVG(total_tokens)) AS INTEGER) as est_tokens, COUNT(*) as sample_size
+    SELECT REPLACE(agent_name, 'interflux:', '') as agent_name,
+           CAST(ROUND(AVG(total_tokens)) AS INTEGER) as est_tokens,
+           COUNT(*) as sample_size
     FROM agent_runs
     WHERE (model = '${MODEL}' OR model IS NULL)
       AND total_tokens IS NOT NULL
-    GROUP BY agent_name
+    GROUP BY REPLACE(agent_name, 'interflux:', '')
     HAVING COUNT(*) >= 3
     ORDER BY agent_name;
   " 2>/dev/null || echo "[]")
@@ -116,7 +118,7 @@ _find_lib_fleet() {
   # 3. Monorepo relative path (development context, last resort)
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  candidates+=("$script_dir/../../../os/clavain/scripts/lib-fleet.sh")
+  candidates+=("$script_dir/../../../os/Clavain/scripts/lib-fleet.sh")
   for f in "${candidates[@]}"; do
     if [[ -f "$f" ]]; then
       echo "$f"

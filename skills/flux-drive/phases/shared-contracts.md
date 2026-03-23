@@ -104,7 +104,7 @@ See `phases/slicing.md` for complete diff and document slicing contracts, includ
 ## Monitoring Contract
 
 After dispatching agents, poll for completion:
-- Check `{OUTPUT_DIR}/` for `.md` files every 30 seconds
+- Check `{OUTPUT_DIR}/` for `.md` files every 5 seconds (ls on <15 files is negligible cost)
 - Report each completion with elapsed time
 - Report running count: `[N/M agents complete]`
 - Timeout: 5 minutes (Task), 10 minutes (Codex)

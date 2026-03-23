@@ -255,6 +255,27 @@ Extend the findings.json schema with a `cost_report` field:
 }
 ```
 
+### Step 3.4c: Record token estimates to interstat
+
+For each dispatched agent, write an approximate token estimate based on output file size:
+
+```bash
+# Approximate tokens from output file size (1 token ≈ 4 chars)
+for agent_file in "${OUTPUT_DIR}"/*.md; do
+    agent_name=$(basename "$agent_file" .md)
+    file_chars=$(wc -c < "$agent_file")
+    est_output_tokens=$((file_chars / 4))
+    # Input tokens: use the review file size as proxy
+    review_chars=$(wc -c < "${REVIEW_FILE:-/dev/null}" 2>/dev/null || echo "0")
+    est_input_tokens=$((review_chars / 4))
+    est_total=$((est_input_tokens + est_output_tokens))
+    sqlite3 "${INTERSTAT_DB:-$HOME/.claude/interstat/metrics.db}" \
+        "UPDATE agent_runs SET total_tokens=$est_total, input_tokens=$est_input_tokens, output_tokens=$est_output_tokens WHERE agent_name='interflux:$agent_name' AND total_tokens IS NULL ORDER BY created_at DESC LIMIT 1;" 2>/dev/null || true
+done
+```
+
+Note: This is an approximation (chars/4). More accurate token counting requires session JSONL parsing, which is a future improvement. The approximation is sufficient to unblock calibration and identify which defaults in budget.yaml are significantly wrong.
+
 **Convergence with document slicing:** When document slicing is active (`slicing_map` available from Phase 2), adjust convergence scoring:
 - Only count agents that received the relevant section as `priority` when computing convergence counts. An agent that only saw a context summary cannot meaningfully converge on the same finding.
 - If 2+ agents agree on a finding AND reviewed different priority sections (per `slicing_map`), boost the convergence score by 1. Cross-section agreement is higher confidence than same-section agreement. Tag with `"slicing_boost": true` in findings.json.
@@ -309,10 +330,13 @@ Present the synthesis report using this exact structure. Fill in each section fr
 [Any disagreements between agents. If none: "No conflicts detected."]
 
 ### Cost Report
-| Agent | Estimated | Actual | Delta | Source |
-|-------|-----------|--------|-------|--------|
-| {agent} | {est}K | {actual}K | {delta}% | {interstat|default} |
-| **TOTAL** | **{est_total}K** | **{actual_total}K** | **{delta}%** | |
+| Agent | Base Score | Findings (P0/P1/P2) | Estimated | Actual | Delta | Source |
+|-------|-----------|---------------------|-----------|--------|-------|--------|
+| {agent} | {base_score} | {p0}/{p1}/{p2} | {est}K | {actual}K | {delta}% | {interstat|default} |
+| **TOTAL** | | | **{est_total}K** | **{actual_total}K** | **{delta}%** | |
+
+Tangential agent survival rate: {N}% ({M}/{T} base_score=1 agents produced P0/P1 findings)
+[If survival rate < 20%:] Consider raising selection threshold for this project type.
 
 Budget: {budget_type} ({BUDGET_TOTAL/1000}K). Used: {actual_total/1000}K ({pct}%).
 [If agents deferred:] Deferred: {N} agents ({deferred_total/1000}K est.) — override available at triage.

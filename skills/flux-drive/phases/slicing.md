@@ -32,6 +32,11 @@ These agents need the complete diff/document regardless of size:
 - `**/ssl/**`, `**/tls/**`, `**/cert*`
 - `**/*-policy*`, `**/iam/**`
 - `**/ci/**`, `**/.github/workflows/**`, `**/.gitlab-ci*`
+- `**/oauth/**`, `**/sso/**`, `**/saml/**`, `**/oidc/**`
+- `**/keys/**`, `**/pki/**`, `**/signing*`
+- `**/webhook*`
+- `**/token*`
+- `**/.npmrc`, `**/.pypirc`, `**/pip.conf`
 
 **Priority hunk keywords** (case-insensitive, match within diff hunk lines):
 `password`, `secret`, `token`, `api_key`, `apikey`, `api-key`, `credential`, `private_key`, `encrypt`, `decrypt`, `hash`, `salt`, `bearer`, `oauth`, `jwt`, `session`, `cookie`, `csrf`, `cors`, `helmet`, `sanitize`, `escape`, `inject`, `trust`, `allow_origin`, `chmod`, `chown`, `sudo`, `root`, `admin`
@@ -196,7 +201,7 @@ For documents under 200 lines, skip section slicing entirely — all agents rece
 4. **Safety override** — Any section mentioning auth, credentials, secrets, tokens, or certificates is always `priority` for fd-safety (enforced in classification prompt).
 5. **80% threshold** — If `agent_priority_lines * 100 / total_lines >= 80` (integer arithmetic), skip slicing for that agent — send full document.
 6. **Domain mismatch guard** — If no agent receives >10% of total lines as priority, classification likely failed. Fall back to full document for all agents.
-7. **Zero priority skip** — If an agent has zero priority sections, do not dispatch that agent at all.
+7. **Zero priority fallback** — If an agent has zero priority sections despite passing pre-filter, send the full document to that agent (same as cross-cutting behavior). Log: `WARNING: {agent} has zero priority sections (score {N}). Sending full document as fallback.` In the slicing report, mark the agent as `mode: full (zero-priority fallback)`.
 
 **Method 2: Keyword Matching** — fallback when Interserve spark is unavailable or returns low-confidence (<0.6 average).
 
@@ -207,12 +212,13 @@ For documents under 200 lines, skip section slicing entirely — all agents rece
 3. **Cross-cutting agents** (fd-architecture, fd-quality) — always receive the full document. Skip classification for these agents.
 4. **Safety override** — Any section mentioning auth, credentials, secrets, tokens, or certificates is always `priority` for fd-safety.
 5. **80% threshold** — If an agent's priority sections cover >= 80% of total document lines, skip slicing for that agent (send full document).
+6. **Zero priority fallback** — If an agent has zero priority sections despite passing pre-filter, send the full document to that agent. Log: `WARNING: {agent} has zero priority sections (score {N}). Sending full document as fallback.` Mark as `mode: full (zero-priority fallback)` in slicing report.
 
 **Composition rule:** Try Method 1 first. If `classify_sections` returns `status: "no_classification"` or average confidence < 0.6, fall back to Method 2.
 
 A section is `priority` for an agent under Method 2 if:
 - The section heading matches any of the agent's keywords (case-insensitive substring)
-- The section body contains any of the agent's keywords (sampled — first 50 lines)
+- The section body contains any of the agent's keywords (sampled — first 50 lines + last 20 lines; for sections <= 70 lines, read entire body)
 
 ### Section Heading Keywords
 
@@ -220,10 +226,10 @@ Additional keywords matched against heading text only:
 
 | Agent | Heading keywords |
 |-------|-----------------|
-| fd-safety | security, auth, credential, deploy, rollback, trust, permissions, secrets, certificates |
-| fd-correctness | data, transaction, migration, concurrency, async, race, state, consistency, integrity |
-| fd-performance | performance, scaling, cache, bottleneck, latency, throughput, memory, rendering, optimization |
-| fd-user-product | user, UX, flow, onboarding, CLI, interface, experience, accessibility, error handling |
+| fd-safety | security, auth, credential, deploy, rollback, trust, permissions, secrets, certificates, encryption, compliance, audit, vulnerability, threat, access control, privacy |
+| fd-correctness | data, transaction, migration, concurrency, async, race, state, consistency, integrity, idempotency, retry, error, exception, validation, schema, queue, worker, lifecycle |
+| fd-performance | performance, scaling, cache, bottleneck, latency, throughput, memory, rendering, optimization, database, query, connection, pool, startup, load, concurrency, profiling, benchmark |
+| fd-user-product | user, UX, flow, onboarding, CLI, interface, experience, accessibility, error handling, design, workflow, navigation, feedback, notification, settings |
 | fd-game-design | game, simulation, balance, pacing, AI, behavior, procedural, storyteller, feedback loop |
 
 ### Per-Agent Temp File Construction (Document)
@@ -262,7 +268,7 @@ For documents >= 500 lines, generate a Pyramid Summary:
 - Write 1-2 sentence summaries per section
 - Prepend to each agent's content as a focus guide (even cross-cutting agents benefit from the summary)
 
-For documents 200-500 lines, skip summaries — classify sections only (the savings come from slicing, not from summarization overhead).
+For documents 200-500 lines, generate a 2-3 sentence document abstract (NOT per-section summaries). Prepend the abstract to all sliced agent content as orientation context. Cost: ~50 tokens per agent. This ensures domain-specific agents receiving sliced content can understand how their priority sections fit into the larger document.
 
 ### Output: section_map
 

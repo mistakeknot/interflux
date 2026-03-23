@@ -206,8 +206,8 @@ Single unified skill registered in plugin.json. Two modes selected by invocation
 
 ### Three-Phase Protocol
 
-1. **Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 = max 7), present roster for user approval. Dynamic slot ceiling (4-12 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines.
-2. **Launch** — Dispatch Stage 1 agents in parallel, monitor completion, optionally expand to Stage 2 based on findings severity + adjacency scoring. AgentDropout prunes redundant agents (threshold 0.7). Safety-critical agents (fd-safety, fd-correctness) exempt from budget cuts and dropout.
+1. **Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 = max 7), present roster for user approval. Dynamic slot ceiling (4-10 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines.
+2. **Launch** — Dispatch Stage 1 agents in parallel, monitor completion, optionally expand to Stage 2 based on findings severity + adjacency scoring. Incremental expansion launches speculative Stage 2 agents as Stage 1 results arrive. AgentDropout prunes redundant agents (threshold 0.6). Safety-critical agents (fd-safety, fd-correctness) exempt from budget cuts and dropout.
 3. **Synthesize** — Validate outputs, deduplicate findings, track convergence, compute verdict (safe/needs-changes/risky), generate findings.json + summary.md. Research mode delegates to `intersynth:synthesize-research`.
 
 Phase files in `skills/flux-drive/phases/`:
@@ -294,7 +294,7 @@ Configuration in `config/flux-drive/budget.yaml`:
 - Minimum 2 agents always dispatched regardless of budget
 - Enforcement: soft (warn + offer override)
 - Exempt agents: fd-safety, fd-correctness (never dropped by budget or AgentDropout)
-- AgentDropout threshold: 0.7 redundancy score
+- AgentDropout threshold: 0.6 redundancy score
 
 Cost estimation: `scripts/estimate-costs.sh` queries interstat historical data, falls back to budget.yaml defaults.
 

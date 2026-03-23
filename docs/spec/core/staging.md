@@ -179,7 +179,7 @@ For each Stage 2 / expansion pool candidate:
 | Finding density | +0.2 | ≥3 P0/P1 findings exist from agents adjacent to this candidate |
 | Low trust | +0.1 | Agent's trust multiplier < 0.5 (poor historical precision) |
 
-**Dropout threshold:** Default 0.7 (configurable via `budget.yaml → dropout.threshold`). Agents at or above the threshold are dropped from the candidate pool.
+**Dropout threshold:** Default 0.6 (configurable via `budget.yaml → dropout.threshold`). Agents at or above the threshold are dropped from the candidate pool.
 
 **Exempt agents:** Agents in `budget.yaml → exempt_agents` (fd-safety, fd-correctness) are never dropped regardless of redundancy score. This prevents the invisible failure mode where a safety-critical agent is silently removed.
 
@@ -192,7 +192,7 @@ For each Stage 2 / expansion pool candidate:
 - Stage 1 produced zero findings (no convergence signal)
 - `budget.yaml → dropout.enabled` is `false`
 
-> **Why this works:** AgentDropout operates at a different granularity than pre-filtering (content-based) and staging (score-based). It uses *actual Stage 1 output* to assess redundancy — "did we already find issues in this domain?" not "might this domain be relevant?" The 0.7 threshold requires at least domain convergence (0.4) plus one additional signal, preventing over-aggressive pruning. The exempt list ensures safety-critical coverage is never compromised. Combined with the existing two-stage architecture, this creates three layers of agent count reduction: pre-filter → stage selection → dropout.
+> **Why this works:** AgentDropout operates at a different granularity than pre-filtering (content-based) and staging (score-based). It uses *actual Stage 1 output* to assess redundancy — "did we already find issues in this domain?" not "might this domain be relevant?" The 0.6 threshold requires domain convergence (0.4) plus finding density (0.2) at minimum, preventing over-aggressive pruning. The exempt list ensures safety-critical coverage is never compromised. Combined with the existing two-stage architecture, this creates three layers of agent count reduction: pre-filter → stage selection → dropout.
 
 ### Stage 2 — Conditional Launch
 

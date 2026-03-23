@@ -47,15 +47,14 @@ The base score represents intrinsic relevance of the agent's domain to the docum
 
 ### Domain Boost (0-2)
 
-Applied only when `base_score ≥ 1`. Derived from domain profile injection criteria bullet counts:
+Applied only when `base_score ≥ 1`. Binary: presence or absence of injection criteria in the domain profile.
 
-| Injection Criteria Bullets | Boost |
-|----------------------------|-------|
-| ≥3 bullets | +2 |
-| 1-2 bullets | +1 |
-| 0 bullets (no injection criteria) | +0 |
+| Injection Criteria | Boost |
+|--------------------|-------|
+| Has injection criteria section | +2 |
+| No injection criteria section | +0 |
 
-> **Why this works:** Injection criteria bullet count is a proxy for "how much domain-specific guidance exists for this agent." More guidance = higher value from running the agent in that domain. The 3-bullet threshold separates "generic awareness" (1-2 bullets: "check performance") from "deep domain coverage" (3+ bullets: "check N+1 queries, index usage, connection pooling, caching strategy, query complexity").
+> **Why this works:** The original 3-tier boost (+0/+1/+2 by bullet count) was degenerate in practice — all mature domain profiles have ≥3 bullets, so the +1 tier never triggered. Binary (+0/+2) is simpler, equally predictive, and eliminates a scoring ambiguity that inflated scores for agents with thin domain coverage.
 
 **Implementation Notes:**
 
@@ -155,21 +154,16 @@ domain_slots:
   - 1 domain detected:     +1
   - 2+ domains detected:   +2
 
-generated_slots:
-  - has flux-gen agents:   +2
-  - no flux-gen agents:    +0
-
-total_ceiling = base + scope + domain + generated
-hard_maximum  = 12                            # absolute cap for resource sanity
+total_ceiling = base + scope + domain
+hard_maximum  = 10                            # absolute cap for resource sanity
 ```
 
-> **Why this works:** The ceiling adapts to review scope. A single-file edit doesn't need 8 agents; a multi-domain repo review might. The formula encodes three heuristics: (1) larger scope = more surface area = more agents needed, (2) multiple domains = more cross-cutting concerns = more agents needed, (3) project-specific agents exist = user invested in comprehensive review = justify higher ceiling. The hard maximum (12) prevents runaway costs while the formula ensures small reviews stay lean.
+> **Why this works:** The ceiling adapts to review scope. A single-file edit doesn't need 8 agents; a multi-domain repo review might. The formula encodes two heuristics: (1) larger scope = more surface area = more agents needed, (2) multiple domains = more cross-cutting concerns = more agents needed. The hard maximum (10) prevents runaway costs while the formula ensures small reviews stay lean. Project-specific agents (flux-gen) compete for slots like any other agent — they don't inflate the ceiling.
 
 **Implementation Notes:**
 
 - Diff size measured in changed lines (additions + deletions)
 - Domain count from domain detection pass (runs before scoring)
-- flux-gen agent presence checked via agent metadata (`category: project`)
 
 ### Stage Assignment
 
@@ -236,7 +230,6 @@ Thin sections are identified during document analysis (before scoring). Example:
 base:      4
 scope:     +0 (single file)
 domain:    +1 (1 domain)
-generated: +0 (no flux-gen agents)
 total:     5 slots
 ```
 
@@ -246,17 +239,17 @@ total:     5 slots
 
 | Agent | Base | Domain Boost | Project | Total | Rationale |
 |-------|------|--------------|---------|-------|-----------|
-| architecture | 3 | +2 (5 injection items for web-api) | +1 | 6 | Core: API design is architectural |
-| safety | 3 | +1 (2 injection items) | +1 | 5 | Core: auth + credentials mentioned |
-| quality | 2 | +1 (5 injection items) | +1 | 4 | Adjacent: code quality is secondary concern |
-| performance | 1 | +1 (5 injection items) | +1 | 3 | Tangential: caching mentioned but <10% of plan |
+| architecture | 3 | +2 (has injection criteria for web-api) | +1 | 6 | Core: API design is architectural |
+| safety | 3 | +2 (has injection criteria) | +1 | 6 | Core: auth + credentials mentioned |
+| quality | 2 | +2 (has injection criteria) | +1 | 5 | Adjacent: code quality is secondary concern |
+| performance | 1 | +2 (has injection criteria) | +1 | 4 | Tangential: caching mentioned but <10% of plan |
 | correctness | 0 | — | — | 0 | Irrelevant: no database migrations/data modeling (filtered) |
 | user-product | 0 | — | — | 0 | Irrelevant: not a PRD, no user flows (filtered) |
 | game-design | 0 | — | — | 0 | Irrelevant: not game-related (filtered) |
 
 **Selection:**
-- Stage 1: architecture (6), safety (5) — top 2
-- Stage 2: quality (4), performance (3)
+- Stage 1: architecture (6), safety (6) — top 2
+- Stage 2: quality (5), performance (4)
 - Expansion pool: none (all score-2+ agents selected)
 
 ### Example 2: Game Project Plan (game-simulation domain, CLAUDE.md, flux-gen agents)
@@ -272,36 +265,35 @@ total:     5 slots
 base:      4
 scope:     +0 (single file)
 domain:    +1 (1 domain)
-generated: +2 (has flux-gen agents)
-total:     7 slots
+total:     5 slots
 ```
 
-**Stage 1 Slots:** 40% of 7 = 2.8 → 3
+**Stage 1 Slots:** 40% of 5 = 2
 
 **Agent Scores:**
 
 | Agent | Category | Base | Domain | Project | DA | Total | Rationale |
 |-------|----------|------|--------|---------|-----|-------|-----------|
-| simulation-kernel* | Project | 3 | +2 (5 items) | +1 | +1 | 7 | Core domain + generated for game-simulation |
-| game-ai* | Project | 3 | +2 (5 items) | +1 | +1 | 7 | Core domain + generated for game-simulation |
-| game-design | Plugin | 3 | +2 (5 items) | +1 | — | 6 | Core: gameplay mechanics are primary |
-| architecture | Plugin | 3 | +1 (2 items) | +1 | — | 5 | Core: system design for game loop |
-| correctness | Plugin | 2 | +2 (5 items) | +1 | — | 5 | Adjacent: simulation state consistency |
-| performance | Plugin | 2 | +1 (5 items) | +1 | — | 4 | Adjacent: turn processing perf mentioned |
-| quality | Plugin | 2 | +1 (2 items) | +1 | — | 4 | Adjacent: code quality is secondary |
-| safety | Plugin | 1 | +1 (2 items) | +1 | — | 3 | Tangential: no deploy/auth concerns |
+| simulation-kernel* | Project | 3 | +2 (has criteria) | +1 | +1 | 7 | Core domain + generated for game-simulation |
+| game-ai* | Project | 3 | +2 (has criteria) | +1 | +1 | 7 | Core domain + generated for game-simulation |
+| game-design | Plugin | 3 | +2 (has criteria) | +1 | — | 6 | Core: gameplay mechanics are primary |
+| architecture | Plugin | 3 | +2 (has criteria) | +1 | — | 6 | Core: system design for game loop |
+| correctness | Plugin | 2 | +2 (has criteria) | +1 | — | 5 | Adjacent: simulation state consistency |
+| performance | Plugin | 2 | +2 (has criteria) | +1 | — | 5 | Adjacent: turn processing perf mentioned |
+| quality | Plugin | 2 | +2 (has criteria) | +1 | — | 5 | Adjacent: code quality is secondary |
+| safety | Plugin | 1 | +2 (has criteria) | +1 | — | 4 | Tangential: no deploy/auth concerns |
 | user-product | Plugin | 0 | — | — | — | 0 | Irrelevant: not a product spec (filtered) |
 
 *Generated via flux-gen. DA = domain_agent bonus.
 
-**Tiebreaker for Stage 1 (3 slots, but simulation-kernel and game-ai both score 7):**
+**Tiebreaker for Stage 1 (2 slots, simulation-kernel and game-ai both score 7):**
 
-Both project-specific agents score 7. game-design scores 6. Stage 1 gets: simulation-kernel, game-ai, game-design (top 3 by score, ties broken by category: project > plugin).
+Both project-specific agents score 7. Stage 1 gets: simulation-kernel, game-ai (top 2 by score).
 
 **Selection:**
-- Stage 1: simulation-kernel (7), game-ai (7), game-design (6)
-- Stage 2: architecture (5), correctness (5), performance (4), quality (4)
-- Expansion pool: safety (3) — scored ≥2 but ceiling reached
+- Stage 1: simulation-kernel (7), game-ai (7)
+- Stage 2: game-design (6), architecture (6), correctness (5)
+- Expansion pool: performance (5), quality (5), safety (4) — scored ≥2 but ceiling reached
 
 ### Example 3: Small Database Migration Diff (data-pipeline domain, no CLAUDE.md)
 
@@ -316,7 +308,6 @@ Both project-specific agents score 7. game-design scores 6. Stage 1 gets: simula
 base:      4
 scope:     +1 (small diff <500)
 domain:    +1 (1 domain)
-generated: +0
 total:     6 slots
 ```
 
@@ -326,17 +317,17 @@ total:     6 slots
 
 | Agent | Base | Domain | Project | Total | Rationale |
 |-------|------|--------|---------|-------|-----------|
-| correctness | 3 | +2 (5 items for data-pipeline) | +0 | 5 | Core: migration correctness is primary |
-| architecture | 2 | +1 (2 items) | +0 | 3 | Adjacent: index design affects arch |
-| safety | 1 | +1 (2 items) | +0 | 2 | Tangential: migration script security |
-| quality | 1 | +1 (5 items) | +0 | 2 | Tangential: migration code quality |
-| performance | 2 | +1 (5 items) | +0 | 3 | Adjacent: indexes affect query perf |
+| correctness | 3 | +2 (has criteria for data-pipeline) | +0 | 5 | Core: migration correctness is primary |
+| architecture | 2 | +2 (has criteria) | +0 | 4 | Adjacent: index design affects arch |
+| performance | 2 | +2 (has criteria) | +0 | 4 | Adjacent: indexes affect query perf |
+| safety | 1 | +2 (has criteria) | +0 | 3 | Tangential: migration script security |
+| quality | 1 | +2 (has criteria) | +0 | 3 | Tangential: migration code quality |
 | user-product | 0 | — | — | 0 | Irrelevant (filtered) |
 | game-design | 0 | — | — | 0 | Irrelevant (filtered) |
 
 **Selection:**
-- Stage 1: correctness (5), architecture (3), performance (3) — top 3 (tie broken alphabetically for same score)
-- Stage 2: safety (2), quality (2)
+- Stage 1: correctness (5), architecture (4), performance (4) — top 3
+- Stage 2: safety (3), quality (3)
 - Expansion pool: none
 
 ## interflux Reference
@@ -393,7 +384,7 @@ Implementations of the flux-drive specification:
 
 - Implement `domain_boost` (0-2) when domain detection is available (Core + Domains conformance)
 - Implement `domain_agent_bonus` (0-1) when project-specific agents and domain detection are available (Core + Domains conformance)
-- Implement dynamic slot ceiling that adapts to review scope (scope_slots + domain_slots)
+- Implement dynamic slot ceiling that adapts to review scope (base + scope_slots + domain_slots)
 - Use the 40% Stage 1 ratio (or document deviation with rationale)
 - Maintain an expansion pool of score-2+ agents for mid-review escalation
 
@@ -407,5 +398,5 @@ Implementations of the flux-drive specification:
 ### MUST NOT
 
 - Allow bonuses to override `base_score = 0` (irrelevance is absolute)
-- Exceed `hard_maximum = 12` total slots (resource sanity)
+- Exceed `hard_maximum = 10` total slots (resource sanity)
 - Assign fewer than 2 agents to Stage 1 when ceiling permits (violates parallelism goal)
