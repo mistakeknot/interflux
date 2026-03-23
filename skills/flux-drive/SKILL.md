@@ -347,7 +347,10 @@ Domain profiles also provide domain-specific review bullets loaded during Phase 
 3. Agents with base_score = 1 are included only if slots remain AND their domain covers a thin section
 4. Bonuses (domain_boost, project_bonus, domain_agent) affect RANKING within each tier, not inclusion
 5. **Dynamic slot ceiling** (see below) — replaces hard cap
-6. **Deduplication**: If a Project Agent covers the same domain as a Plugin Agent, prefer the Project Agent
+6. **Deduplication**: When a Project Agent and Plugin Agent overlap:
+   - **Exact name match** (e.g., project `fd-safety` vs plugin `fd-safety`): prefer the Project Agent; exclude the Plugin Agent (does not consume a slot)
+   - **Partial overlap** (e.g., project `web-api-validation` vs plugin `fd-correctness`): keep BOTH — the Project Agent is narrower than the Plugin Agent. Place the Plugin Agent in Stage 2 if slots are limited.
+   - **No overlap** (different domains entirely): no dedup applies
 
 > **Note**: Inclusion is determined by base_score. Bonuses influence Stage 1 vs Stage 2 placement and tie-breaking only.
 

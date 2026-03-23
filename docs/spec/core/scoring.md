@@ -201,9 +201,12 @@ Applied in order after scoring:
 3. **Thin section補填**: Agents scoring 1 are included only if:
    - Their domain covers a section flagged as "thin" (<5 lines or <3 bullets), AND
    - Slots remain after rules 1-2
-4. **Deduplication**: When multiple agents cover the same domain (e.g., project-specific safety agent vs. plugin safety agent):
-   - Project Agent > Plugin Agent > Cross-AI Agent
-   - Lower-priority duplicate is excluded (does not consume a slot)
+4. **Deduplication**: When a Project Agent and Plugin Agent potentially overlap:
+   - **Exact name match** (agent names resolve to the same domain agent, e.g., both target `fd-safety`): Project Agent > Plugin Agent > Cross-AI Agent. Lower-priority duplicate is excluded (does not consume a slot).
+   - **Partial overlap** (Project Agent's `domain:` field overlaps with but is narrower than a Plugin Agent's domain, e.g., `web-api-validation` vs `fd-correctness`): keep both. The Project Agent may miss concerns outside its narrow scope. If slots are limited, demote the Plugin Agent to Stage 2.
+   - **No overlap**: no dedup applies.
+
+   > **Why this matters:** flux-gen creates Project Agents for specific subdomains. Naively deduplicating the broader Plugin Agent loses coverage — a `web-api-validation` agent won't catch transaction isolation bugs that `fd-correctness` would. Exact-name match is the only safe automatic dedup; partial overlap requires human judgment or both agents.
 
 **Thin Section Thresholds:**
 
