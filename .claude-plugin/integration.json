@@ -3,16 +3,12 @@
   "interbase_min_version": "1.0.0",
   "ecosystem_only": false,
   "standalone_features": [
-    "Multi-agent code review (12 review agents with domain auto-detection)",
+    "Multi-agent code review (12 review agents with LLM domain classification)",
     "Document review with automatic agent triage and scored findings",
     "Multi-agent research orchestration with parallel dispatch",
     "Domain-specific knowledge injection from config profiles"
   ],
   "integrated_features": [
-    {
-      "feature": "Domain detection for agent triage",
-      "requires": "intersense"
-    },
     {
       "feature": "Knowledge compounding and retrieval",
       "requires": "interknow"
@@ -38,7 +34,6 @@
     "recommended": [
       "interwatch",
       "intersynth",
-      "intersense",
       "interknow"
     ],
     "optional": [

@@ -108,26 +108,18 @@ Project domains: [comma-separated from: game-simulation, web-api, ml-pipeline, c
 
 A project can match multiple domains simultaneously (e.g., a monorepo with CLIs, TUI tools, and plugins). If no predefined domain fits, output `Project domains: none`. No external scripts needed — you already have the context from Step 1.0.
 
-**Override:** If `{PROJECT_ROOT}/.claude/intersense.yaml` exists with `override: true`, read its `domains:` entries instead of classifying. This lets users pin domains manually.
-
 **Output:** The classified domains feed into Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection).
 
-### Step 1.0.4: Ensure Project Agents (flux-gen dispatch)
+### Step 1.0.4: Generate Project Agents (flux-gen dispatch)
 
-Check if project-specific review agents exist:
+Always invoke `/interflux:flux-gen` to generate or refresh project-specific agents for this review. Flux-gen uses `--mode=skip-existing` by default, so existing agents are preserved and only missing ones are created — this is fast when agents already exist.
 
-```bash
-ls {PROJECT_ROOT}/.claude/agents/fd-*.md 2>/dev/null | head -1
-```
+Derive the flux-gen task from the input being reviewed:
+- **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
+- **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
+- **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
 
-- **If agents exist:** Proceed to Step 1.1. The generated agents in `.claude/agents/fd-*.md` are the durable cache — they persist across sessions and don't need regeneration unless the user runs `/interflux:flux-gen` manually to refresh them.
-
-- **If no agents exist:** Invoke `/interflux:flux-gen` with a task derived from the input being reviewed. This delegates agent authoring to its canonical owner (composition through contracts):
-  - **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
-  - **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
-  - **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
-  - flux-gen's prompt mode designs task-specific agents via LLM, writes them to `.claude/agents/fd-*.md`, and returns. This is non-blocking — proceed after generation completes.
-  - If flux-gen fails or user cancels generation, proceed with core agents only (graceful degradation).
+If flux-gen fails or user cancels generation, proceed with core agents only (graceful degradation).
 
 **Summary line:**
 ```
@@ -333,7 +325,7 @@ Score Components:
 
 **Project bonus** (+0 or +1): Plugin Agents get +1 when the target project has CLAUDE.md/AGENTS.md (they auto-detect and use codebase-aware mode). Project Agents get +1 (project-specific by definition).
 
-**Domain boost** (+0 or +2; applied only when base score ≥ 1): When Step 1.0.1 detected a project domain, check each agent's injection criteria in the corresponding domain profile (intersense `config/domains/*.md`, with fallback to local `config/flux-drive/domains/*.md`):
+**Domain boost** (+0 or +2; applied only when base score ≥ 1): When Step 1.0.1 detected a project domain, check each agent's injection criteria in the corresponding domain profile (`config/flux-drive/domains/*.md`):
 - Agent has injection criteria section in domain profile → +2
 - No injection criteria section → +0
 

@@ -231,7 +231,7 @@ Dispatch all selected agents via Task tool with `run_in_background: true`. Then 
 
 For each detected domain (from the Document Profile's `Project domains` field), load the corresponding domain profile and extract per-agent injection criteria:
 
-1. **Read the domain profile file**: Try intersense plugin first (`intersense/config/domains/{domain-name}.md`), fall back to `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain-name}.md`
+1. **Read the domain profile file**: `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain-name}.md`
 2. **For each selected agent**, find the `### fd-{agent-name}` subsection under `## Injection Criteria`
 3. **Extract the bullet points** — these are the domain-specific review criteria for that agent
 4. **Store as `{DOMAIN_CONTEXT}`** per agent, formatted as shown in the prompt template below

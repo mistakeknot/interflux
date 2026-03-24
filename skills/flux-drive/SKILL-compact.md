@@ -50,23 +50,16 @@ Project domains: [comma-separated list from: game-simulation, web-api, ml-pipeli
 
 A project can match multiple domains (e.g., a monorepo with CLIs, TUI tools, and plugins). If no domain fits, output `Project domains: none`. No external scripts needed — you already have the context.
 
-**Override:** If `{PROJECT_ROOT}/.claude/intersense.yaml` exists with `override: true`, read its `domains:` entries instead of classifying. This lets users pin domains manually.
+### Step 1.0.4: Generate Project Agents
 
-### Step 1.0.4: Ensure Project Agents
+Always invoke `/interflux:flux-gen` to generate or refresh project-specific agents. Uses `--mode=skip-existing` by default (fast when agents already exist).
 
-Check if project-specific review agents exist:
+Derive the task from the input:
+- **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
+- **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
+- **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
 
-```bash
-ls {PROJECT_ROOT}/.claude/agents/fd-*.md 2>/dev/null | head -1
-```
-
-- **If agents exist:** Proceed to Step 1.1 (agents are the durable cache — no regeneration needed unless stale).
-- **If no agents exist:** Invoke `/interflux:flux-gen` with a task derived from the input document:
-  - **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
-  - **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
-  - **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
-  - flux-gen generates task-specific agents in `.claude/agents/fd-*.md`. This is non-blocking — proceed after generation completes.
-  - If flux-gen fails or user cancels, proceed with core agents only (graceful degradation).
+If flux-gen fails or user cancels, proceed with core agents only (graceful degradation).
 
 ### Step 1.1: Analyze Input
 

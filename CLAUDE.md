@@ -4,7 +4,7 @@
 
 ## Overview
 
-Multi-agent review and research engine — 17 agents (12 review + 5 research), 3 commands, 2 skills, 1 MCP server. Companion plugin for Clavain. Provides scored triage, domain detection, content slicing, knowledge injection, and parallel multi-agent research.
+Multi-agent review and research engine — 17 agents (12 review + 5 research), 3 commands, 2 skills, 1 MCP server. Companion plugin for Clavain. Provides scored triage, LLM-based domain classification, content slicing, knowledge injection, and parallel multi-agent research.
 
 ## Protocol Specification
 

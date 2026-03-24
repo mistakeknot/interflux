@@ -36,9 +36,7 @@ Where `{query-slug}` is the research question converted to kebab-case (max 50 ch
 
 Check for domain context that can sharpen research queries:
 
-If a `{PROJECT_ROOT}/.claude/intersense.yaml` cache exists, read the detected domains. For each detected domain, load the domain profile from the intersense plugin (`config/domains/{domain-name}.md`, fallback to `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain-name}.md`) and extract the `## Research Directives` section (if present).
-
-If no cache exists, run flux-drive's LLM domain detection (Step 1.0.1 in flux-drive SKILL.md) to populate it.
+Classify the project's domains using flux-drive's LLM classification (Step 1.0.1 in flux-drive SKILL.md): read README, build files, and key source files, then classify into known domains. For each detected domain, load the domain profile from `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain-name}.md` and extract the `## Research Directives` section (if present).
 
 **Fallback**: If no domains detected or no Research Directives sections exist, skip domain injection — agents run with the raw query only.
 

@@ -1,6 +1,8 @@
 # Domain Detection
 
 > flux-drive-spec 1.0 | Conformance: Extension
+>
+> **DEPRECATED (2026-03-24):** The deterministic signal-based detection described below has been replaced by LLM-based classification in flux-drive Step 1.0.1. Domain profiles and injection criteria are still used, but detection is now done by the LLM reading the project in Step 1.0, not by `detect-domains.py`. This spec is retained for historical reference.
 
 ## Overview
 

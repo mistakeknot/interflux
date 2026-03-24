@@ -30,15 +30,15 @@ Three-phase protocol: **Triage** → **Launch** → **Synthesize**.
 
 Uses a query-type affinity table to select research agents, dispatches in parallel, and synthesizes answers with source attribution. Progressive enhancement: uses Exa MCP for external research when available, falls back to Context7 + WebSearch.
 
-## Domain Detection
+## Domain Classification
 
-LLM-based classification — a Haiku subagent reads README + build files + key source files and classifies the project into 11 known domains. Cached in `.claude/intersense.yaml` with `content_hash` for staleness detection. Staleness computed deterministically by `scripts/content-hash.py`. Domain detection scripts delegate to the intersense plugin (canonical location).
+LLM-based classification — flux-drive Step 1.0.1 reads README + build files + key source files and classifies the project into 11 known domains. No external scripts or caching — the LLM already has the context from Step 1.0.
 
-11 domains defined in intersense `config/domains/` (with local fallback at `config/flux-drive/domains/`). Each domain profile contains review criteria, agent specs, and Research Directives for external research agents.
+11 domains defined in `config/flux-drive/domains/`. Each domain profile contains review criteria, agent injection specifications, and Research Directives for external research agents.
 
 ## Agent Generation
 
-`scripts/generate-agents.py` reads cached domain classification + domain profile markdown → writes `.claude/agents/fd-*.md` files. Deterministic template expansion (no LLM involvement). Three modes: `skip-existing`, `regenerate-stale` (checks `flux_gen_version` in frontmatter), `force`.
+`/flux-gen` designs task-specific agents via LLM (Sonnet subagent), saves specs to `.claude/flux-gen-specs/`, then `scripts/generate-agents.py` renders specs into `.claude/agents/fd-*.md` files. Three modes: `skip-existing`, `regenerate-stale` (checks `flux_gen_version` in frontmatter), `force`.
 
 ## Knowledge Lifecycle
 

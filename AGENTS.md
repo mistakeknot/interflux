@@ -93,11 +93,9 @@ interflux/
 │   └── python-hook-example.py
 ├── scripts/
 │   ├── bump-version.sh       # Version bump + commit + push
-│   ├── content-hash.py       # Deterministic project hash for staleness detection
-│   ├── detect-domains.py     # Heuristic domain classification
 │   ├── estimate-costs.sh     # Per-agent cost estimation (interstat + budget.yaml fallback)
 │   ├── findings-helper.sh    # Write/read peer findings JSONL
-│   ├── generate-agents.py    # Domain/prompt → .claude/agents/fd-*.md
+│   ├── generate-agents.py    # LLM specs → .claude/agents/fd-*.md
 │   ├── launch-exa.sh         # Exa MCP server launcher
 │   ├── launch-qmd.sh         # qmd launcher (vestigial — moved to interknow)
 │   ├── update-domain-profiles.py  # Refresh domain profile markdown from index
@@ -113,7 +111,7 @@ interflux/
 │       ├── SKILL.md
 │       └── SKILL-compact.md
 ├── tests/
-│   ├── structural/           # pytest suite (agents, commands, skills, namespace, slicing, domains, content-hash, generate-agents)
+│   ├── structural/           # pytest suite (agents, commands, skills, namespace, slicing, generate-agents)
 │   ├── test-budget.sh        # Budget estimation tests
 │   ├── test-findings-flow.sh # Findings JSONL flow tests
 │   └── test_estimate_costs.bats
@@ -249,9 +247,9 @@ Registered in `hooks/hooks.json` under `SessionStart`:
 | `session-start.sh` | Ecosystem status reporting (`[interverse] beads=... \| ic=...`). Sources interbase SDK or falls back to no-ops. |
 | `write-capabilities.sh` | Writes plugin capabilities for interbase integration |
 
-## Domain Detection
+## Domain Classification
 
-LLM-free classification. `scripts/detect-domains.py` scans directories, files, build-system dependencies, and source keywords against signals defined in `config/flux-drive/domains/index.yaml` (11 domains). Results cached in `.claude/intersense.yaml` with structural hash for staleness detection via `scripts/content-hash.py`.
+LLM-based classification. Flux-drive Step 1.0.1 classifies the project into domains based on README, build files, and source files read during Step 1.0. No external scripts — the LLM already has the context.
 
 ### 11 Domains
 
@@ -261,8 +259,6 @@ Each domain profile (`config/flux-drive/domains/<name>.md`) contains:
 - Review criteria injected into agent prompts
 - Agent injection specifications (which agents get domain-specific bullets)
 - Research Directives for external research agents
-
-Domain detection also delegates to the intersense plugin (canonical location) with local fallback.
 
 ## Knowledge Lifecycle
 
@@ -392,11 +388,9 @@ uv run pytest tests/structural/test_namespace.py -v
 | Script | Language | Purpose |
 |--------|----------|---------|
 | `bump-version.sh` | bash | Version bump, commit, push (plugin + marketplace) |
-| `content-hash.py` | python | Deterministic project hash for domain detection staleness |
-| `detect-domains.py` | python | Heuristic domain classification from project signals |
 | `estimate-costs.sh` | bash | Per-agent cost estimation (interstat historical + budget.yaml fallback) |
 | `findings-helper.sh` | bash | Write/read peer findings JSONL during parallel reviews |
-| `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from domain profiles or prompt specs |
+| `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from LLM-designed specs JSON |
 | `launch-exa.sh` | bash | Launch Exa MCP server (checks `EXA_API_KEY`) |
 | `update-domain-profiles.py` | python | Refresh domain profile markdown from index.yaml |
 | `validate-gitleaks-waivers.sh` | bash | Validate gitleaks waiver entries |

@@ -12,10 +12,8 @@ Only updates agents under ## Agent Specifications (line 68+), not Injection Crit
 import re
 from pathlib import Path
 
-# Try intersense first (canonical location), fall back to local copy
 _PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-_INTERSENSE_DOMAINS = _PLUGIN_ROOT.parent / "intersense" / "config" / "domains"
-DOMAINS_DIR = _INTERSENSE_DOMAINS if _INTERSENSE_DOMAINS.exists() else _PLUGIN_ROOT / "config" / "flux-drive" / "domains"
+DOMAINS_DIR = _PLUGIN_ROOT / "config" / "flux-drive" / "domains"
 
 # Map of (domain, agent_name) -> (persona, decision_lens)
 # Agent names MUST match the actual ### fd-{name} headings in each profile

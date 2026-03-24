@@ -1,102 +1,28 @@
 ---
 name: flux-gen
-description: Generate review agents from domain profiles or task prompts
-argument-hint: "[domain name | task prompt text | 'all']"
+description: Generate review agents from task prompts via LLM design
+argument-hint: "[task prompt text] [--from-specs path]"
 ---
 
 # Flux-Gen — Review Agent Generator
 
-Generate `fd-*` review agents in `.claude/agents/`. Two modes:
-
-1. **Domain mode** (default): Generate from predefined domain profiles (e.g., `game-simulation`, `web-api`)
-2. **Prompt mode**: Generate task-specific agents from a free-form research question or task description
+Generate `fd-*` review agents in `.claude/agents/` using LLM-designed specs tailored to the task at hand.
 
 ## Step 0: Detect Mode
 
-Parse `$ARGUMENTS` to determine which mode:
+Parse `$ARGUMENTS`:
 
-**Known domain names:** `game-simulation`, `web-api`, `ml-pipeline`, `cli-tool`, `mobile-app`, `embedded-systems`, `data-pipeline`, `library-sdk`, `tui-app`, `desktop-tauri`, `claude-code-plugin`
+- If `$ARGUMENTS` starts with `--from-specs` → **Specs mode**: skip Step 1 (LLM design), read the specs file path, and go directly to Step 4 (generate from saved specs)
+- Otherwise → **Prompt mode** (Step 1) — `$ARGUMENTS` is treated as the task description
 
-- If `$ARGUMENTS` is empty or `all` → **Domain mode** (Step 1)
-- If `$ARGUMENTS` matches a known domain name → **Domain mode** with that domain (Step 1)
-- If `$ARGUMENTS` starts with `--from-specs` → **Specs mode**: skip P1 (LLM design), read the specs file path, and go directly to Step P4 (generate from saved specs)
-- If `$ARGUMENTS` is free-form text that does NOT match a known domain → **Prompt mode** (Step P1)
+If `$ARGUMENTS` is empty (flux-gen invoked without arguments), build a default task description:
 
----
-
-## Domain Mode
-
-### Step 1: Detect Project Domains
-
-If `$ARGUMENTS` specifies a domain name (e.g., `game-simulation`), skip detection and use that domain directly. If `$ARGUMENTS` is `all` or empty, detect domains.
-
-**Cache check:** Read `{PROJECT_ROOT}/.claude/intersense.yaml`. If it exists with `domains:` entries and `content_hash:` matches current project files, use cached results. If `override: true`, always use cached.
-
-**Detection** (no cache or stale cache):
-
-Run deterministic detection: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.py {PROJECT_ROOT} --json`. Scans dirs, files, build deps, source keywords against domain signals (intersense plugin). Auto-caches to `.claude/intersense.yaml` with structural hash.
-
-**If detection returns no domains or fails:** Tell the user domain detection found no matches and offer to specify a domain manually.
-
-If no domains detected and no argument provided, tell the user:
-> No domains detected for this project.
->
-> **Available domains:** game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, data-pipeline, library-sdk, tui-app, desktop-tauri, claude-code-plugin
->
-> **To specify manually:** `/flux-gen game-simulation` (or any domain above)
-> **To generate task-specific agents:** `/flux-gen analyze mcp_agent_mail coordination protocol for Demarch adoption`
-> **To skip domain agents:** Run `/flux-drive` directly — core agents work without domain specialization
-
-### Step 2: Preview Generation
-
-Run the shared generation script in dry-run mode to show what would be generated:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=skip-existing --dry-run --json
-```
-
-Parse the JSON report to count new agents vs existing agents. Present to the user.
-
-### Step 3: Confirm
-
-Use **AskUserQuestion** to confirm:
-- Option 1: "Generate N new agents (skip M existing)" (Recommended) → `--mode=skip-existing`
-- Option 2: "Regenerate all (overwrite existing)" → `--mode=force`
-- Option 3: "Cancel"
-
-### Step 4: Generate
-
-Run the generation script with the selected mode:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --mode=<selected-mode> --json
-```
-
-Parse the JSON report and display per-agent results.
-
-### Step 5: Report
-
-After generation, present a summary:
-
-```
-Generated {N} project-specific agents in .claude/agents/:
-
-Domain: {domain-name} ({confidence})
-  - fd-{name1}: {Focus line} [created]
-  - fd-{name2}: {Focus line} [skipped — up-to-date]
-
-These agents will be included in flux-drive triage as Project Agents
-(+1 category bonus). Customize them by editing the .md files directly.
-
-To use them in a review: /flux-drive <target>
-To regenerate: /flux-gen (existing agents are preserved unless you choose overwrite)
-```
+1. Read project root for README.md, build files (go.mod, package.json, Cargo.toml, etc.), and CLAUDE.md
+2. Derive: `/flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description}"`
 
 ---
 
-## Prompt Mode
-
-### Step P1: Design Agent Specs
+## Step 1: Design Agent Specs
 
 Launch a **Sonnet** subagent (Task tool, `model: sonnet`) with this prompt:
 
@@ -129,12 +55,12 @@ Return ONLY a valid JSON array of objects. No markdown, no explanation.
 
 Parse the JSON response. If parsing fails, tell the user and offer to retry.
 
-### Step P2: Preview Specs
+## Step 2: Preview Specs
 
 Display the designed agents to the user:
 
 ```
-Prompt mode: Designed {N} task-specific agents:
+Designed {N} task-specific agents:
 
   1. fd-{name1}: {focus}
   2. fd-{name2}: {focus}
@@ -142,14 +68,14 @@ Prompt mode: Designed {N} task-specific agents:
   ...
 ```
 
-### Step P3: Confirm
+## Step 3: Confirm
 
 Use **AskUserQuestion** to confirm:
 - Option 1: "Generate {N} agents (Recommended)" → proceed
-- Option 2: "Regenerate specs (different agents)" → go back to Step P1
+- Option 2: "Regenerate specs (different agents)" → go back to Step 1
 - Option 3: "Cancel"
 
-### Step P4: Generate
+## Step 4: Generate
 
 1. **Save specs** to `{PROJECT_ROOT}/.claude/flux-gen-specs/{slug}.json` for future regeneration without re-running the LLM design step. Derive `{slug}` from the task prompt (e.g., `mcp-agent-mail-research`, `auth-refactor-review`). Use the Write tool.
 
@@ -161,7 +87,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-s
 
 Parse the JSON report and display per-agent results.
 
-### Step P5: Report
+## Step 5: Report
 
 ```
 Generated {N} task-specific agents in .claude/agents/:
@@ -189,7 +115,5 @@ To regenerate with different focus: /flux-gen <new task prompt>
 - Multiple domains may generate overlapping agents — flux-drive deduplication handles this (prefer Project > Plugin)
 - Users should customize generated agents for their specific project needs
 - `flux_gen_version: 4` agents have persona, decision lens, anti-overlap clauses, and success criteria; older versions are auto-regenerated by `--mode=regenerate-stale`
-- Domain mode generation is deterministic — same domain profile always produces the same agent file
-- Prompt mode uses an LLM to design specs, then the same deterministic rendering pipeline
-- Prompt-mode specs are saved to `.claude/flux-gen-specs/{slug}.json` so agents can be regenerated without re-running the LLM design step (~25k tokens saved per regeneration)
-- Prompt-mode agents are tagged `generated_by: flux-gen-prompt` in frontmatter (vs `flux-gen` for domain mode)
+- Specs are saved to `.claude/flux-gen-specs/{slug}.json` so agents can be regenerated without re-running the LLM design step (~25k tokens saved per regeneration)
+- Agents are tagged `generated_by: flux-gen-prompt` in frontmatter
