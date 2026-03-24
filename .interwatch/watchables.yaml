@@ -1,0 +1,14 @@
+watchables:
+  - name: skill-compact
+    path: skills/flux-drive/SKILL-compact.md
+    generator: "null"  # No auto-generator — manual sync required
+    generator_args: {}
+    staleness_days: 3
+    signals:
+      - type: commits_since_update
+        weight: 3
+        threshold: 5
+        description: "SKILL-compact.md may be stale — 5+ commits since last update. Check if SKILL.md or phases/ changed."
+      - type: file_created
+        weight: 2
+        description: "New phase files may need compact representation"
