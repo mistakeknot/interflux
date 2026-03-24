@@ -46,22 +46,6 @@
     "./agents/research/learnings-researcher.md",
     "./agents/research/best-practices-researcher.md"
   ],
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": {
-          "toolName": "Edit|Write",
-          "filePath": "skills/flux-drive/SKILL\\.md|skills/flux-drive/phases/.*\\.md|docs/spec/core/scoring\\.md|docs/spec/core/staging\\.md"
-        },
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/check-compact-drift.sh"
-          }
-        ]
-      }
-    ]
-  },
   "mcpServers": {
     "exa": {
       "type": "stdio",
