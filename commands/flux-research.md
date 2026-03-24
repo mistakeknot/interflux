@@ -2,6 +2,7 @@
 name: flux-research
 description: "Multi-agent research — triages agents, dispatches in parallel, synthesizes answer with source attribution"
 user-invocable: true
+codex-aliases: [flux-research]
 argument-hint: "[research question]"
 ---
 

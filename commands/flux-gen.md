@@ -1,6 +1,8 @@
 ---
 name: flux-gen
 description: Generate review agents from task prompts via LLM design
+user-invocable: true
+codex-aliases: [flux-gen]
 argument-hint: "[task prompt text] [--from-specs path]"
 ---
 

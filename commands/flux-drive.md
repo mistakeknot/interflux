@@ -2,6 +2,7 @@
 name: flux-drive
 description: "Intelligent document review — triages relevant agents, launches only what matters in background mode. Also supports research mode (--mode=research)."
 user-invocable: true
+codex-aliases: [flux-drive]
 argument-hint: "[path to file or directory] [--mode=review|research]"
 ---
 
