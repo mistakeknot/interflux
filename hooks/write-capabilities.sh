@@ -2,7 +2,8 @@
 # Write per-agent capability files for interlock registration.
 # Reads agentCapabilities from plugin.json, extracts caps for each agent,
 # and writes to ~/.config/clavain/capabilities-<agent-name>.json
-set -euo pipefail
+set -uo pipefail
+trap 'exit 0' ERR
 
 if ! command -v jq &>/dev/null; then
     echo "[interflux] jq not found — skipping capability registration" >&2

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
+trap 'exit 0' ERR
 # interflux session-start hook — source interbase, read budget signal, emit status
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_INPUT=$(cat)   # consume stdin first — session_id is here

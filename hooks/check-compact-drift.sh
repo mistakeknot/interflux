@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PostToolUse hook: warn when flux-drive skill files change but compact wasn't updated
 # Fires on Edit/Write to skills/flux-drive/SKILL.md or skills/flux-drive/phases/*.md
-set -euo pipefail
+set -uo pipefail
+trap 'exit 0' ERR
 
 file_path="${TOOL_INPUT_FILE_PATH:-${TOOL_INPUT_file_path:-}}"
 [[ -z "$file_path" ]] && exit 0
