@@ -124,6 +124,7 @@ def render_agent(spec: dict[str, Any]) -> str:
 """
 
     content = f"""---
+model: sonnet
 generated_by: flux-gen-prompt
 generated_at: '{now_utc}'
 flux_gen_version: {FLUX_GEN_VERSION}
