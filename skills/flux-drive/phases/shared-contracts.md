@@ -103,8 +103,16 @@ See `phases/slicing.md` for complete diff and document slicing contracts, includ
 
 ## Monitoring Contract
 
-After dispatching agents, poll for completion:
-- Check `{OUTPUT_DIR}/` for `.md` files every 5 seconds (ls on <15 files is negligible cost)
+After dispatching agents, monitor for completion using filesystem events (preferred) or polling (fallback):
+
+**Preferred — inotifywait:**
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {TIMEOUT}
+```
+Where N = expected agent count, TIMEOUT = 300 (Task) or 600 (Codex). The script prints each completed filename to stdout as it appears. Parse output line-by-line to report `[N/M agents complete]` with elapsed time.
+
+**Fallback — polling:** If flux-watch.sh is unavailable or exits with error, check `{OUTPUT_DIR}/` for `.md` files every 5 seconds via `ls`.
+
 - Report each completion with elapsed time
 - Report running count: `[N/M agents complete]`
 - Timeout: 5 minutes (Task), 10 minutes (Codex)

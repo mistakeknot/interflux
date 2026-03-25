@@ -345,7 +345,7 @@ Trust: fd-safety=0.85, fd-correctness=0.92, fd-game-design=0.15, fd-quality=0.78
 
 Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as parallel Task calls with `run_in_background: true`.
 
-Wait for Stage 1 agents to complete (use the polling from Step 2.3).
+Wait for Stage 1 agents to complete (use the monitoring from Step 2.3).
 
 ### Step 2.2a: Research context dispatch (optional, between stages) [review only]
 
@@ -590,7 +590,7 @@ If the user chooses expansion, launch only the recommended agents (not all Stage
 
 **Skip this step in research mode.**
 
-Launch Stage 2 agents with `run_in_background: true`. Wait for completion using the same polling mechanism.
+Launch Stage 2 agents with `run_in_background: true`. Wait for completion using the same monitoring mechanism (Step 2.3).
 
 ### How to launch each agent type (applies to Stage 1 and Stage 2):
 
@@ -838,7 +838,7 @@ This step applies to both review and research modes.
 
 **[research mode]**: Use the completion sentinel `<!-- flux-research:complete -->` instead of `<!-- flux-drive:complete -->`. Use depth-based timeouts (quick=30s, standard=2min, deep=5min) instead of the fixed 5-minute timeout.
 
-After dispatching a stage of agents, report the initial status and then poll for completion:
+After dispatching a stage of agents, report the initial status and monitor for completion:
 
 **Initial status:**
 ```
@@ -849,18 +849,26 @@ Agent dispatch complete. Monitoring N agents...
 ...
 ```
 
-**Polling loop** (every 30 seconds, up to 5 minutes):
-1. Check `{OUTPUT_DIR}/` for `.md` files (not `.md.partial` — those are still in progress)
-2. For each new `.md` file found since the last check, report:
+**Completion monitoring** (inotifywait preferred, 5s polling fallback):
+
+Run the watcher script in the background and read its output line-by-line:
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {TIMEOUT}
+```
+Where N = expected agent count, TIMEOUT = 300 (Task) or 600 (Codex).
+
+The script prints each completed `.md` filename as it appears (near-instant via inotifywait, or within 5s via polling fallback). For each line, report:
    ```
    ✅ fd-architecture (47s)
    [2/5 agents complete]
    ```
-3. If all expected `.md` files exist, stop polling — all agents are done
-4. After 5 minutes, report any agents still pending:
+
+If the script exits with code 1 (timeout), report pending agents:
    ```
    ⚠️ Timeout: fd-safety still running after 300s
    ```
+
+**Note:** If `flux-watch.sh` is unavailable, fall back to manual polling: check `{OUTPUT_DIR}/` for `.md` files every 5 seconds.
 
 **Completion verification** (after polling ends):
 1. List `{OUTPUT_DIR}/` — expect one `.md` file per launched agent (not `.md.partial`)
