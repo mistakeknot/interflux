@@ -614,6 +614,8 @@ Launch Stage 2 agents with `run_in_background: true`. Wait for completion using 
 
 **Prompt trimming**: See `phases/shared-contracts.md` for trimming rules.
 
+**Token counting**: After each Agent tool call returns, note the agent's internal ID from the response. Maintain a mapping of `agent_name → agent_id` for all dispatched agents. Pass this mapping to Phase 3 synthesis for actual token counting (see Token Counting Contract in `shared-contracts.md`).
+
 ### Step 2.1b: Prepare sliced content for agent prompts [review only]
 
 **Skip this step in research mode** (research agents don't review documents). **Skip this step if no slicing is active** (diff < 1000 lines, or document < 200 lines — all agents receive full content).

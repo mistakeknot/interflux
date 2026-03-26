@@ -255,26 +255,37 @@ Extend the findings.json schema with a `cost_report` field:
 }
 ```
 
-### Step 3.4c: Record token estimates to interstat
+### Step 3.4c: Record actual token counts to interstat
 
-For each dispatched agent, write an approximate token estimate based on output file size:
+For each dispatched agent, extract actual token counts from the subagent JSONL (see Token Counting Contract in `shared-contracts.md`):
 
 ```bash
-# Approximate tokens from output file size (1 token ≈ 4 chars)
 for agent_file in "${OUTPUT_DIR}"/*.md; do
     agent_name=$(basename "$agent_file" .md)
-    file_chars=$(wc -c < "$agent_file")
-    est_output_tokens=$((file_chars / 4))
-    # Input tokens: use the review file size as proxy
-    review_chars=$(wc -c < "${REVIEW_FILE:-/dev/null}" 2>/dev/null || echo "0")
-    est_input_tokens=$((review_chars / 4))
-    est_total=$((est_input_tokens + est_output_tokens))
+
+    # Prefer actual tokens from subagent JSONL (agent_id tracked during dispatch)
+    agent_id="${AGENT_ID_MAP[$agent_name]:-}"
+    if [ -n "$agent_id" ]; then
+        jsonl_path=$(find /tmp/claude-*/  -name "${agent_id}.output" -type l 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$jsonl_path" ]; then
+        token_json=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/token-count.py" "$jsonl_path" 2>/dev/null)
+    else
+        # Fallback: chars/4 estimate from output file
+        token_json=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/token-count.py" /dev/null --fallback-file "$agent_file" 2>/dev/null)
+    fi
+
+    input_tokens=$(echo "$token_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('input_tokens',0))")
+    output_tokens=$(echo "$token_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('output_tokens',0))")
+    total_tokens=$(echo "$token_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total',0))")
+
     sqlite3 "${INTERSTAT_DB:-$HOME/.claude/interstat/metrics.db}" \
-        "UPDATE agent_runs SET total_tokens=$est_total, input_tokens=$est_input_tokens, output_tokens=$est_output_tokens WHERE agent_name='interflux:$agent_name' AND total_tokens IS NULL ORDER BY created_at DESC LIMIT 1;" 2>/dev/null || true
+        "UPDATE agent_runs SET total_tokens=$total_tokens, input_tokens=$input_tokens, output_tokens=$output_tokens WHERE agent_name='interflux:$agent_name' AND total_tokens IS NULL ORDER BY created_at DESC LIMIT 1;" 2>/dev/null || true
 done
 ```
 
-Note: This is an approximation (chars/4). More accurate token counting requires session JSONL parsing, which is a future improvement. The approximation is sufficient to unblock calibration and identify which defaults in budget.yaml are significantly wrong.
+The `AGENT_ID_MAP` associative array is populated during Phase 2 dispatch — see Token Counting Contract in `shared-contracts.md`. If the map is unavailable (e.g., older orchestrator version), all agents fall back to chars/4 estimates.
 
 **Convergence with document slicing:** When document slicing is active (`slicing_map` available from Phase 2), adjust convergence scoring:
 - Only count agents that received the relevant section as `priority` when computing convergence counts. An agent that only saw a context summary cannot meaningfully converge on the same finding.

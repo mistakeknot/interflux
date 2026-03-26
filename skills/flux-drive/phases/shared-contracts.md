@@ -117,3 +117,26 @@ Where N = expected agent count, TIMEOUT = 300 (Task) or 600 (Codex). The script 
 - Report running count: `[N/M agents complete]`
 - Timeout: 5 minutes (Task), 10 minutes (Codex)
 - After timeout, report pending agents
+
+## Token Counting Contract
+
+The orchestrator tracks subagent JSONL paths during dispatch to enable accurate token counting in synthesis (Step 3.4c).
+
+**During dispatch (Phase 2):** When launching each agent via the Agent tool, the response includes the agent's internal ID (e.g., `ab61ea77e59936bf4`). The corresponding subagent JSONL is at:
+```
+~/.claude/projects/{project-key}/{session-id}/subagents/agent-{agent-id}.jsonl
+```
+A symlink also exists at:
+```
+/tmp/claude-{uid}/{project-key}/{session-id}/tasks/{agent-id}.output
+```
+
+**During synthesis (Phase 3):** For each dispatched agent, run:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/token-count.py <subagent_jsonl_path>
+```
+Output: `{"input_tokens": N, "output_tokens": N, "cache_creation": N, "cache_read": N, "total": N}`
+
+If the JSONL path is unknown or unavailable, the script accepts `--fallback-file <agent_output.md>` and exits 1 with a chars/4 estimate (marked `"estimated": true`).
+
+**Orchestrator responsibility:** Track a mapping of `agent_name → agent_id` during dispatch. Pass it forward to synthesis via the same mechanism as `slicing_map` (in-memory or temp file).
