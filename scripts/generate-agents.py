@@ -23,6 +23,15 @@ from typing import Any
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
+# Set by --verbose flag in main()
+_verbose = False
+
+
+def _log(msg: str) -> None:
+    """Print diagnostic message to stderr when --verbose is set."""
+    if _verbose:
+        print(f"[generate-agents] {msg}", file=sys.stderr)
+
 # Current generation version — bump when template format changes
 FLUX_GEN_VERSION = 4
 
@@ -177,10 +186,9 @@ def check_existing_agents(agents_dir: Path) -> dict[str, dict[str, Any]]:
     Only includes agents that have ``generated_by: flux-gen`` or ``flux-gen-prompt`` in frontmatter.
     """
     try:
-        import yaml
+        import yaml  # noqa: F401
     except ImportError:
-        print("Error: pyyaml is required – install with: pip install pyyaml", file=sys.stderr)
-        raise SystemExit(2)
+        raise RuntimeError("pyyaml is required – install with: pip install pyyaml")
 
     result: dict[str, dict[str, Any]] = {}
     if not agents_dir.is_dir():
@@ -295,12 +303,26 @@ def generate_from_specs(
         report["errors"].append(f"Failed to read specs: {exc}")
         return report
 
+    # Unwrap common LLM wrapper patterns: {"agents": [...]} or {"specs": [...]}
+    if isinstance(specs, dict) and not isinstance(specs, list):
+        candidates = [v for v in specs.values() if isinstance(v, list)]
+        if len(candidates) == 1:
+            _log(f"unwrapped JSON object with key(s) {list(specs.keys())} → {len(candidates[0])} specs")
+            specs = candidates[0]
+        else:
+            _log(f"specs is dict with keys {list(specs.keys())}, not a list — will error")
+
     if not isinstance(specs, list):
         report["status"] = "error"
-        report["errors"].append("Specs file must contain a JSON array")
+        report["errors"].append(
+            "Specs file must contain a JSON array (or an object with a single array value)"
+        )
         return report
 
+    _log(f"parsed {len(specs)} spec(s), agents_dir={agents_dir}")
+
     existing = check_existing_agents(agents_dir)
+    _log(f"found {len(existing)} existing flux-gen agent(s)")
 
     for spec in specs:
         name = spec.get("name", "")
@@ -364,9 +386,19 @@ def main() -> int:
         action="store_true",
         help="Report what would happen without writing files",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print diagnostic trace to stderr",
+    )
     args = parser.parse_args()
 
+    global _verbose
+    _verbose = args.verbose
+
     project = args.project_root.resolve()
+    _log(f"project_root={project}, specs={args.from_specs}, mode={args.mode}, json={args.json_output}")
+
     if not project.is_dir():
         print(f"Error: {project} is not a directory", file=sys.stderr)
         return 2
@@ -375,6 +407,8 @@ def main() -> int:
     if not specs_path.exists():
         print(f"Error: specs file not found: {specs_path}", file=sys.stderr)
         return 2
+
+    _log(f"specs_path={specs_path} ({specs_path.stat().st_size} bytes)")
 
     try:
         report = generate_from_specs(project, specs_path, mode=args.mode, dry_run=args.dry_run)
@@ -410,6 +444,10 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:
+    except SystemExit:
+        raise
+    except BaseException as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        sys.stdout.flush()
+        sys.stderr.flush()
         raise SystemExit(2)

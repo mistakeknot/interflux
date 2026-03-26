@@ -286,11 +286,50 @@ class TestGenerateFromSpecs:
         assert report["status"] == "error"
 
     def test_non_array_json(self, tmp_path):
-        """Non-array JSON produces error status."""
+        """Non-array JSON with no list values produces error status."""
         project = tmp_path / "project"
         project.mkdir()
         specs_path = tmp_path / "obj.json"
         specs_path.write_text('{"not": "array"}', encoding="utf-8")
+
+        report = generate_from_specs(project, specs_path)
+
+        assert report["status"] == "error"
+
+    def test_unwraps_object_with_single_array(self, tmp_path):
+        """JSON object wrapping a single array is auto-unwrapped."""
+        project = tmp_path / "project"
+        project.mkdir()
+        wrapped = json.dumps({"agents": MOCK_SPECS})
+        specs_path = tmp_path / "wrapped.json"
+        specs_path.write_text(wrapped, encoding="utf-8")
+
+        report = generate_from_specs(project, specs_path)
+
+        assert report["status"] == "ok"
+        assert "fd-alpha-checker" in report["generated"]
+        assert "fd-beta-validator" in report["generated"]
+
+    def test_unwraps_any_single_key(self, tmp_path):
+        """Any object key wrapping a list is unwrapped (e.g. 'specs', 'results')."""
+        project = tmp_path / "project"
+        project.mkdir()
+        wrapped = json.dumps({"specs": MOCK_SPECS})
+        specs_path = tmp_path / "wrapped2.json"
+        specs_path.write_text(wrapped, encoding="utf-8")
+
+        report = generate_from_specs(project, specs_path)
+
+        assert report["status"] == "ok"
+        assert len(report["generated"]) == 2
+
+    def test_ambiguous_object_with_multiple_arrays_errors(self, tmp_path):
+        """Object with multiple array values is ambiguous and errors."""
+        project = tmp_path / "project"
+        project.mkdir()
+        ambiguous = json.dumps({"agents": MOCK_SPECS, "others": [{"name": "x"}]})
+        specs_path = tmp_path / "ambiguous.json"
+        specs_path.write_text(ambiguous, encoding="utf-8")
 
         report = generate_from_specs(project, specs_path)
 
@@ -382,3 +421,37 @@ class TestCLIIntegration:
             capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 2
+
+    def test_cli_verbose_produces_diagnostics(self, tmp_path):
+        """--verbose flag emits diagnostic trace to stderr."""
+        project = tmp_path / "project"
+        project.mkdir()
+        specs_path = _write_specs(tmp_path)
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), str(project), "--from-specs", str(specs_path),
+             "--json", "--dry-run", "--verbose"],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        assert result.returncode == 0
+        assert "[generate-agents]" in result.stderr
+        assert "parsed 2 spec(s)" in result.stderr
+
+    def test_cli_wrapped_json_succeeds(self, tmp_path):
+        """CLI handles wrapped JSON object transparently."""
+        project = tmp_path / "project"
+        project.mkdir()
+        wrapped = json.dumps({"agents": MOCK_SPECS})
+        specs_path = tmp_path / "wrapped.json"
+        specs_path.write_text(wrapped, encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), str(project), "--from-specs", str(specs_path),
+             "--json", "--dry-run"],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert len(data["generated"]) == 2
