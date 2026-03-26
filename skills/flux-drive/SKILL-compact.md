@@ -277,7 +277,7 @@ Read `phases/launch.md` for the full launch protocol. The launch phase respects 
 - Step 2.0: Prepare output directory (same)
 - Step 2.0.5: Resolve agent models (same as review mode)
 - Step 2.1: Build per-agent research prompts with query profile, domain directives
-- Step 2.2: Single-stage dispatch — all selected agents via Task tool (background mode)
+- Step 2.2: Single-stage dispatch — all selected agents via Task tool (background mode). **Project Agents use `subagent_type: general-purpose`** (not the agent name — they are NOT registered subagent types)
 - Skip: AgentDropout, staged expansion, peer findings, research context dispatch, slicing
 - All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-research:complete -->` sentinel
 - Timeouts by depth: quick=30s, standard=2min, deep=5min

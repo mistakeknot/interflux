@@ -214,7 +214,7 @@ Structure your output as:
 [What you couldn't find or areas needing deeper investigation]
 ```
 
-Dispatch all selected agents via Task tool with `run_in_background: true`. Then skip to **Step 2.3** (monitor and verify completion).
+Dispatch all selected agents via Task tool with `run_in_background: true`, following the agent type dispatch rules in **"How to launch each agent type"** below (Step 2.2c). Critical: Project Agents (`.claude/agents/fd-*.md`) must use `subagent_type: general-purpose` with the agent file content as the prompt — they are NOT registered subagent types. Then skip to **Step 2.3** (monitor and verify completion).
 
 **Timeouts by depth** (research mode):
 | Depth | Per-agent timeout |
@@ -592,7 +592,7 @@ If the user chooses expansion, launch only the recommended agents (not all Stage
 
 Launch Stage 2 agents with `run_in_background: true`. Wait for completion using the same monitoring mechanism (Step 2.3).
 
-### How to launch each agent type (applies to Stage 1 and Stage 2):
+### How to launch each agent type (applies to ALL modes — review Stage 1/2 AND research dispatch):
 
 **Project Agents (.claude/agents/)**:
 - `subagent_type: general-purpose`
