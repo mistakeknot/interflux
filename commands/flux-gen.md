@@ -106,6 +106,9 @@ These agents will be included in flux-drive triage as Project Agents
 
 To use them: /flux-drive <target>
 To regenerate with different focus: /flux-gen <new task prompt>
+
+Note: These agents are available to /flux-drive immediately.
+Using them as direct Agent tool subagent_types requires a session restart.
 ```
 
 ---
