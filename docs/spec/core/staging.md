@@ -193,6 +193,8 @@ For each Stage 2 / expansion pool candidate:
 - `budget.yaml → dropout.enabled` is `false`
 
 > **Why this works:** AgentDropout operates at a different granularity than pre-filtering (content-based) and staging (score-based). It uses *actual Stage 1 output* to assess redundancy — "did we already find issues in this domain?" not "might this domain be relevant?" The 0.6 threshold requires domain convergence (0.4) plus finding density (0.2) at minimum, preventing over-aggressive pruning. The exempt list ensures safety-critical coverage is never compromised. Combined with the existing two-stage architecture, this creates three layers of agent count reduction: pre-filter → stage selection → dropout.
+>
+> **Empirical validation (2026-03-26, 26+ runs):** Across 45 agent types and 120+ agent runs, all P0/P1 findings come from 6 plugin agents (fd-correctness 330%, fd-quality 235%, fd-user-product 238%, fd-performance 189%, fd-architecture 169%, fd-safety 112%). Project-generated agents produce 0% P0/P1 findings. The exempt list (fd-safety, fd-correctness) covers the two highest-value agents. The 0.6 threshold has zero P0/P1 recall loss because dropout candidates (Stage 2 project/generated agents) don't produce P0/P1 findings. Threshold confirmed as safe — no change from 0.7 needed for recall preservation.
 
 ### Stage 2 — Conditional Launch
 

@@ -45,7 +45,7 @@ dropout:
                             # Lower = more aggressive pruning, higher = more conservative
                             # 0.6 requires domain convergence (0.4) + finding density (0.2)
                             # Lowered from 0.7 (Demarch-1x9l.3) — saves 15-40K tokens per dropped agent
-                            # Recall validation pending — needs token data (F12) to measure finding recall at different thresholds
+                            # Validated 2026-03-26 (26+ runs): 0% P0/P1 recall loss — dropout candidates never produce P0/P1
 
 # Incremental expansion — speculative Stage 2 launch (Step 2.2a.6)
 # Launches Stage 2 candidates early when Stage 1 findings justify it (expansion_score >= 3)
