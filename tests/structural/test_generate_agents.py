@@ -111,7 +111,8 @@ class TestRenderAgent:
         fm = yaml.safe_load(content[3:end])
 
         assert fm["generated_by"] == "flux-gen-prompt"
-        assert fm["flux_gen_version"] == FLUX_GEN_VERSION
+        # Without severity_examples, version is 4 (v5 requires calibration fields)
+        assert fm["flux_gen_version"] == 4
         assert "generated_at" in fm
 
     def test_persona_fallback(self):
@@ -167,6 +168,66 @@ class TestRenderAgent:
         content = render_agent(spec)
         assert "## Task Context" in content
         assert "Reviewing a critical auth module." in content
+
+    def test_severity_calibration_rendered(self):
+        """Severity examples produce a Severity Calibration section."""
+        spec = self._make_spec(
+            severity_examples=[
+                {
+                    "severity": "P0",
+                    "scenario": "Test data is silently dropped during migration",
+                    "condition": "When the migration runs on a table with NULL values in required columns",
+                },
+                {
+                    "severity": "P1",
+                    "scenario": "Test assertions pass on stale cached data",
+                    "condition": "When the cache TTL exceeds the test timeout",
+                },
+            ],
+        )
+        content = render_agent(spec)
+
+        assert "## Severity Calibration" in content
+        assert "P0" in content
+        assert "silently dropped during migration" in content
+        assert "P1" in content
+        assert "stale cached data" in content
+        assert "None" not in content
+
+    def test_severity_calibration_fallback(self):
+        """Without severity_examples, a focus-derived fallback is rendered (not None or blank)."""
+        spec = self._make_spec()  # no severity_examples
+        content = render_agent(spec)
+
+        # Fallback section should still exist with focus-derived content
+        assert "## Severity Calibration" in content
+        assert "None" not in content
+        # Should reference the focus area
+        assert "test focus" in content.lower()
+
+    def test_version_gating_with_severity(self):
+        """flux_gen_version is 5 only when severity_examples is present."""
+        spec_with = self._make_spec(
+            severity_examples=[
+                {"severity": "P0", "scenario": "Data loss", "condition": "On rollback"},
+            ],
+        )
+        spec_without = self._make_spec()
+
+        content_with = render_agent(spec_with)
+        content_without = render_agent(spec_without)
+
+        fm_with = yaml.safe_load(content_with[3:content_with.index("---", 3)])
+        fm_without = yaml.safe_load(content_without[3:content_without.index("---", 3)])
+
+        assert fm_with["flux_gen_version"] == 5
+        assert fm_without["flux_gen_version"] == 4
+
+    def test_escalation_instruction_in_decision_lens(self):
+        """Decision lens includes escalation instruction."""
+        spec = self._make_spec()
+        content = render_agent(spec)
+        assert "do not downgrade" in content.lower()
 
 
 # ---------------------------------------------------------------------------

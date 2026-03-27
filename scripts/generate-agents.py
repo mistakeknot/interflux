@@ -33,7 +33,8 @@ def _log(msg: str) -> None:
         print(f"[generate-agents] {msg}", file=sys.stderr)
 
 # Current generation version — bump when template format changes
-FLUX_GEN_VERSION = 4
+# v5: severity calibration (severity_examples field + escalation instruction)
+FLUX_GEN_VERSION = 5
 
 # Core agents that should NOT be generated from specs
 CORE_AGENTS = frozenset({
@@ -75,6 +76,48 @@ def _short_title(bullet: str) -> str:
     return short
 
 
+def _render_severity_calibration(
+    severity_examples: list[dict[str, str]] | None,
+    focus: str,
+) -> str:
+    """Render the ## Severity Calibration section.
+
+    If severity_examples are provided (from LLM spec), render them as structured
+    scenarios. Otherwise, generate a domain-generic fallback from the focus area.
+    """
+    lines = ["## Severity Calibration", ""]
+
+    if severity_examples:
+        for ex in severity_examples:
+            sev = ex.get("severity", "P0")
+            scenario = ex.get("scenario", "")
+            condition = ex.get("condition", "")
+            lines.append(f"- **{sev}**: {scenario}")
+            if condition:
+                lines.append(f"  - When: {condition}")
+    else:
+        # Domain-generic fallback derived from focus
+        focus_lower = focus.lower().rstrip(".")
+        lines.append(
+            f"- **P0**: {focus_lower} issue that causes data loss, corruption, or blocks other work"
+        )
+        lines.append(
+            f"- **P1**: {focus_lower} issue required to pass the current quality gate"
+        )
+        lines.append(
+            "- **P2/P3**: Quality degradation, maintenance burden, or style preferences"
+        )
+
+    lines.append("")
+    lines.append(
+        "When in doubt: describe the failure scenario. "
+        "If it wakes someone at 3 AM, it is P0/P1. "
+        "If it degrades quality over weeks, it is P2."
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def render_agent(spec: dict[str, Any]) -> str:
     """Render an LLM-generated agent spec into the full agent markdown file.
 
@@ -97,6 +140,11 @@ def render_agent(spec: dict[str, Any]) -> str:
             f"Prioritize findings by real-world impact. "
             f"Flag issues that would cause failures before style concerns."
         )
+
+    # Version gating: only emit v5 when severity_examples is present
+    severity_examples = spec.get("severity_examples")
+    has_severity = bool(severity_examples and isinstance(severity_examples, list))
+    effective_version = FLUX_GEN_VERSION if has_severity else 4
 
     now_utc = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
@@ -124,6 +172,9 @@ def render_agent(spec: dict[str, Any]) -> str:
             anti_overlap_section += f"- {item}\n"
         anti_overlap_section += "- Only flag the above if they are deeply entangled with your specialist focus and another agent would miss the nuance\n\n"
 
+    # Build severity calibration section
+    severity_section = _render_severity_calibration(severity_examples, focus)
+
     task_section = ""
     if task_context:
         task_section = f"""## Task Context
@@ -132,11 +183,17 @@ def render_agent(spec: dict[str, Any]) -> str:
 
 """
 
+    # Escalation instruction appended to decision lens
+    escalation = (
+        " If you find an issue matching a P0/P1 scenario in Severity Calibration, "
+        "label it P0 or P1 — do not downgrade to appear less alarming."
+    )
+
     content = f"""---
 model: sonnet
 generated_by: flux-gen-prompt
 generated_at: '{now_utc}'
-flux_gen_version: {FLUX_GEN_VERSION}
+flux_gen_version: {effective_version}
 ---
 # {name} — Task-Specific Reviewer
 
@@ -156,19 +213,22 @@ Reuse the project's terminology, not generic terms.
 
 {task_section}## Review Approach
 {review_sections}
+{severity_section}
 {anti_overlap_section}## Success Criteria
 
 A good review from this agent:
 {success_bullets}
 ## Decision Lens
 
-{decision_lens}
+{decision_lens}{escalation}
 
 ## Prioritization
 
-- P0/P1: Issues that would cause failures, data loss, or broken functionality in production
+- P0: Issues that block other work, cause data loss or corruption — drop everything
+- P1: Issues required to exit the current quality gate
 - P2: Issues that degrade quality or create maintenance burden
 - P3: Improvements and polish — suggest but don't block on these
+- For each P0/P1 finding, describe the concrete failure scenario: what breaks, under what conditions, and who is affected
 - Always tie findings to specific files, functions, and line numbers
 - Frame uncertain findings as questions, not assertions
 """
