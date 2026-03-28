@@ -1,38 +1,162 @@
-# Flux-Review default configuration
-# Override per-project via {PROJECT_ROOT}/.claude/flux-review.yaml
+# ============================================================================
+# Flux-Review Configuration
+# ============================================================================
+#
+# Override per-project: {PROJECT_ROOT}/.claude/flux-review.yaml
+# Override per-invocation: /flux-review path --quality=X --tracks=N
+#
+# See config/flux-review/guide.md for detailed tradeoff analysis and
+# recommendations by project type.
+# ============================================================================
 
-# Quality mode: balanced | economy | max
-# - economy: all Sonnet (~$0.60/2-track). Fast, cost-efficient.
-# - balanced: track-aware routing (~$3-7). Opus where judgment matters most. Default.
-# - max: all Opus (~$12/4-track). Maximum quality at every step.
+# --- Quality Mode -----------------------------------------------------------
+#
+# Controls which model runs each step. The core tradeoff is cost vs. insight
+# depth — but the relationship is non-linear. Balanced mode puts Opus only
+# where the cognitive demand justifies it, getting ~80% of max quality at
+# ~50% of the cost.
+#
+# economy   All Sonnet. Best for: quick passes, cost-sensitive reviews, CI
+#           integration, targets where you mostly need coverage confirmation
+#           rather than novel insights. Weakness: misses subtle domain issues,
+#           esoteric agent design collapses to familiar analogies (biology,
+#           military), synthesis lists summaries instead of finding convergence.
+#
+# balanced  Track-aware routing (see routing table below). Best for: most
+#           reviews. Puts Opus where judgment matters (creative design, deep
+#           domain review, synthesis) and Sonnet where the task is well-
+#           specified (routine design, lens-application reviews). The sweet
+#           spot for daily use.
+#
+# max       All Opus. Best for: architecture reviews, PRDs, design brainstorms,
+#           anything where a single missed insight costs more than the review.
+#           Also useful when you want to establish a quality baseline before
+#           deciding if balanced is "good enough" for a project. Weakness:
+#           ~4x cost of balanced for ~20% more findings (diminishing returns
+#           on the Sonnet-adequate steps).
+#
 quality: balanced
 
-# Track count: auto | 2 | 3 | 4
-# - auto: triaged from target characteristics (code change → 2, module → 3, design doc → 4)
-# - 2: adjacent + distant (10 agents)
-# - 3: adjacent + orthogonal + distant (13 agents)
-# - 4: adjacent + orthogonal + distant + esoteric (16 agents)
+# --- Track Count ------------------------------------------------------------
+#
+# Each track operates at a different semantic distance from the target's
+# domain. More tracks = more diverse perspectives, but also more tokens and
+# potential signal dilution in synthesis.
+#
+# auto  Triaged from target characteristics:
+#       - Focused code change (<100 lines, bugfix): 2 tracks
+#       - Module/feature (100-500 lines): 3 tracks
+#       - Architecture doc, PRD, design brainstorm: 4 tracks
+#       - Directory review (entire module): 3 tracks
+#       Best for: most use cases. Matches investment to target complexity.
+#
+# 2     Adjacent + Distant. 10 agents total.
+#       Best for: code reviews, migrations, bug fixes. You want deep domain
+#       expertise plus one cross-domain sanity check. Fast, focused.
+#       Risk: misses operational patterns (no orthogonal track) and frontier
+#       insights (no esoteric track). Fine if the target is well-understood.
+#
+# 3     Adjacent + Orthogonal + Distant. 13 agents total.
+#       Best for: new features, refactors, module reviews. The orthogonal
+#       track surfaces "how do other professions solve this?" patterns that
+#       domain experts take for granted. Good balance of depth and breadth.
+#       Risk: no esoteric track means you miss the truly surprising insights
+#       (perfumery → volatility-stratified ensemble, etc.). Worth it for
+#       everyday engineering; not for design exploration.
+#
+# 4     Adjacent + Orthogonal + Distant + Esoteric. 16 agents total.
+#       Best for: brainstorms, PRDs, architecture pivots, greenfield design.
+#       The esoteric track produces "I never would have thought of that"
+#       moments — pre-industrial crafts, non-Western knowledge systems,
+#       physical processes at non-human scales. These occasionally produce
+#       the single most valuable insight in the entire review.
+#       Risk: 16 agents dilute synthesis quality if the target is narrow.
+#       The esoteric track may produce poetic-but-impractical analogies on
+#       focused code changes. Use for conceptual targets, not bugfixes.
+#
 tracks: auto
 
-# Agents per track (override individual track sizes)
+# --- Agents Per Track -------------------------------------------------------
+#
+# Tune the agent count per track. More agents = deeper coverage within that
+# semantic tier, but also more token cost and synthesis noise.
+#
+# Defaults are calibrated from the garden-salon experiment (22 agents, 3
+# rounds) and subsequent testing. Adjacent gets the most agents because
+# domain-expert findings are the most directly actionable.
+#
 agents:
-  adjacent: 5         # Track A: domain experts
-  orthogonal: 4       # Track B: parallel disciplines
-  distant: 4          # Track C: far-field isomorphisms (5 when only 2 tracks)
-  esoteric: 3         # Track D: frontier domains
+  adjacent: 5         # Track A: domain experts. Consider 6-7 for complex
+                       # projects with many subsystems. Below 4 leaves gaps.
+  orthogonal: 4       # Track B: parallel disciplines. 3-4 is the sweet spot.
+                       # Above 5 starts producing overlapping operational patterns.
+  distant: 4          # Track C: far-field isomorphisms. Auto-bumps to 5 when
+                       # only 2 tracks active (compensates for missing B/D).
+  esoteric: 3         # Track D: frontier domains. Keep low — quality over
+                       # quantity. 3 genuinely surprising domains > 5 mediocre ones.
+                       # The LLM's creative range is the bottleneck, not count.
 
-# Model routing for balanced mode
-# Each cell is the model used for that step × track combination.
-# Only applies when quality=balanced. Economy overrides all to sonnet, max to opus.
+# --- Model Routing (balanced mode) ------------------------------------------
+#
+# Each cell maps a (step × track) combination to a model. This table only
+# applies when quality=balanced. Economy overrides all cells to sonnet;
+# max overrides all to opus.
+#
+# The routing reflects WHERE the cognitive bottleneck is for each cell:
+#
+#   Design step:
+#     The bottleneck is CREATIVE BREADTH — can the model find genuinely
+#     novel domains? Adjacent/orthogonal design is routine (list subtopics,
+#     pick parallel professions). Distant/esoteric design requires the
+#     broad associative range that correlates with model capability.
+#     Sonnet designing esoteric agents produces biology and military
+#     analogies; Opus produces monastic scriptoria and tidal resonance.
+#
+#   Review step:
+#     The bottleneck is REASONING DEPTH — can the model catch subtle
+#     issues? Adjacent reviews need deep domain reasoning (transaction
+#     boundary analysis, race condition detection). Distant/esoteric
+#     reviews are LENS APPLICATION — the agent prompt defines the lens,
+#     the review step applies it faithfully. Sonnet follows well-defined
+#     agent prompts reliably; it just can't invent the prompts.
+#
+#   Synthesis step:
+#     The bottleneck is JUDGMENT — distinguishing real structural
+#     isomorphisms from surface analogies, detecting cross-track
+#     convergence, filtering quality. Always Opus. The token cost is
+#     modest (~20-40k) since synthesis reads summaries, not full docs.
+#
+# To customize: override individual cells in your project config.
+# Example: if your project's distant-domain reviews keep missing things,
+# upgrade that one cell:
+#   routing:
+#     review:
+#       distant: opus
+#
 routing:
   design:
-    adjacent: sonnet       # Listing domain subtopics is well-specified
-    orthogonal: sonnet     # Parallel discipline selection is routine
-    distant: opus          # Finding novel domains requires creative breadth
-    esoteric: opus         # Maximum creative range needed for genuinely surprising domains
+    adjacent: sonnet       # Routine: list domain subtopics
+    orthogonal: sonnet     # Routine: pick parallel professions
+    distant: opus          # Creative: find novel far-field domains
+    esoteric: opus         # Most creative: genuinely surprising domains
   review:
-    adjacent: opus         # Deep domain reasoning catches subtle specialist issues
-    orthogonal: sonnet     # Applying a well-defined parallel-discipline lens
-    distant: sonnet        # Faithful application of an unusual but defined perspective
-    esoteric: sonnet       # Lens application, not creative invention
-  synthesis: opus          # Cross-track convergence detection is highest-judgment step
+    adjacent: opus         # Deepest reasoning: catch subtle domain issues
+    orthogonal: sonnet     # Lens application: defined professional lens
+    distant: sonnet        # Lens application: defined cross-domain lens
+    esoteric: sonnet       # Lens application: defined frontier lens
+  synthesis: opus          # Highest judgment: convergence + quality filtering
+
+# --- Cost Reference ---------------------------------------------------------
+#
+# Approximate cost per configuration (assumes ~100k tokens per track):
+#
+#   2-track economy:   ~$0.60    (quick CI pass)
+#   2-track balanced:  ~$3       (standard code review)
+#   3-track balanced:  ~$5       (module/feature review)
+#   4-track balanced:  ~$7       (design exploration)
+#   4-track max:       ~$12      (full creative, --creative flag)
+#
+# Cost scales roughly linearly with track count. The economy→balanced jump
+# is ~5x for ~3x better findings. The balanced→max jump is ~1.7x for
+# ~1.2x better findings (diminishing returns on already-Opus steps).
+# ============================================================================
