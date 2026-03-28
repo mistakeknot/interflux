@@ -54,16 +54,54 @@ Different steps and tracks have different cognitive demands. The default routing
 
 `--creative` auto-selects `--quality=max` (4 tracks + all Opus) since the user is explicitly optimizing for insight quality over cost.
 
-## Step 0: Parse Arguments and Triage
+## Step 0: Parse Arguments, Load Config, and Triage
+
+### Load configuration
+
+Configuration is resolved in this priority order (highest wins):
+1. **Command-line flags** (`--quality=max`, `--tracks=3`)
+2. **Per-project config** (`{PROJECT_ROOT}/.claude/flux-review.yaml`)
+3. **Plugin defaults** (`${CLAUDE_PLUGIN_ROOT}/config/flux-review/defaults.yaml`)
+
+Read the plugin defaults first:
+```
+config_path = ${CLAUDE_PLUGIN_ROOT}/config/flux-review/defaults.yaml
+```
+
+Then check for per-project override:
+```
+project_config = {PROJECT_ROOT}/.claude/flux-review.yaml
+```
+
+If the project config exists, merge it over the plugin defaults (project values override plugin defaults for any key present).
+
+### Parse arguments
 
 Parse `$ARGUMENTS`:
 - Extract the file or directory path (required)
-- Extract `--tracks=auto|2|3|4` (default: `auto`)
-- Extract `--quality=balanced|economy|max` (default: `balanced`)
+- Extract `--tracks=auto|2|3|4` (overrides config `tracks`)
+- Extract `--quality=balanced|economy|max` (overrides config `quality`)
 - Extract `--creative` flag (shorthand for `--tracks=4 --quality=max`)
 - If path is empty, use AskUserQuestion to get it
 
-Set `QUALITY_MODE` from the flag. This determines model routing per step (see Model Routing table above).
+Set `QUALITY_MODE`, `TRACK_COUNT` (or `auto`), and `ROUTING` table from the merged config + flags.
+
+### Per-project configuration
+
+Users can create `{PROJECT_ROOT}/.claude/flux-review.yaml` to set project-specific defaults. Any key from `config/flux-review/defaults.yaml` can be overridden. Example:
+
+```yaml
+# .claude/flux-review.yaml — project-specific flux-review defaults
+quality: max               # this project always uses max quality
+tracks: 3                  # default to 3 tracks
+agents:
+  adjacent: 7              # more domain experts for this complex project
+routing:
+  review:
+    distant: opus          # upgrade distant reviews to Opus for this project
+```
+
+This avoids passing flags every time while keeping the flexibility to override per-invocation.
 
 Derive:
 ```

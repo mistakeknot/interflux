@@ -1,0 +1,38 @@
+# Flux-Review default configuration
+# Override per-project via {PROJECT_ROOT}/.claude/flux-review.yaml
+
+# Quality mode: balanced | economy | max
+# - economy: all Sonnet (~$0.60/2-track). Fast, cost-efficient.
+# - balanced: track-aware routing (~$3-7). Opus where judgment matters most. Default.
+# - max: all Opus (~$12/4-track). Maximum quality at every step.
+quality: balanced
+
+# Track count: auto | 2 | 3 | 4
+# - auto: triaged from target characteristics (code change → 2, module → 3, design doc → 4)
+# - 2: adjacent + distant (10 agents)
+# - 3: adjacent + orthogonal + distant (13 agents)
+# - 4: adjacent + orthogonal + distant + esoteric (16 agents)
+tracks: auto
+
+# Agents per track (override individual track sizes)
+agents:
+  adjacent: 5         # Track A: domain experts
+  orthogonal: 4       # Track B: parallel disciplines
+  distant: 4          # Track C: far-field isomorphisms (5 when only 2 tracks)
+  esoteric: 3         # Track D: frontier domains
+
+# Model routing for balanced mode
+# Each cell is the model used for that step × track combination.
+# Only applies when quality=balanced. Economy overrides all to sonnet, max to opus.
+routing:
+  design:
+    adjacent: sonnet       # Listing domain subtopics is well-specified
+    orthogonal: sonnet     # Parallel discipline selection is routine
+    distant: opus          # Finding novel domains requires creative breadth
+    esoteric: opus         # Maximum creative range needed for genuinely surprising domains
+  review:
+    adjacent: opus         # Deep domain reasoning catches subtle specialist issues
+    orthogonal: sonnet     # Applying a well-defined parallel-discipline lens
+    distant: sonnet        # Faithful application of an unusual but defined perspective
+    esoteric: sonnet       # Lens application, not creative invention
+  synthesis: opus          # Cross-track convergence detection is highest-judgment step
