@@ -1,7 +1,7 @@
 {
   "name": "interflux",
   "version": "0.2.52",
-  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 4 commands, 1 skill (unified flux-drive with review/research modes), 1 MCP server. Companion plugin for Clavain.",
+  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 5 commands, 1 skill (unified flux-drive with review/research modes), 1 MCP server. Companion plugin for Clavain.",
   "author": {
     "name": "mistakeknot"
   },
@@ -25,7 +25,8 @@
     "./commands/flux-drive.md",
     "./commands/flux-research.md",
     "./commands/flux-gen.md",
-    "./commands/fetch-findings.md"
+    "./commands/fetch-findings.md",
+    "./commands/flux-explore.md"
   ],
   "agents": [
     "./agents/review/fd-architecture.md",
