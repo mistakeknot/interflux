@@ -1,24 +1,31 @@
 ---
 name: flux-review
-description: "Dual-track deep review — generates domain-adjacent AND domain-distant agents in parallel, runs flux-drive with each set, then synthesizes across both tracks for maximum coverage"
+description: "Multi-track deep review — generates agents across a spectrum of semantic distance (adjacent → orthogonal → esoteric), runs parallel flux-drive reviews, then synthesizes across all tracks with cross-track convergence analysis"
 user-invocable: true
 codex-aliases: [flux-review]
-argument-hint: "<path to file or directory>"
+argument-hint: "<path to file or directory> [--tracks=auto|2|3|4] [--creative]"
 ---
 
-# Flux-Review — Dual-Track Deep Review
+# Flux-Review — Multi-Track Deep Review
 
-Run a two-track fan-out/fan-in review that combines **domain-adjacent** analysis (closely related expertise) with **domain-distant** analysis (orthogonal, esoteric knowledge domains) for maximum coverage. Each track generates specialized agents via flux-gen, reviews the target via flux-drive, then a synthesis step merges findings across both tracks.
+Run a fan-out/fan-in review across **multiple semantic distance tiers**. Each track generates specialized agents at a different distance from the target's domain, runs flux-drive independently, then a synthesis step merges findings across all tracks — highlighting cross-track convergence as the highest-confidence signal.
 
-## Why Two Tracks?
+## Why Multiple Tracks?
 
-Domain-adjacent agents catch issues that require deep expertise in the target's own field (migration safety, API contract violations, concurrency bugs). Domain-distant agents surface structural patterns invisible from within the field — mechanisms from perfumery, paleography, physical oceanography, etc. that map to the target's architecture. Together they produce insights neither track can find alone.
+Each semantic distance tier unlocks qualitatively different insights:
+- **Adjacent** agents catch issues requiring deep domain expertise (migration safety, API contracts, concurrency)
+- **Orthogonal** agents surface patterns from parallel disciplines at the same abstraction level (e.g., reviewing a pipeline through the lens of supply chain logistics or broadcast engineering)
+- **Esoteric** agents apply structural patterns from maximally distant fields — mechanisms from perfumery, paleography, tidal dynamics, etc. that map to the target's architecture
 
-## Step 0: Parse Arguments
+The garden-salon experiment (22 agents, 3 rounds) showed that each additional distance increment produced qualitatively different insights, not just more of the same. But for focused code changes, 2 tracks suffices.
+
+## Step 0: Parse Arguments and Triage
 
 Parse `$ARGUMENTS`:
 - Extract the file or directory path (required)
-- If empty, use AskUserQuestion to get the path
+- Extract `--tracks=auto|2|3|4` (default: `auto`)
+- Extract `--creative` flag (shorthand for `--tracks=4`)
+- If path is empty, use AskUserQuestion to get it
 
 Derive:
 ```
@@ -31,45 +38,73 @@ DATE          = <YYYY-MM-DD>
 
 Read the target (first 200 lines if file, README/CLAUDE.md if directory) to derive TARGET_DESC.
 
+### Track Count Triage (when `--tracks=auto`)
+
+Determine optimal track count based on target characteristics:
+
+| Signal | Track Count | Reasoning |
+|--------|-------------|-----------|
+| Focused code change (<100 lines, single file, bugfix/migration) | **2** (adjacent + distant) | Deep domain expertise + one cross-domain check |
+| Module or feature (~100-500 lines, multiple files, new feature) | **3** (adjacent + orthogonal + distant) | Specialist + parallel-discipline + structural |
+| Architecture doc, PRD, or design brainstorm | **4** (adjacent + orthogonal + distant + esoteric) | Maximum creative surface — each tier unlocks different insight types |
+| Directory review (entire module or subproject) | **3** | Broad but not full creative exploration |
+| `--creative` flag present | **4** | User explicitly wants maximum exploration |
+
+Classify the target by reading it and applying the table above. Set `TRACK_COUNT`.
+
+### Track Definitions
+
+Each track has a name, a semantic distance tier, and generation instructions:
+
+| Track | Name | Distance | Agents | When Used |
+|-------|------|----------|--------|-----------|
+| A | **Adjacent** | Near | 5 | Always (tracks ≥ 2) |
+| B | **Orthogonal** | Medium | 4 | tracks ≥ 3 |
+| C | **Distant** | Far | 4 | tracks ≥ 2 |
+| D | **Esoteric** | Maximum | 3 | tracks = 4 |
+
+Total agents by track count: 2 tracks = 10, 3 tracks = 13, 4 tracks = 16.
+
+Note: Track C (Distant) is always included (it's the second track for 2-track mode). Track B (Orthogonal) is the **middle** tier added at 3 tracks. Track D (Esoteric) is the outer frontier added at 4 tracks.
+
 ---
 
 ## Step 1: Confirm
 
-Use **AskUserQuestion**:
+Use **AskUserQuestion** showing the triaged plan:
 
 ```
-Dual-track deep review of: {INPUT_PATH}
+Multi-track deep review of: {INPUT_PATH}
 Target: {TARGET_DESC}
+Tracks: {TRACK_COUNT} (triaged as: {triage_reason})
 
-  Track A (Adjacent): 5 domain-expert agents → flux-drive review
-  Track B (Distant):  5 esoteric-domain agents → flux-drive review
-  Synthesis: Cross-track findings merged into unified analysis
+{for each active track:}
+  Track {letter} ({name}): {agent_count} agents — {distance_description}
+Synthesis: Cross-track findings merged with convergence analysis
 
-This will generate up to 10 agents and run 2 flux-drive reviews.
-Estimated context: ~200k tokens.
+Total: up to {total_agents} agents, {TRACK_COUNT} flux-drive reviews
+Estimated context: ~{TRACK_COUNT × 100}k tokens
 
 Proceed?
 ```
 
 Options:
-- "Proceed (Recommended)"
-- "Adjacent track only (skip distant)"
+- "Proceed with {TRACK_COUNT} tracks (Recommended)"
+- "More tracks (add creative exploration)" — increases by 1 track
+- "Fewer tracks (just adjacent + distant)" — reduces to 2
 - "Cancel"
 
 ---
 
-## Step 2: Fan-Out — Generate Both Agent Sets in Parallel
+## Step 2: Fan-Out — Generate All Track Agent Sets in Parallel
 
-Launch **two Agent tool calls in parallel** (both `model: sonnet`):
+Launch **all active tracks in parallel** using the Agent tool (all `model: sonnet`).
 
-### Track A: Domain-Adjacent Agents
+Each track subagent must: (1) design agent specs via LLM, (2) save specs to JSON, (3) call generate-agents.py. All tracks run simultaneously.
 
-Prompt for Agent tool subagent:
+### Common Preamble (included in all track prompts)
 
 ```
-You are an expert at designing specialized code review agents. Given a target,
-design 5 focused review agents that provide deep domain-expert analysis.
-
 Target: {TARGET_DESC}
 File/directory: {INPUT_PATH}
 
@@ -78,6 +113,27 @@ Severity reference:
 - P1: Required to exit the current quality gate.
 - P2: Degrades quality or creates maintenance burden.
 - P3: Improvements and polish.
+
+For each agent, output a JSON object with:
+- name, focus, persona, decision_lens, review_areas (4-6 bullets),
+  severity_examples (2-3 objects with severity/scenario/condition),
+  success_hints, task_context, anti_overlap
+
+Design rules:
+- Names: fd-{domain}-{concern}
+- Each agent covers a DISTINCT aspect
+- Review areas must be specific and actionable
+- severity_examples must be concrete failure scenarios
+- anti_overlap references other agents in this batch
+
+Return ONLY a valid JSON array. No markdown.
+```
+
+### Track A: Adjacent (always active, 5 agents)
+
+Additional prompt:
+```
+You are an expert at designing specialized code review agents.
 
 Design 5 agents with DEEP EXPERTISE in the target's own domain and closely
 adjacent fields. These agents should catch issues that require specialist
@@ -89,49 +145,53 @@ For example, if reviewing a database migration system:
 - fd-query-performance (execution plan analyst)
 - fd-data-integrity (constraint and invariant guardian)
 - fd-rollback-safety (deployment recovery specialist)
-
-For each agent, output a JSON object with:
-- name, focus, persona, decision_lens, review_areas (4-6 bullets),
-  severity_examples (2-3 objects with severity/scenario/condition),
-  success_hints, task_context, anti_overlap
-
-Design rules:
-- Names: fd-{domain}-{concern}
-- Each agent covers a DISTINCT aspect of the domain
-- Review areas must be specific and actionable
-- severity_examples must be concrete failure scenarios
-- anti_overlap references other agents in this batch
-
-Return ONLY a valid JSON array. No markdown.
 ```
 
-This subagent should write the specs to a temp file AND call generate-agents.py:
+Specs: `{PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-adjacent.json`
 
+### Track B: Orthogonal (active when TRACK_COUNT ≥ 3, 4 agents)
+
+Additional prompt:
 ```
-Save specs to: {PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-adjacent.json
-Generate: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-specs <specs-file> --mode=skip-existing --json
+You are designing review agents from PARALLEL DISCIPLINES — fields at the same
+abstraction level as the target but in different industries or domains.
+
+Design 4 agents from disciplines that operate at a similar scale and complexity
+as the target, but in a different professional context. These agents surface
+patterns that practitioners in adjacent-but-different fields take for granted.
+
+For example, if reviewing an event-driven pipeline:
+- fd-broadcast-scheduling (television broadcast engineering: real-time sequencing)
+- fd-supply-chain-flow (logistics: pipeline throughput and bottleneck detection)
+- fd-air-traffic-sequencing (ATC: priority queuing under safety constraints)
+- fd-newsroom-workflow (editorial: multi-source aggregation with deadline pressure)
+
+Selection constraints:
+- Each domain must be a PROFESSIONAL DISCIPLINE with established best practices
+- Domains must be at the same abstraction level as the target (not micro/macro)
+- Avoid pure-science domains (save those for distant/esoteric tracks)
+- Each agent must bring a specific operational pattern that maps to the target
+
+Additional fields per agent:
+- source_domain: the professional discipline
+- distance_rationale: 1 sentence — how is this parallel but different?
+- expected_isomorphisms: 1-2 sentences — what operational patterns transfer?
 ```
 
-### Track B: Domain-Distant Agents
+Specs: `{PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-orthogonal.json`
 
-Prompt for Agent tool subagent:
+### Track C: Distant (active when TRACK_COUNT ≥ 2, 4 agents for 2-track, 4 agents otherwise)
 
+When TRACK_COUNT = 2, generate 5 agents. Otherwise generate 4.
+
+Additional prompt:
 ```
 You are exploring the semantic space of knowledge domains to find structural
 isomorphisms relevant to a review target.
 
-Target: {TARGET_DESC}
-File/directory: {INPUT_PATH}
-
-Severity reference:
-- P0: Blocks other work or causes data loss/corruption. Drop everything.
-- P1: Required to exit the current quality gate.
-- P2: Degrades quality or creates maintenance burden.
-- P3: Improvements and polish.
-
-Design 5 review agents from domains MAXIMALLY DISTANT from the target's own field.
-These agents apply structural patterns from unrelated disciplines to surface
-insights invisible from within the target's domain.
+Design {4 or 5} agents from domains FAR FROM the target's field. These agents
+apply structural patterns from unrelated disciplines to surface insights
+invisible from within the target's domain.
 
 Selection constraints:
 - Each domain must come from a different field, era, or modality
@@ -139,114 +199,118 @@ Selection constraints:
   information theory, thermodynamics, ecology, evolutionary biology, game theory,
   economic markets, ant colonies, neural networks, immune systems
 - PREFER: pre-modern craft disciplines, physical processes at non-human scales,
-  non-Western knowledge systems, professional practices with centuries of refinement,
-  performing arts with real-time coordination, material sciences, navigation traditions
+  non-Western knowledge systems, professional practices with centuries of refinement
 - Each domain must have rich internal structure that maps to the target's concerns
+- No two agents may share the same parent discipline
 
-For each agent, output a JSON object with:
-- name, focus, persona, decision_lens, review_areas (4-6 bullets),
-  severity_examples (2-3 objects with severity/scenario/condition),
-  success_hints, task_context, anti_overlap
+Additional fields per agent:
 - source_domain: the real-world knowledge domain
 - distance_rationale: 1 sentence — why is this distant from the target?
 - expected_isomorphisms: 1-2 sentences — what structural parallels do you expect?
-
-Design rules:
-- Names: fd-{domain-noun}-{concern} (e.g., fd-perfumery-accord, fd-tidal-resonance)
-- severity_examples must be concrete, not restatements of P0/P1 definitions
-- expected_isomorphisms must name specific mechanisms
-- No two agents may share the same parent discipline
-
-Return ONLY a valid JSON array. No markdown.
 ```
 
-This subagent should write specs AND generate agents similarly:
+Specs: `{PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-distant.json`
 
+### Track D: Esoteric (active when TRACK_COUNT = 4, 3 agents)
+
+Additional prompt:
 ```
-Save specs to: {PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-distant.json
-Generate: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-specs <specs-file> --mode=skip-existing --json
+You are pushing to the absolute frontier of the semantic space. Design agents
+from the most UNEXPECTED, ALIEN knowledge domains you can find — domains that
+no practitioner in the target's field would ever think to consult.
+
+Design 3 agents from domains at MAXIMUM SEMANTIC DISTANCE. These should
+provoke genuine surprise. Think: domains separated by centuries, continents,
+and scales of observation. The structural isomorphisms should feel impossible
+until explained.
+
+Selection constraints:
+- Domains must be genuinely surprising — if a software engineer would say
+  "oh yeah, that's a common analogy," REJECT it and go further
+- Each domain must come from a different civilization, era, or physical scale
+- Include at least one domain that is PRE-INDUSTRIAL and one that is NON-WESTERN
+- The structural mapping must be SPECIFIC (name the mechanism), not metaphorical
+- No overlap with domains in other tracks
+
+Additional fields per agent:
+- source_domain: the knowledge domain (name the specific tradition or practice)
+- distance_rationale: 1 sentence — why would no one think to look here?
+- expected_isomorphisms: 1-2 sentences — what specific mechanism transfers?
 ```
 
-**Wait for both subagents to complete.** Display results:
+Specs: `{PROJECT_ROOT}/.claude/flux-gen-specs/{SLUG}-esoteric.json`
 
+### After all tracks complete
+
+Each subagent calls generate-agents.py:
 ```
-Track A (Adjacent): Generated {N} domain-expert agents
-  - fd-{name}: {focus}
-  ...
-
-Track B (Distant): Generated {M} agents from distant domains
-  - fd-{name}: {focus} [source: {source_domain}]
-  ...
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-specs <specs-file> --mode=skip-existing --json
 ```
 
-If either track fails, report the failure and proceed with the successful track only.
+Display results per track:
+```
+Track A (Adjacent):   {N} domain-expert agents
+Track B (Orthogonal): {N} parallel-discipline agents     [if active]
+Track C (Distant):    {N} distant-domain agents
+Track D (Esoteric):   {N} frontier-domain agents          [if active]
+Total: {sum} agents generated
+```
+
+If any track fails, report which failed and proceed with successful tracks.
 
 ---
 
 ## Step 3: Fan-Out — Run Flux-Drive Reviews in Parallel
 
-Launch **two flux-drive reviews in parallel** using the Agent tool. Each agent runs flux-drive as a skill invocation.
+Launch **one flux-drive review per active track** using the Agent tool, all in parallel with `run_in_background: true`.
 
-### Track A Review
-
-Launch an Agent tool (subagent_type: general-purpose, run_in_background: true):
+For each active track, launch an Agent tool:
 
 ```
 Run a flux-drive review of {INPUT_PATH}.
 
 Use the `/interflux:flux-drive {INPUT_PATH}` skill. This will auto-discover
-the project agents (including the newly generated adjacent-domain agents)
+the project agents (including the newly generated {track_name}-domain agents)
 and run the full triage → launch → synthesize pipeline.
 
-Focus on domain-expert findings. The generated adjacent-domain agents
-({list Track A agent names}) should be triaged as Project Agents.
+Focus on {track_focus_description}. The generated agents for this track
+({list agent names}) should be triaged as Project Agents.
 ```
 
-### Track B Review
+Track focus descriptions:
+- **Track A (Adjacent):** "domain-expert findings requiring specialist knowledge"
+- **Track B (Orthogonal):** "operational patterns from parallel professional disciplines"
+- **Track C (Distant):** "structural isomorphisms from distant knowledge domains"
+- **Track D (Esoteric):** "frontier patterns from maximally unexpected domains"
 
-Launch an Agent tool (subagent_type: general-purpose, run_in_background: true):
-
+**Wait for all reviews to complete.** Display progress as each finishes:
 ```
-Run a flux-drive review of {INPUT_PATH}.
-
-Use the `/interflux:flux-drive {INPUT_PATH}` skill. This will auto-discover
-the project agents (including the newly generated distant-domain agents)
-and run the full triage → launch → synthesize pipeline.
-
-Focus on cross-domain structural insights. The generated distant-domain agents
-({list Track B agent names}) should be triaged as Project Agents.
-```
-
-**Wait for both reviews to complete.**
-
-Display progress as each completes:
-```
-✓ Track A review complete: {N} findings
-✓ Track B review complete: {M} findings
+✓ Track A (Adjacent) review complete: {N} findings
+✓ Track B (Orthogonal) review complete: {N} findings     [if active]
+✓ Track C (Distant) review complete: {N} findings
+✓ Track D (Esoteric) review complete: {N} findings        [if active]
 ```
 
 ---
 
 ## Step 4: Fan-In — Cross-Track Synthesis
 
-Read findings from both flux-drive runs. The reviews write findings to `docs/research/flux-drive/{INPUT_STEM}/`.
+Read findings from all flux-drive runs. The reviews write findings to `docs/research/flux-drive/{INPUT_STEM}/`.
 
-Since both runs write to the same output directory, the findings from all agents across both tracks will be in that directory. Read all `.md` files from there.
+Since all runs write to the same output directory, findings from all agents across all tracks will be there. Read all `.md` files.
 
 Launch a **Sonnet** subagent (Agent tool, `model: sonnet`) for synthesis:
 
 ```
-You are synthesizing findings from a dual-track deep review.
+You are synthesizing findings from a multi-track deep review.
 
 Target: {TARGET_DESC}
 File: {INPUT_PATH}
 
-The review ran two parallel tracks:
-- Track A (Domain-Adjacent): {N} specialist agents with deep domain expertise
-- Track B (Domain-Distant): {M} agents applying structural patterns from distant fields
-
-Track A agents: {list names + focus}
-Track B agents: {list names + focus + source_domain}
+The review ran {TRACK_COUNT} parallel tracks at increasing semantic distance:
+{for each active track:}
+- Track {letter} ({name}): {N} agents — {distance_description}
+  Agents: {list names + focus [+ source_domain for B/C/D]}
 
 Findings from all agents:
 {all findings content from docs/research/flux-drive/{INPUT_STEM}/}
@@ -256,33 +320,52 @@ Produce a unified synthesis with these sections:
 ## Critical Findings (P0/P1)
 Issues requiring immediate action. For each:
 - The finding and which agent(s) surfaced it
-- Whether it was found by adjacent agents, distant agents, or both (convergence)
+- Which track(s) it came from (adjacent, orthogonal, distant, esoteric)
 - Concrete fix recommendation
 
 ## Cross-Track Convergence
-Findings that appeared independently in both tracks — an adjacent-domain expert
-AND a distant-domain agent flagged the same structural issue from different angles.
-These have the highest confidence because they were discovered through independent
-reasoning paths. Name both agents and explain how their perspectives converge.
+Findings that appeared independently in 2+ tracks — the highest-confidence
+signals because they were discovered through independent reasoning paths at
+different semantic distances. For each convergent finding:
+- Which tracks independently surfaced it (name the agents from each track)
+- How each track's perspective frames the same issue differently
+- The convergence score: how many independent tracks found it (2/2, 2/3, 3/4, etc.)
+
+Rank convergent findings by convergence score (more tracks = higher confidence).
 
 ## Domain-Expert Insights (Track A)
 The most valuable findings from adjacent-domain specialists that require deep
 domain knowledge to identify. Group by theme.
 
-## Structural Insights (Track B)
+## Parallel-Discipline Insights (Track B) [if Track B active]
+Operational patterns surfaced by orthogonal-domain agents — professional
+practices from parallel disciplines that map to the target's workflow.
+For each: the source discipline, the specific practice, and how it maps.
+
+## Structural Insights (Track C)
 Novel patterns surfaced by distant-domain agents — mechanisms from other fields
-that reveal something about the target. For each:
+that reveal something about the target's architecture. For each:
 - The source domain and structural isomorphism
 - How it maps to the target
 - Whether it suggests a concrete improvement or is an open question
 
+## Frontier Patterns (Track D) [if Track D active]
+The most surprising patterns from esoteric domains. These should provoke
+genuine "I never would have thought of that" reactions. For each:
+- The source domain and why it is unexpected
+- The specific mechanism and how it maps
+- Whether this opens a new design direction or refines an existing one
+
 ## Synthesis Assessment
 - Overall quality of the target (1-2 sentences)
 - Highest-leverage improvement (the single change that would have the most impact)
-- Surprising finding (something neither track alone would likely surface)
+- Surprising finding (something no single track would surface alone)
+- Semantic distance value: did the outer tracks (C/D) contribute insights
+  qualitatively different from the inner tracks (A/B), or did they mostly
+  restate the same issues in different vocabulary?
 
 Write in direct, technical prose. Name agents when attributing findings.
-Prioritize convergent findings (found by both tracks) over single-track findings.
+Prioritize convergent findings (found across multiple tracks) over single-track findings.
 ```
 
 Write synthesis to `{PROJECT_ROOT}/docs/research/flux-review/{SLUG}/{DATE}-synthesis.md` with frontmatter:
@@ -293,8 +376,11 @@ artifact_type: review-synthesis
 method: flux-review
 target: "{INPUT_PATH}"
 target_description: "{TARGET_DESC}"
+tracks: {TRACK_COUNT}
 track_a_agents: [{Track A names}]
-track_b_agents: [{Track B names}]
+track_b_agents: [{Track B names}]  # if active
+track_c_agents: [{Track C names}]
+track_d_agents: [{Track D names}]  # if active
 date: {DATE}
 ---
 ```
@@ -304,29 +390,32 @@ date: {DATE}
 ## Step 5: Report
 
 ```
-Dual-track review complete for: {INPUT_PATH}
+Multi-track review complete for: {INPUT_PATH}
+Tracks: {TRACK_COUNT} ({triage_reason})
 
-Track A (Adjacent): {N} agents, {A_findings} findings
-Track B (Distant):  {M} agents, {B_findings} findings
-Cross-track convergence: {convergent_count} findings appeared in both tracks
+{for each active track:}
+  Track {letter} ({name}): {N} agents, {findings} findings
+Cross-track convergence: {convergent_count} findings appeared in 2+ tracks
 
 Synthesis: docs/research/flux-review/{SLUG}/{DATE}-synthesis.md
 
 Agent specs:
-  Adjacent: .claude/flux-gen-specs/{SLUG}-adjacent.json
-  Distant:  .claude/flux-gen-specs/{SLUG}-distant.json
+{for each active track:}
+  {name}: .claude/flux-gen-specs/{SLUG}-{track_slug}.json
 
 To rerun with existing agents: /flux-drive {INPUT_PATH}
-To regenerate agents: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-adjacent.json
+To regenerate a track: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-{track_slug}.json
 ```
 
 ---
 
 ## Notes
 
-- Both tracks run flux-drive independently — they share the same triage and scoring pipeline but operate on different agent pools
-- Cross-track convergence (same issue found by both an adjacent and distant agent) is the highest-confidence signal — these findings are triangulated from independent reasoning paths
-- The distant-domain agents are generated with the same anti-clustering instruction as `/flux-explore` (13 blocked AI-analogy domains)
-- Track specs are saved separately for independent regeneration
-- If one track fails, the command degrades gracefully to single-track review
-- Token cost is approximately 2× a standard flux-drive review (~200k tokens total)
+- All tracks run flux-drive independently and in parallel — they share the same triage/scoring pipeline but operate on different agent pools
+- Cross-track convergence (same issue found from independent reasoning paths at different semantic distances) is the highest-confidence signal — rank by convergence score (N tracks agreeing)
+- Track count is triaged from target characteristics but can be overridden (`--tracks=N` or `--creative`)
+- The distant and esoteric tracks use the same anti-clustering instruction as `/flux-explore` (13 blocked AI-analogy domains)
+- Track specs are saved separately per track for independent regeneration
+- If any track fails, the command degrades gracefully to the surviving tracks
+- Token cost: ~100k per track. 2 tracks ≈ 200k, 3 tracks ≈ 300k, 4 tracks ≈ 400k
+- The `--creative` flag is shorthand for `--tracks=4` and is useful for brainstorms, PRDs, and design exploration where maximum semantic distance produces the most value
