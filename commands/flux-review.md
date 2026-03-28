@@ -3,7 +3,7 @@ name: flux-review
 description: "Multi-track deep review — generates agents across a spectrum of semantic distance (adjacent → orthogonal → esoteric), runs parallel flux-drive reviews, then synthesizes across all tracks with cross-track convergence analysis"
 user-invocable: true
 codex-aliases: [flux-review]
-argument-hint: "<path to file or directory> [--tracks=auto|2|3|4] [--creative]"
+argument-hint: "<path to file or directory> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max]"
 ---
 
 # Flux-Review — Multi-Track Deep Review
@@ -19,13 +19,51 @@ Each semantic distance tier unlocks qualitatively different insights:
 
 The garden-salon experiment (22 agents, 3 rounds) showed that each additional distance increment produced qualitatively different insights, not just more of the same. But for focused code changes, 2 tracks suffices.
 
+## Model Routing
+
+Different steps and tracks have different cognitive demands. The default routing (`--quality=balanced`) puts the best model where the judgment bottleneck actually is, not uniformly.
+
+### Why track-aware routing?
+
+- **Agent design** for adjacent tracks is routine (list domain subtopics) — Sonnet handles this. But designing esoteric/distant agents requires **creative breadth** to find genuinely novel domains like "monastic scriptoria" — Opus's broader associative range matters here.
+- **Reviews** for adjacent tracks need **deep domain reasoning** to catch subtle issues — Opus. But distant/esoteric track reviews are **lens application** (faithfully applying an unusual but well-defined perspective) — Sonnet is adequate.
+- **Synthesis** is the **highest-judgment step**: distinguishing real structural isomorphisms from surface analogies, detecting cross-track convergence, filtering quality. Always Opus.
+
+### Routing table
+
+| Step | Track A (Adjacent) | Track B (Orthogonal) | Track C (Distant) | Track D (Esoteric) |
+|------|-------------------|---------------------|-------------------|-------------------|
+| **Agent Design** | sonnet | sonnet | **opus** | **opus** |
+| **Flux-Drive Review** | **opus** | sonnet | sonnet | sonnet |
+| **Synthesis** | — | — | — | **opus** (single step across all tracks) |
+
+**Rationale per cell:**
+- Design A/B → Sonnet: Listing domain subtopics and parallel disciplines is well-specified. The LLM doesn't need broad associative range.
+- Design C/D → Opus: Finding "physical oceanography" or "indigenous wayfinding" as review lenses requires the creative leap that correlates with model capability. Sonnet collapses to familiar analogies (biology, military).
+- Review A → Opus: Domain-expert findings need the deepest reasoning. A migration atomicity specialist on Sonnet misses subtler transaction boundary issues.
+- Review B/C/D → Sonnet: These agents apply an unusual lens to the target. The lens is defined in the agent prompt; the review step is faithful application, not creative invention. Sonnet follows well-defined agent prompts reliably.
+- Synthesis → Opus: Cross-track convergence detection, isomorphism quality filtering, and "was the outer track actually useful?" judgment require the highest reasoning. This step reads summaries (~20-40k tokens), so the Opus cost is modest.
+
+### Quality overrides
+
+| Flag | Behavior |
+|------|----------|
+| `--quality=balanced` | Track-aware routing (table above). Default. |
+| `--quality=economy` | All Sonnet. ~4x cheaper. Use for quick passes or cost-sensitive reviews. |
+| `--quality=max` | All Opus. Maximum quality. Use when findings justify the cost. |
+
+`--creative` auto-selects `--quality=max` (4 tracks + all Opus) since the user is explicitly optimizing for insight quality over cost.
+
 ## Step 0: Parse Arguments and Triage
 
 Parse `$ARGUMENTS`:
 - Extract the file or directory path (required)
 - Extract `--tracks=auto|2|3|4` (default: `auto`)
-- Extract `--creative` flag (shorthand for `--tracks=4`)
+- Extract `--quality=balanced|economy|max` (default: `balanced`)
+- Extract `--creative` flag (shorthand for `--tracks=4 --quality=max`)
 - If path is empty, use AskUserQuestion to get it
+
+Set `QUALITY_MODE` from the flag. This determines model routing per step (see Model Routing table above).
 
 Derive:
 ```
@@ -77,16 +115,20 @@ Use **AskUserQuestion** showing the triaged plan:
 Multi-track deep review of: {INPUT_PATH}
 Target: {TARGET_DESC}
 Tracks: {TRACK_COUNT} (triaged as: {triage_reason})
+Quality: {QUALITY_MODE}
 
 {for each active track:}
-  Track {letter} ({name}): {agent_count} agents — {distance_description}
-Synthesis: Cross-track findings merged with convergence analysis
+  Track {letter} ({name}): {agent_count} agents
+    Design: {design_model}  Review: {review_model}
+Synthesis: {synthesis_model}
 
-Total: up to {total_agents} agents, {TRACK_COUNT} flux-drive reviews
-Estimated context: ~{TRACK_COUNT × 100}k tokens
+Total: up to {total_agents} agents, {TRACK_COUNT} parallel reviews
+Estimated context: ~{estimated_tokens}k tokens
 
 Proceed?
 ```
+
+For estimated tokens, use: economy ≈ TRACK_COUNT × 80k, balanced ≈ TRACK_COUNT × 100k, max ≈ TRACK_COUNT × 120k.
 
 Options:
 - "Proceed with {TRACK_COUNT} tracks (Recommended)"
@@ -98,7 +140,14 @@ Options:
 
 ## Step 2: Fan-Out — Generate All Track Agent Sets in Parallel
 
-Launch **all active tracks in parallel** using the Agent tool (all `model: sonnet`).
+Launch **all active tracks in parallel** using the Agent tool. Model per track depends on `QUALITY_MODE`:
+
+| Track | economy | balanced | max |
+|-------|---------|----------|-----|
+| A (Adjacent) design | sonnet | sonnet | opus |
+| B (Orthogonal) design | sonnet | sonnet | opus |
+| C (Distant) design | sonnet | **opus** | opus |
+| D (Esoteric) design | sonnet | **opus** | opus |
 
 Each track subagent must: (1) design agent specs via LLM, (2) save specs to JSON, (3) call generate-agents.py. All tracks run simultaneously.
 
@@ -262,9 +311,16 @@ If any track fails, report which failed and proceed with successful tracks.
 
 ## Step 3: Fan-Out — Run Flux-Drive Reviews in Parallel
 
-Launch **one flux-drive review per active track** using the Agent tool, all in parallel with `run_in_background: true`.
+Launch **one flux-drive review per active track** using the Agent tool, all in parallel with `run_in_background: true`. Model per track depends on `QUALITY_MODE`:
 
-For each active track, launch an Agent tool:
+| Track | economy | balanced | max |
+|-------|---------|----------|-----|
+| A (Adjacent) review | sonnet | **opus** | opus |
+| B (Orthogonal) review | sonnet | sonnet | opus |
+| C (Distant) review | sonnet | sonnet | opus |
+| D (Esoteric) review | sonnet | sonnet | opus |
+
+For each active track, launch an Agent tool with the appropriate model:
 
 ```
 Run a flux-drive review of {INPUT_PATH}.
@@ -299,7 +355,7 @@ Read findings from all flux-drive runs. The reviews write findings to `docs/rese
 
 Since all runs write to the same output directory, findings from all agents across all tracks will be there. Read all `.md` files.
 
-Launch a **Sonnet** subagent (Agent tool, `model: sonnet`) for synthesis:
+Launch a synthesis subagent. Model depends on `QUALITY_MODE`: **economy** → sonnet, **balanced** → opus, **max** → opus.
 
 ```
 You are synthesizing findings from a multi-track deep review.
@@ -414,8 +470,20 @@ To regenerate a track: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-{tra
 - All tracks run flux-drive independently and in parallel — they share the same triage/scoring pipeline but operate on different agent pools
 - Cross-track convergence (same issue found from independent reasoning paths at different semantic distances) is the highest-confidence signal — rank by convergence score (N tracks agreeing)
 - Track count is triaged from target characteristics but can be overridden (`--tracks=N` or `--creative`)
+- Model routing is track-aware by default (`--quality=balanced`): Opus for creative design (C/D), deep reviews (A), and synthesis; Sonnet for routine design (A/B) and lens-application reviews (B/C/D). Override with `--quality=economy` (all Sonnet) or `--quality=max` (all Opus)
+- The `--creative` flag is shorthand for `--tracks=4 --quality=max` — maximum tracks + maximum model quality for design exploration
 - The distant and esoteric tracks use the same anti-clustering instruction as `/flux-explore` (13 blocked AI-analogy domains)
 - Track specs are saved separately per track for independent regeneration
 - If any track fails, the command degrades gracefully to the surviving tracks
-- Token cost: ~100k per track. 2 tracks ≈ 200k, 3 tracks ≈ 300k, 4 tracks ≈ 400k
-- The `--creative` flag is shorthand for `--tracks=4` and is useful for brainstorms, PRDs, and design exploration where maximum semantic distance produces the most value
+
+### Cost estimates
+
+| Config | Tracks | Quality | Opus tokens | Sonnet tokens | Approximate cost |
+|--------|--------|---------|-------------|---------------|-----------------|
+| Quick code review | 2 | economy | 0 | ~200k | ~$0.60 |
+| Standard code review | 2 | balanced | ~120k (review A + synthesis) | ~100k (design + review C) | ~$3 |
+| Module review | 3 | balanced | ~140k | ~180k | ~$5 |
+| Design exploration | 4 | balanced | ~160k | ~240k | ~$7 |
+| Full creative | 4 | max | ~400k | 0 | ~$12 |
+
+Cost estimates assume ~100k tokens per track. Actual cost varies with target size and agent count.
