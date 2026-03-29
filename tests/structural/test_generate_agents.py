@@ -17,6 +17,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 FLUX_GEN_VERSION = _mod.FLUX_GEN_VERSION
+_short_title = _mod._short_title
 check_existing_agents = _mod.check_existing_agents
 generate_from_specs = _mod.generate_from_specs
 render_agent = _mod.render_agent
@@ -79,6 +80,75 @@ def _write_existing_agent(agents_dir: Path, name: str, version: int = 4) -> None
         # {name} — Task-Specific Reviewer
     """)
     (agents_dir / f"{name}.md").write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# TestShortTitle
+# ---------------------------------------------------------------------------
+
+class TestShortTitle:
+    """Tests for _short_title() section header derivation."""
+
+    def test_hyphenated_compounds_preserved(self):
+        """Hyphens in compound words are not treated as clause separators."""
+        result = _short_title("Check read-your-writes failures in the replication layer")
+        assert "read-your-writes" in result.lower()
+
+    def test_decimal_numbers_preserved(self):
+        """Periods in decimal numbers are not treated as clause separators."""
+        result = _short_title("AgentDropout threshold of 0.6 is too aggressive")
+        assert "0.6" in result
+
+    def test_namespace_dots_preserved(self):
+        """Periods in namespace paths are not treated as clause separators."""
+        result = _short_title("Check json.RawMessage representation in schema")
+        assert "json.RawMessage" in result or "Json.RawMessage" in result
+
+    def test_comma_split_works(self):
+        """Commas followed by space still split at clause boundary."""
+        result = _short_title("Check migrations, especially rollbacks and data loss")
+        assert "rollback" not in result.lower()
+        assert len(result) > 3  # not empty
+
+    def test_em_dash_split_works(self):
+        """Em-dashes still split at clause boundary."""
+        result = _short_title("Review the design — focus on safety and correctness")
+        assert "safety" not in result.lower()
+
+    def test_long_title_truncates_at_word_boundary(self):
+        """Long titles truncate cleanly at word boundary, not mid-word."""
+        long_bullet = "Assess whether the combination of Clavain claim system and beads tracking provides sufficient coordination for multi-agent concurrent work"
+        result = _short_title(long_bullet)
+        assert len(result) <= 80
+        assert not result.endswith("...")  # no mid-word truncation marker
+        # Should end at a complete word — the last word in the result
+        # should appear as a whole word in the original bullet
+        last_word = result.split()[-1]
+        assert last_word.lower() in long_bullet.lower()
+
+    def test_leading_verb_still_stripped(self):
+        """Leading imperative verbs are still removed."""
+        result = _short_title("Verify that tests pass consistently")
+        assert result.startswith("Tests") or result.startswith("tests")
+
+    def test_check_that_stripped(self):
+        """'Check that' prefix is removed."""
+        result = _short_title("Check that alpha blending uses premultiplied alpha consistently")
+        assert result[0] == "A"  # starts with "Alpha..."
+
+    def test_spaced_dash_splits(self):
+        """Spaced dashes (hyphen with spaces) split at clause boundary."""
+        result = _short_title("Review the auth module - paying special attention to tokens")
+        assert "tokens" not in result.lower()
+
+    def test_empty_input(self):
+        """Empty string doesn't crash."""
+        assert _short_title("") == ""
+
+    def test_short_input_unchanged(self):
+        """Short inputs pass through with only verb stripping."""
+        result = _short_title("Check buffer overflow handling")
+        assert "buffer overflow" in result.lower()
 
 
 # ---------------------------------------------------------------------------

@@ -55,11 +55,16 @@ CORE_AGENTS = frozenset({
 def _short_title(bullet: str) -> str:
     """Derive a short section title from a review area bullet.
 
-    Takes the first clause (up to the first comma, dash, period, or 'and')
-    and strips leading verbs like Check/Verify/Validate/Confirm/Ensure.
+    Takes the first clause (up to a clause-level delimiter) and strips
+    leading imperative verbs. Preserves hyphens (compound words), periods
+    in numbers/namespaces, and truncates at word boundaries.
     """
-    # Take up to first major punctuation or conjunction
-    short = re.split(r"[,\.\-—]| and | so ", bullet, maxsplit=1)[0].strip()
+    if not bullet:
+        return ""
+    # Split on clause-level delimiters only:
+    #   ", " (comma-space), " — " (em-dash), " - " (spaced hyphen)
+    # Do NOT split on bare hyphens, periods, or "and"/"so" conjunctions
+    short = re.split(r", | — | - ", bullet, maxsplit=1)[0].strip()
     # Strip leading imperative verb
     short = re.sub(
         r"^(Check that|Check|Verify that|Verify|Validate|Confirm|Ensure that|Ensure)\s+",
@@ -70,9 +75,15 @@ def _short_title(bullet: str) -> str:
     # Capitalize first letter
     if short:
         short = short[0].upper() + short[1:]
-    # Truncate if too long
-    if len(short) > 60:
-        short = short[:57] + "..."
+    # Truncate at word boundary if too long
+    if len(short) > 80:
+        truncated = short[:80]
+        # Find last space to avoid mid-word cut
+        last_space = truncated.rfind(" ")
+        if last_space > 40:  # don't truncate too aggressively
+            short = truncated[:last_space]
+        else:
+            short = truncated
     return short
 
 
