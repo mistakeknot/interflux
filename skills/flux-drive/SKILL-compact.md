@@ -11,14 +11,16 @@ Multi-agent document/codebase review and research. Follow phases in order.
 
 ## Input
 
-**[review mode]**: User provides a file or directory path. Detect type:
+**[review mode]**: User provides a file path, directory path, or inline text/topic. Detect type:
 
 ```
-INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/")
-INPUT_STEM = filename without extension, or dir basename
-PROJECT_ROOT = nearest .git ancestor or INPUT_DIR
+INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/") | text (not a valid path)
+INPUT_STEM = filename without extension, dir basename, or topic as kebab-case (max 50 chars)
+PROJECT_ROOT = nearest .git ancestor or CWD
 OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}  (absolute path!)
 ```
+
+**Text input detection:** If the argument is not a valid file or directory path on disk, treat it as inline text input (`INPUT_TYPE = text`). Write the text to a temp file at `{OUTPUT_DIR}/input.md` so agents can read it. Text inputs are treated like `.md` documents for triage purposes — all agents (including cognitive agents) are eligible.
 
 **[research mode]**: User provides a research question.
 
@@ -58,6 +60,7 @@ Derive the task from the input:
 - **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
 - **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
 - **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
+- **Text input:** `/interflux:flux-gen "Analysis of: {1-line summary of inline text}"`
 
 If flux-gen fails or user cancels, proceed with core agents only (graceful degradation).
 
@@ -123,7 +126,7 @@ Domain bonus: +1 for best-practices/framework-docs if detected domain has Resear
 - fd-game-design: skip unless game-simulation domain detected
 - fd-architecture, fd-quality: always pass (domain-general)
 - fd-performance: always pass for file/dir; filter for diffs
-- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input (PRD, brainstorm, plan, strategy) — NEVER for code/diff
+- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input OR `text` input (PRD, brainstorm, plan, strategy, options analysis, topic exploration) — NEVER for code/diff
 
 **Step 1.2b: Score** (0-7 scale):
 

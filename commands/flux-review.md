@@ -3,7 +3,7 @@ name: flux-review
 description: "Multi-track deep review — generates agents across a spectrum of semantic distance (adjacent → orthogonal → esoteric), runs parallel flux-drive reviews, then synthesizes across all tracks with cross-track convergence analysis"
 user-invocable: true
 codex-aliases: [flux-review]
-argument-hint: "<path to file or directory> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max]"
+argument-hint: "<path, topic, or inline text> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max]"
 ---
 
 # Flux-Review — Multi-Track Deep Review
@@ -78,11 +78,12 @@ If the project config exists, merge it over the plugin defaults (project values 
 ### Parse arguments
 
 Parse `$ARGUMENTS`:
-- Extract the file or directory path (required)
+- Extract the file path, directory path, or inline text/topic (required)
 - Extract `--tracks=auto|2|3|4` (overrides config `tracks`)
 - Extract `--quality=balanced|economy|max` (overrides config `quality`)
 - Extract `--creative` flag (shorthand for `--tracks=4 --quality=max`)
-- If path is empty, use AskUserQuestion to get it
+- If argument is empty, use AskUserQuestion to get it
+- If argument is not a valid path on disk, treat as inline text (`INPUT_TYPE = text`)
 
 Set `QUALITY_MODE`, `TRACK_COUNT` (or `auto`), and `ROUTING` table from the merged config + flags.
 
@@ -123,6 +124,7 @@ Determine optimal track count based on target characteristics:
 | Focused code change (<100 lines, single file, bugfix/migration) | **2** (adjacent + distant) | Deep domain expertise + one cross-domain check |
 | Module or feature (~100-500 lines, multiple files, new feature) | **3** (adjacent + orthogonal + distant) | Specialist + parallel-discipline + structural |
 | Architecture doc, PRD, or design brainstorm | **4** (adjacent + orthogonal + distant + esoteric) | Maximum creative surface — each tier unlocks different insight types |
+| Inline text/topic (options analysis, concept exploration) | **4** (adjacent + orthogonal + distant + esoteric) | Text input implies the user wants multi-perspective analysis |
 | Directory review (entire module or subproject) | **3** | Broad but not full creative exploration |
 | `--creative` flag present | **4** | User explicitly wants maximum exploration |
 

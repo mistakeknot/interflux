@@ -29,7 +29,7 @@ The mode gates behavior throughout all phases. Look for **[review only]** and **
 
 ## Input
 
-**[review mode]**: The user provides a file or directory path as an argument. If no path is provided, ask for one using AskUserQuestion.
+**[review mode]**: The user provides a file path, directory path, or inline text/topic as an argument. If no argument is provided, ask for one using AskUserQuestion.
 
 **[research mode]**: The user provides a research question as an argument. If no question is provided, ask for one using AskUserQuestion.
 
@@ -38,18 +38,21 @@ The mode gates behavior throughout all phases. Look for **[review only]** and **
 Detect the input type and derive paths for use throughout all phases:
 
 ```
-INPUT_PATH = <the path the user provided>
+INPUT_PATH = <the path or text the user provided>
 ```
 
 Then detect:
 - If `INPUT_PATH` is a **file** AND content starts with `diff --git` or `--- a/`: `INPUT_FILE = INPUT_PATH`, `INPUT_DIR = <directory containing file>`, `INPUT_TYPE = diff`
 - If `INPUT_PATH` is a **file** (non-diff): `INPUT_FILE = INPUT_PATH`, `INPUT_DIR = <directory containing file>`, `INPUT_TYPE = file`
 - If `INPUT_PATH` is a **directory**: `INPUT_FILE = none (repo review mode)`, `INPUT_DIR = INPUT_PATH`, `INPUT_TYPE = directory`
+- If `INPUT_PATH` is **not a valid path on disk**: `INPUT_TYPE = text`, `INPUT_DIR = CWD`, treat as inline text
+
+**Text input handling:** When `INPUT_TYPE = text`, write the user's text to `{OUTPUT_DIR}/input.md` so agents can read it. Text inputs are treated like `.md` documents for triage — all agents (including cognitive agents) are eligible.
 
 Derive:
 ```
-INPUT_TYPE    = file | directory | diff
-INPUT_STEM    = <filename without extension, or directory basename for repo reviews>
+INPUT_TYPE    = file | directory | diff | text
+INPUT_STEM    = <filename without extension, directory basename, or topic as kebab-case (max 50 chars)>
 PROJECT_ROOT  = <nearest ancestor directory containing .git, or INPUT_DIR>
 OUTPUT_DIR    = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}
 ```
@@ -279,9 +282,10 @@ Before scoring, eliminate agents that cannot plausibly score ≥1 based on the d
 **For all input types (cognitive agent filter):**
 
 5. **Cognitive filter**: Skip fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception unless ALL of these conditions are met:
-   - Input type is `file` or `directory` (NOT `diff`)
-   - File extension is `.md` or `.txt` (NOT code: `.go`, `.py`, `.ts`, `.tsx`, `.rs`, `.sh`, `.c`, `.java`, `.rb`)
-   - Document type matches: PRD, brainstorm, plan, strategy, vision, roadmap, architecture doc, or research document
+   - Input type is `file`, `directory`, or `text` (NOT `diff` or code files)
+   - For `file` inputs: file extension is `.md` or `.txt` (NOT code: `.go`, `.py`, `.ts`, `.tsx`, `.rs`, `.sh`, `.c`, `.java`, `.rb`)
+   - For `text` inputs: always passes (inline text is treated as document content)
+   - Document type matches: PRD, brainstorm, plan, strategy, vision, roadmap, architecture doc, research document, options analysis, or topic exploration
 
 When cognitive agents pass the pre-filter, assign base_score using these heuristics:
    - base_score 3: Document explicitly discusses systems, feedback, strategy, architecture decisions, or organizational dynamics
@@ -298,7 +302,7 @@ When cognitive agents pass the pre-filter, assign base_score using these heurist
 
 Domain-general agents always pass the filter: fd-architecture, fd-quality, and fd-performance (for file/directory inputs only — for diffs, fd-performance is filtered by routing patterns like other domain agents).
 
-Cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) are filtered separately by the cognitive filter above and are NEVER included for diff or code file inputs. Cognitive agents display as category `cognitive` in the triage table. Technical agents display as category `technical` (default).
+Cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) are filtered separately by the cognitive filter above and are NEVER included for diff or code file inputs. Text inputs are treated as documents and DO include cognitive agents. Cognitive agents display as category `cognitive` in the triage table. Technical agents display as category `technical` (default).
 
 Present only passing agents in the scoring table below.
 
@@ -476,6 +480,12 @@ If user selects "Cancel", stop here.
 - Read `phases/launch.md` (in the flux-drive skill directory)
 - The launch phase respects the `MODE` parameter — research mode uses single-stage dispatch without AgentDropout, expansion, or peer findings
 - **[review mode only]**: If interserve mode is detected, also read `phases/launch-codex.md`
+
+## Phase 2.5: Reaction Round
+
+**[review mode only]** — skip entirely in research mode.
+
+Read `phases/reaction.md` now.
 
 ## Phase 3: Synthesize
 

@@ -52,8 +52,34 @@ case "$cmd" in
       *)        echo "$safe_content" | jq -s '.' ;;
     esac
     ;;
+  read-indexes)
+    # Extract Findings Index blocks from all agent .md files in a directory
+    # Usage: findings-helper.sh read-indexes <output_dir>
+    output_dir="$1"; shift
+    if [[ ! -d "$output_dir" ]]; then
+      echo "Error: directory '$output_dir' not found" >&2
+      exit 1
+    fi
+    for f in "$output_dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      base=$(basename "$f" .md)
+      # Skip synthesis outputs and reaction files
+      case "$base" in
+        summary|synthesis|findings) continue ;;
+        *.reactions|*.reactions.error) continue ;;
+      esac
+      # Extract between "### Findings Index" and next "###" or end
+      awk '
+        /^### Findings Index/ { found=1; next }
+        found && /^###/ { exit }
+        found { print }
+      ' "$f" | while IFS= read -r line; do
+        [[ -n "$line" ]] && echo "$base	$line"
+      done
+    done
+    ;;
   *)
-    echo "Usage: findings-helper.sh {write|read} <findings_file> ..." >&2
+    echo "Usage: findings-helper.sh {write|read|read-indexes} <findings_file|output_dir> ..." >&2
     exit 1
     ;;
 esac
