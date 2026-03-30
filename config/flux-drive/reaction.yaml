@@ -11,3 +11,9 @@ reaction_round:
     quality-gates: false
     review: true
     flux-drive: true
+
+sycophancy_detection:
+  enabled: true
+  agreement_threshold: 0.8    # flag if agreement_rate > this
+  independence_threshold: 0.3  # AND independent_rate < this
+  contrarian_threshold: 0.2    # flag if agreement_rate < this
