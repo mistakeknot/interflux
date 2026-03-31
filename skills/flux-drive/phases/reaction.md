@@ -36,7 +36,37 @@ For each Phase 2 agent output file (`{OUTPUT_DIR}/{agent-name}.md`):
 3. Filter to severities in `severity_filter` config (default: P0, P1).
 4. If `severity_filter_p2_light` is true, also collect P2 findings (these get lighter treatment in the prompt).
 
-Build a combined peer findings summary for each agent, **excluding that agent's own findings**.
+**Retain the full, unfiltered findings collection** — this is used by the convergence gate (Step 2.5.0, already computed), the fixative (Step 2.5.2b), and synthesis. Topology filtering (Step 2.5.2a) produces per-agent filtered views for reaction prompts only.
+
+### Step 2.5.2a: Topology-Aware Peer Visibility
+
+Read `config/flux-drive/discourse-topology.yaml`. If the file does not exist, cannot be parsed, or `topology.enabled` is false, skip this step — use fully-connected behavior (each agent sees ALL other agents' findings).
+
+If topology is enabled:
+
+1. **Read agent role assignments** from `config/flux-drive/agent-roles.yaml`. Build a map: `agent_name → role`. Agents not in the map get `default_role` from topology config (default: `editor`).
+
+2. **For each reacting agent**, determine visibility for every other agent:
+   - Look up both agents' roles
+   - If same role → `full` (complete Findings Index block)
+   - If roles are in each other's `adjacency` list → `summary` (parsed index line only: `- SEVERITY | ID | Title`)
+   - Otherwise → `none` (excluded)
+
+3. **Isolation fallback** (SCT-02 fix): If an agent has zero visible peers after filtering (all other agents are `none` visibility), fall back to `fallback_on_isolation` level (default: `summary`) from ALL peers. This prevents silent no-op when only non-adjacent agents are dispatched. Log: `Topology fallback: {agent_name} isolated, using summary from all peers`.
+
+4. **Build per-agent peer findings:**
+   - **Full:** Include the complete Findings Index block
+   - **Summary:** Include only parsed index lines (one line per finding)
+   - **None:** Exclude entirely
+
+5. **Log topology:**
+   ```
+   Topology: domain-aware ({N} agents, {full_pairs} full, {summary_pairs} summary, {excluded_pairs} excluded, {isolated} isolated→fallback)
+   ```
+
+The per-agent filtered `{peer_findings}` is passed to Step 2.5.3 for template filling.
+
+**Important:** The full, unfiltered findings collection from Step 2.5.2 is preserved and passed to Step 2.5.2b (fixative) unchanged. The fixative always sees the complete discourse state — topology filtering does NOT affect health metrics. This is intentional: the fixative monitors global health, while topology constrains local visibility.
 
 ### Step 2.5.2b: Discourse Fixative Health Check
 

@@ -33,4 +33,5 @@ discourse:
   sawyer: discourse-sawyer.yaml     # health monitoring (computed in synthesis)
   lorenzen: discourse-lorenzen.yaml  # move validation (passed to synthesis as LORENZEN_CONFIG)
   fixative: discourse-fixative.yaml  # corrective prompt injection (pre-reaction)
+  topology: discourse-topology.yaml  # sparse communication (peer visibility filtering)
   # Future: yes-and, conduction, pressing (Phase 2/3)
