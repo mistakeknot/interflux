@@ -27,3 +27,9 @@ hearsay_detection:
   convergence_weight_hearsay: 0.0       # weight for hearsay confirmations
   convergence_weight_independent: 1.0   # weight for independent confirmations
   convergence_weight_reactive: 0.5      # weight for reactive additions (unchanged)
+
+# Discourse protocols (rsj.7)
+discourse:
+  sawyer: discourse-sawyer.yaml     # health monitoring (computed in synthesis)
+  lorenzen: discourse-lorenzen.yaml  # move validation (passed to synthesis as LORENZEN_CONFIG)
+  # Future: yes-and, conduction, pressing (Phase 2/3)

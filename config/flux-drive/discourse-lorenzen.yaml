@@ -1,0 +1,20 @@
+# Lorenzen Dialogue Game — move validation for reaction round (rsj.7)
+# Each reaction is classified as a formal dialogue move (attack, defense,
+# new-assertion, concession) and validated for structural legality.
+
+dialogue_game:
+  enabled: true
+  move_types:
+    attack: "Challenge a specific claim with counter-evidence"
+    defense: "Provide evidence supporting a challenged claim"
+    new-assertion: "Introduce a new claim not yet in the dialogue"
+    concession: "Accept an attack and withdraw or modify the original claim"
+  validation:
+    attack_requires_evidence: true
+    defense_requires_new_evidence: true
+    new_assertion_max_per_agent: 2
+  legality_scoring:
+    valid_attack: 1.0
+    valid_defense: 1.0
+    valid_new_assertion: 0.8
+    invalid_move: 0.2

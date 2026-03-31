@@ -69,14 +69,35 @@ Task(intersynth:synthesize-review):
     MODE=flux-drive
     CONTEXT="Reviewing {INPUT_TYPE}: {INPUT_STEM} ({N} agents, {early_stop_note})"
     FINDINGS_TIMELINE={OUTPUT_DIR}/peer-findings.jsonl
+    LORENZEN_CONFIG={lorenzen_config_json}
 ```
 
-The intersynth agent handles validation, collection, deduplication, verdict writing, and report generation. It writes `{OUTPUT_DIR}/summary.md` and `{OUTPUT_DIR}/findings.json`, then returns a compact ~15-line summary.
+**Lorenzen config injection:** Before launching synthesis, read the Lorenzen config and convert to JSON:
+```bash
+lorenzen_config_json=$(python3 -c "
+import yaml, json
+d = yaml.safe_load(open('interverse/interflux/config/flux-drive/discourse-lorenzen.yaml'))['dialogue_game']
+# Flatten: merge validation sub-keys into root for synthesis agent consumption
+flat = {**d, **d.get('validation', {})}
+flat.pop('validation', None)
+flat.pop('move_types', None)  # descriptions not needed by validation
+flat.pop('legality_scoring', None)  # scoring applied by synthesis inline
+print(json.dumps(flat))
+" 2>/dev/null) || lorenzen_config_json=""
+```
+If the config file doesn't exist or parsing fails, omit `LORENZEN_CONFIG` — synthesis proceeds without move validation.
+
+The intersynth agent handles validation, collection, deduplication, move validation, discourse health, verdict writing, and report generation. It writes `{OUTPUT_DIR}/summary.md` and `{OUTPUT_DIR}/findings.json`, then returns a compact ~15-line summary.
 
 After the synthesis subagent returns:
 1. Its return value is the compact summary (~10-15 lines) — display this immediately
 2. Read `{OUTPUT_DIR}/summary.md` for the full report to present to the user
 3. The host agent never touched any individual agent output file
+4. Optionally run the diagnostic script for standalone health output:
+   ```bash
+   bash interverse/interflux/scripts/discourse-health.sh "{OUTPUT_DIR}" 2>/dev/null || true
+   ```
+   This produces `discourse-health.json` as a convenience artifact. The canonical health data is already in findings.json.
 
 ### Step 3.3: (Handled by synthesis subagent)
 

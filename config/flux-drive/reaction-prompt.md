@@ -39,6 +39,7 @@ Use this exact structure:
 
 - **Finding**: [Finding ID from peer's index]
   - **Stance**: agree | partially-agree | disagree | missed-this
+  - **Move Type**: attack | defense | new-assertion | concession
   - **Independent Coverage**: yes | partial | no
   - **Rationale**: [1-2 sentences explaining your position]
   - **Evidence**: [file:line, spec reference, or own finding ID — if applicable]
@@ -59,6 +60,16 @@ Use this exact structure:
 
 [One of: no-concerns | confirms-findings | adds-evidence | contradicts-findings]
 ```
+
+## Move Type Assignment
+
+Classify each reaction as a formal dialogue move:
+- `disagree` → **attack** (you must cite counter-evidence in the Evidence field)
+- `agree` with your own new evidence → **defense** (your Evidence field must contain references not in the original finding)
+- `missed-this` → **new-assertion** (a new claim you're introducing)
+- `agree` while withdrawing or modifying one of your own prior findings → **concession**
+
+If you are unsure which move type applies, you may omit the Move Type field — the synthesis agent will handle the missing value gracefully.
 
 ## Rules
 

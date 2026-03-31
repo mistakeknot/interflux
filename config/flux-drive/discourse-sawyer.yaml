@@ -1,0 +1,23 @@
+# Sawyer Flow Envelope — discourse health monitoring (rsj.7)
+# Computes participation balance, novelty rate, and response relevance
+# from synthesis output. All metrics are post-hoc observations, not controllers.
+
+flow_envelope:
+  enabled: true
+  participation_gini_max: 0.3
+  novelty_rate_min: 0.1
+  response_relevance_min: 0.7
+  # Convergence gate subsumption is DEFERRED to Phase 2/3.
+  # The existing skip_if_convergence_above in reaction.yaml
+  # continues to operate independently.
+  subsume_convergence_gate: false
+  states:
+    healthy:
+      gini_below: 0.3
+      novelty_above: 0.1
+      relevance_above: 0.7
+    degraded:
+      gini_below: 0.5
+      novelty_above: 0.05
+      relevance_above: 0.5
+    # Below degraded → unhealthy (warning emitted)
