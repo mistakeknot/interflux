@@ -71,6 +71,8 @@ Classify each reaction as a formal dialogue move:
 
 If you are unsure which move type applies, you may omit the Move Type field — the synthesis agent will handle the missing value gracefully.
 
+{fixative_context}
+
 ## Rules
 
 - Reference findings by their **Finding ID** (e.g., `SAFE-01`, `ARCH-03`), not by free-form description.

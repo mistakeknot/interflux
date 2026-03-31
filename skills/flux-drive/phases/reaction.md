@@ -38,6 +38,33 @@ For each Phase 2 agent output file (`{OUTPUT_DIR}/{agent-name}.md`):
 
 Build a combined peer findings summary for each agent, **excluding that agent's own findings**.
 
+### Step 2.5.2b: Discourse Fixative Health Check
+
+Read `config/flux-drive/discourse-fixative.yaml`. If the file does not exist or cannot be parsed, treat the fixative as disabled — skip this step entirely and set `fixative_context` to empty.
+
+If `fixative.enabled` is true:
+
+1. **Compute approximate health metrics** from the Findings Indexes already collected in Step 2.5.2. Include ALL severities (P0, P1, and P2 when `severity_filter_p2_light` is true) — not just P0/P1.
+
+   - **Participation Gini:** Count total findings per agent from all collected indexes. Compute Gini coefficient (0 = equal, 1 = one agent dominates). If ≤ 1 agent, Gini = 0.
+   - **Novelty estimate:** Compute overlap across all findings (not just P0/P1): count findings whose title matches (3+ shared keywords) across 2+ agents, divide by total findings. `novelty_estimate = 1 - all_findings_overlap_ratio`. This is a pre-synthesis approximation — the authoritative metric comes from synthesis Step 6.6.
+
+2. **Check triggers** against thresholds from the config:
+   - `gini > participation_gini_above` → fire `imbalance` injection
+   - `novelty_estimate < novelty_estimate_below` → fire `convergence` injection
+   - `drift_unconditional` is true → always fire `drift` injection (evidence-anchoring cannot be estimated pre-synthesis)
+   - If `imbalance` AND `convergence` both fire (2-of-2 strongest signals) → also fire `collapse` injection (compound degradation onset)
+
+3. **Build fixative context string.** If any injections fired, concatenate them separated by blank lines. If no triggers fired (only drift is unconditional), `fixative_context` contains only the drift note.
+
+4. **Log fixative activity:**
+   ```
+   Fixative: {active|inactive} ({N} injections: {injection_names})
+   ```
+   If inactive (only drift fired): `Fixative: drift-only`
+
+5. **Pass `fixative_context` to Step 2.5.3** for template slot filling.
+
 ### Step 2.5.3: Build Per-Agent Reaction Prompts
 
 For each Phase 2 agent that produced valid output:
@@ -49,6 +76,7 @@ For each Phase 2 agent that produced valid output:
    - `{own_findings_index}` — this agent's own Findings Index (for self-comparison)
    - `{peer_findings}` — combined P0/P1 (and optionally P2) findings from all OTHER agents
    - `{output_path}` — `{OUTPUT_DIR}/{agent-name}.reactions.md`
+   - `{fixative_context}` — discourse fixative injections from Step 2.5.2b (empty string if fixative disabled or no triggers fired beyond drift)
 3. If `{peer_findings}` is empty for this agent (no other agents found P0/P1 issues), skip this agent — no reaction needed.
 
 ### Step 2.5.4: Dispatch Reaction Agents
@@ -71,6 +99,7 @@ After all agents complete (or timeout):
 
 ```
 Reaction round: {N} agents dispatched, {M} reactions produced, {K} empty (no relevant peer findings), {E} errors/timeouts.
+Fixative: {active|inactive|drift-only} ({N} injections)
 ```
 
 Proceed to Phase 3 (Synthesize). The synthesis agent reads `.reactions.md` files separately from agent output files.

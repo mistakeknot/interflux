@@ -1,0 +1,39 @@
+# Discourse Fixative — corrective prompt injection for reaction round (rsj.9)
+# The fixative injects contextual notes into reaction prompts when
+# pre-synthesis health metrics indicate discourse degradation.
+# It is a strict no-op when all metrics are healthy.
+#
+# Trigger thresholds aligned with discourse-sawyer.yaml healthy band.
+
+fixative:
+  enabled: true
+  triggers:
+    # Fires imbalance injection when participation skew exceeds Sawyer healthy threshold
+    participation_gini_above: 0.3
+    # Fires convergence injection when novelty drops below Sawyer healthy threshold
+    # Novelty estimate: 1 - (overlapping_findings / total_findings) using all severities
+    novelty_estimate_below: 0.1
+    # Collapse fires when BOTH gini and novelty triggers fire simultaneously
+    # (two-of-two strongest signals — onset of compound degradation)
+    collapse_threshold: 2
+  # Drift injection fires unconditionally when fixative is active.
+  # Rationale: evidence-anchoring is always useful and cannot be estimated
+  # pre-synthesis (file:line refs live in prose, not Findings Index titles).
+  drift_unconditional: true
+  injections:
+    imbalance: >-
+      Note: Agent participation is imbalanced. If you have a perspective
+      that differs from the dominant viewpoint, prioritize expressing it
+      over confirming existing findings.
+    convergence: >-
+      Note: Most agents found similar issues. Focus your reaction on what
+      is MISSING from peer findings rather than confirming what they found.
+      What didn't anyone check?
+    drift: >-
+      Note: Anchor your reactions to concrete file:line references from
+      the codebase. Specific evidence strengthens both agreements and
+      disagreements.
+    collapse: >-
+      Note: Discourse quality indicators suggest echo-chamber risk. Before
+      reacting, re-read the original review prompt. Challenge at least one
+      peer finding you initially agreed with.
