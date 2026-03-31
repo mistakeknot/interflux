@@ -67,3 +67,4 @@ Use this exact structure:
 - Be honest. If a peer found something you missed, say so. If you disagree, explain why with evidence.
 - Do not inflate or deflate severity to match peers. Your independent judgment matters.
 - Reactive Additions inherit `provenance: reactive` — they were discovered via peer context, not your initial analysis.
+- **Hearsay rule:** Confirmations without independent evidence are discounted in convergence scoring. If you agree with a peer's finding, provide your *own* file:line evidence or explain what in your own analysis supports the claim. Simply saying "as fd-architecture noted, this is correct" adds no signal — the synthesis agent will tag it as hearsay (weight: 0.0 instead of 1.0). Set `Independent Coverage: yes` and provide your own evidence path to count as an independent confirmation.

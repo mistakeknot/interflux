@@ -17,3 +17,13 @@ sycophancy_detection:
   agreement_threshold: 0.8    # flag if agreement_rate > this
   independence_threshold: 0.3  # AND independent_rate < this
   contrarian_threshold: 0.2    # flag if agreement_rate < this
+
+# Hearsay rule (rsj.12): discount confirmations that cite peer outputs without independent evidence
+hearsay_detection:
+  enabled: true
+  # A confirming reaction is hearsay if it has NO new file:line evidence
+  # beyond what the original finding already provided.
+  # Hearsay reactions count as 0.0 in convergence scoring (vs 1.0 for independent confirmations).
+  convergence_weight_hearsay: 0.0       # weight for hearsay confirmations
+  convergence_weight_independent: 1.0   # weight for independent confirmations
+  convergence_weight_reactive: 0.5      # weight for reactive additions (unchanged)
