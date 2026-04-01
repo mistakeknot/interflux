@@ -14,7 +14,12 @@ You are executing the flux-drive skill. This skill operates in two modes:
 
 Follow each phase in order. Do NOT skip phases.
 
-**File organization:** This skill is split across phase files for readability. Read `phases/shared-contracts.md` and `phases/slicing.md` first (defines output format, completion signals, and content routing), then read each phase file as you reach it.
+**File organization:** This skill is split across phase files. Read each phase file as you reach it — do NOT pre-load all files upfront. Key references:
+- `phases/shared-contracts.md` — output format, completion signals (read before Phase 2 dispatch)
+- `phases/slicing.md` — content routing patterns and algorithms (read only when slicing activates: diff >= 1000 lines or document >= 200 lines)
+- `phases/launch.md` — agent dispatch protocol (read at Phase 2)
+- `phases/expansion.md` — AgentDropout + staged expansion (read only when Stage 2 candidates exist)
+- `phases/reaction.md` — reaction round (read only when reaction is enabled in config)
 
 ## Mode
 
@@ -79,141 +84,39 @@ INPUT_TYPE        = research
 
 ### Step 1.0: Understand the Project
 
-**Before profiling the document**, understand the project's actual tech stack and structure. This is always useful — even for repo reviews.
+Check PROJECT_ROOT for build files (Cargo.toml, go.mod, package.json, etc.), read CLAUDE.md/AGENTS.md if present. For file inputs, compare document vs actual codebase. For directory inputs, read README + key source files. If qmd MCP available, search for project conventions. Note any document-codebase divergence as `divergence: [description]` — this is a P0 finding. Use the **actual** tech stack for triage.
 
-1. Check the project root for build system files:
-   ```bash
-   ls {PROJECT_ROOT}/  # Look for Cargo.toml, go.mod, package.json, etc.
-   ```
-2. For **file inputs**: Compare what the document describes against reality (language, framework, architecture)
-3. For **directory inputs**: This IS the primary analysis — read README, build files, key source files
-4. If qmd MCP tools are available, run a semantic search for project context:
-   - Search for architecture decisions, conventions, and known issues relevant to the document
-   - This supplements CLAUDE.md/AGENTS.md reading with broader project knowledge
-   - Feed relevant results into the document profile as additional context for triage
-5. If there is a **significant divergence** between what a document describes and the actual codebase (e.g., document says Swift but code is Rust+TS):
-   - Note it in the document profile as `divergence: [description]`
-   - Read 2-3 key codebase files to understand the actual tech stack
-   - Use the **actual** tech stack for triage, not the document's
-   - All agent prompts must include the divergence context and actual file paths
+### Step 1.0.1: Classify Project Domains
 
-A document-codebase divergence is itself a P0 finding — every agent should be told about it.
+Output: `Project domains: [comma-separated from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]` (or `none`). Multiple domains allowed. Feeds into scoring (domain_boost), criteria injection (Step 2.1a).
 
-### Step 1.0.1: Classify Project Domains (LLM)
+### Step 1.0.4: Generate Project Agents
 
-Based on your Step 1.0 project understanding (README, build files, CLAUDE.md/AGENTS.md, source files), classify the project into domain(s) for agent selection and domain-specific review criteria injection.
-
-Output as part of your analysis:
-
-```
-Project domains: [comma-separated from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]
-```
-
-A project can match multiple domains simultaneously (e.g., a monorepo with CLIs, TUI tools, and plugins). If no predefined domain fits, output `Project domains: none`. No external scripts needed — you already have the context from Step 1.0.
-
-**Output:** The classified domains feed into Step 1.1 (document profile), Step 1.2 (agent scoring with domain bonuses), and Step 2.1a (domain-specific review criteria injection).
-
-### Step 1.0.4: Generate Project Agents (flux-gen dispatch)
-
-Always invoke `/interflux:flux-gen` to generate or refresh project-specific agents for this review. Flux-gen uses `--mode=skip-existing` by default, so existing agents are preserved and only missing ones are created — this is fast when agents already exist.
-
-Derive the flux-gen task from the input being reviewed:
-- **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
-- **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
-- **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
-
-If flux-gen fails or user cancels generation, proceed with core agents only (graceful degradation).
-
-**Summary line:**
-```
-Project agents: N found in .claude/agents/ [M newly generated via flux-gen]
-```
+`/interflux:flux-gen "Review of {INPUT}: {1-line summary}"` — skip-existing mode (fast when agents exist). If fails, proceed with core agents only.
 
 ### Step 1.1: Analyze the Input
 
-**[research mode]**: Skip the document profile. Instead build a query profile:
+**[research mode]**: Build a query profile: `type` (onboarding/how-to/why-is-it/what-changed/best-practice/debug-context/exploratory), `keywords`, `scope` (narrow/medium/broad), `project_domains`, `estimated_depth` (quick=30s, standard=2min, deep=5min). Then skip to Step 1.2.
 
-```yaml
-query_profile:
-  type: <one of: onboarding, how-to, why-is-it, what-changed, best-practice, debug-context, exploratory>
-  keywords: [list of key terms extracted from the question]
-  scope: <narrow | medium | broad>
-  project_domains: [from Step 1.0, if any]
-  estimated_depth: <quick | standard | deep>
-```
-
-Type detection heuristics:
-- "how do I..." / "what's the best way to..." → `how-to`
-- "why does..." / "why is..." → `why-is-it`
-- "what changed..." / "when did..." → `what-changed`
-- "best practice for..." / "conventions for..." → `best-practice`
-- "help me understand this codebase..." / "how is this organized..." → `onboarding`
-- "I'm debugging..." / "context for this bug..." → `debug-context`
-- No clear pattern → `exploratory`
-
-Depth estimation:
-- `quick` (30s per agent): simple factual lookups, single-source answers
-- `standard` (2min per agent): multi-source synthesis, pattern matching
-- `deep` (5min per agent): comprehensive survey, cross-referencing, analysis
-
-Then skip to **Step 1.2** (research agent scoring).
-
-**[review mode]**: For **file inputs**: Read the file at `INPUT_FILE`.
-For **repo reviews**: Read README.md (or equivalent), build system files (go.mod, package.json, Cargo.toml, etc.), directory structure (`ls` key directories), and 2-3 key source files.
-
-Extract a structured profile:
+**[review mode]**: Read the input and extract a structured profile:
 
 ```
 Document Profile:
-- Type: [plan | brainstorm/design | spec/ADR | prd | README/overview | repo-review | other]
-- Summary: [1-2 sentence description of what this document is]
-- Languages: [from codebase, not just the document]
-- Frameworks: [from codebase, not just the document]
+- Type: [plan|brainstorm|spec|prd|README|repo-review|other]
+- Summary: [1-2 sentences]
+- Languages/Frameworks: [from codebase, not just document]
 - Domains touched: [architecture, security, performance, UX, data, API, etc.]
-- Project domains: [from Step 1.0.1 — e.g., "game-simulation, cli-tool" or "none"]
-- Technologies: [specific tech mentioned]
-- Divergence: [none | description — only for documents that describe code]
-- Key codebase files: [list 3-5 actual files agents should read]
-- Section analysis:
-  - [Section name]: [thin/adequate/deep] — [1-line summary]
-  - ...
-- Estimated complexity: [small/medium/large]
-- Review goal: [1 sentence — what should agents focus on?]
+- Project domains: [from Step 1.0.1]
+- Divergence: [none | description]
+- Key codebase files: [3-5 files]
+- Section analysis: [section: thin/adequate/deep — 1-line summary]
+- Estimated complexity: [small|medium|large]
+- Review goal: [1 sentence — adapts to type: plan→gaps/risks, brainstorm→feasibility, PRD→assumptions/scope, spec→ambiguities]
 ```
 
-#### Diff Profile (when `INPUT_TYPE = diff`)
+**Diff Profile** (when `INPUT_TYPE = diff`): File count, stats (+/-), languages, domains touched, project domains, key files (top 5 by size), commit message, complexity (small <200/medium/large 1000+), slicing eligible (>= 1000 lines).
 
-For **diff inputs**, extract a diff-specific profile instead of the document profile above:
-
-```
-Diff Profile:
-- File count: [N files changed]
-- Stats: [+X lines added, -Y lines removed]
-- Binary files: [list any binary file changes]
-- Languages detected: [from file extensions in the diff]
-- Domains touched: [architecture, security, performance, UX, data, API, etc.]
-- Project domains: [from Step 1.0.1 — e.g., "game-simulation, cli-tool" or "none"]
-- Renamed files: [list of old → new renames]
-- Key files: [top 5 files by change size]
-- Commit message: [if available from diff header]
-- Estimated complexity: [small (<200 lines) | medium (200-1000) | large (1000+)]
-- Slicing eligible: [yes if total diff lines >= 1000, no otherwise]
-- Review goal: "Find issues, risks, and improvements in the proposed changes"
-```
-
-Parse the diff to extract file paths and per-file `+`/`-` line counts. For slicing eligibility, count total added + removed lines (excluding diff metadata lines like `@@` hunks and `diff --git` headers).
-
-If `slicing_eligible: yes`, the orchestrator will apply diff slicing in Phase 2 using `phases/slicing.md`. See `phases/launch.md` Step 2.1b.
-
-The `Review goal` adapts to document type:
-- Plan → "Find gaps, risks, missing steps"
-- Brainstorm/design → "Evaluate feasibility, surface missing alternatives, challenge assumptions"
-- README/repo-review → "Evaluate quality, find gaps, suggest improvements"
-- Spec/ADR → "Find ambiguities, missing edge cases, implementation risks"
-- PRD → "Challenge assumptions, validate business case, find missing user evidence, surface scope risks"
-- Other → Infer the appropriate review goal from the document's content
-
-Do this analysis yourself (no subagents needed). The profile drives triage in Step 1.2.
+Do this analysis yourself (no subagents). The profile drives triage in Step 1.2.
 
 ### Step 1.2: Select Agents from Roster
 
@@ -239,180 +142,57 @@ Then skip to **Step 1.3** (user confirmation).
 
 **[review mode]**: Use the review agent scoring below.
 
-#### Step 1.2a.0: Apply routing overrides
+#### Step 1.2a.0: Routing overrides
 
-Before pre-filtering by content, check for project-level routing overrides:
-
-1. **Read file:** Check if `$FLUX_ROUTING_OVERRIDES_PATH` (default: `.claude/routing-overrides.json`) exists in the project root.
-2. **If missing:** Continue to Step 1.2a with no exclusions.
-3. **If present:**
-   a. Parse JSON. If malformed, log `"WARNING: routing-overrides.json malformed, ignoring overrides"` in triage output, move file to `.claude/routing-overrides.json.corrupted`, and continue with no exclusions.
-   b. Check `version` field. If `version > 1`, log `"WARNING: Routing overrides version N not supported (max 1). Ignoring file."` and continue with no exclusions.
-   c. Read `.overrides[]` array. For each entry with `"action": "exclude"`:
-      - **Scope check:** If the entry has a `scope` field:
-        - If `scope.domains` is set, check if the current document's detected domain (from Step 1.1) matches any domain in the list. If no match, skip this override (agent stays in pool).
-        - If `scope.file_patterns` is set, check if any input file path matches any glob pattern. If no match, skip this override. Reject patterns containing `..` or starting with `/` as invalid.
-        - If both are set, BOTH must match (AND logic).
-        - If `scope.file_patterns` contains only `**` (match-all), treat the override as global and apply the cross-cutting agent warning below.
-      - If no `scope` field, the override applies globally (all domains, all files).
-      - Remove the agent from the candidate pool (they will not appear in pre-filter or scoring).
-      - If the agent is not in the roster (unknown name), log: `"WARNING: Routing override for unknown agent {name} — check spelling or remove entry."`
-      - If the excluded agent is cross-cutting (fd-architecture, fd-quality, fd-safety, fd-correctness), add a **prominent warning** to triage output: `"Warning: Routing override excludes cross-cutting agent {name}. This removes structural/security coverage."`
-   d. Entries with `"action": "propose"` are informational only — do NOT exclude the agent. Log: `"INFO: Proposed exclusion for {name} (not yet active). Run /interspect:propose to review."`
-4. **Triage table note:** After the scoring table, add: `"N agents excluded by routing overrides: [agent1, agent2, ...]"`
-   - For each excluded agent with a `canary` field, append: `"agent1 [canary: created active, expires 2026-03-09]"` — note this is a creation-time snapshot. Run `/interspect:status` for live canary state.
-   - For each excluded agent with a `confidence` field, append: `"(confidence: 0.85)"`
-5. **Discovery nudge:** If the same agent has been overridden 3+ times in the current session (via user declining findings or explicitly overriding), add a note after the triage table: `"Tip: Agent {name} was overridden {N} times this session. Run /interspect:correction to record this pattern. After enough evidence, /interspect can propose permanent exclusions."`
-6. **Continue to Step 1.2a** with the reduced candidate pool.
+Read `.claude/routing-overrides.json` if it exists. For each entry with `"action":"exclude"`: apply scope check (domains AND/OR file_patterns — AND logic if both set; reject `..` or `/`-prefixed patterns). Remove matching agents from candidate pool. Warn if excluded agent is cross-cutting (fd-architecture, fd-quality, fd-safety, fd-correctness). Entries with `"action":"propose"` are informational only. Show canary/confidence metadata in triage notes. Discovery nudge: if agent overridden 3+ times this session, suggest `/interspect:correction`.
 
 #### Step 1.2a: Pre-filter agents
 
-Before scoring, eliminate agents that cannot plausibly score ≥1 based on the document/diff profile:
+Eliminate agents that cannot score >= 1:
 
-**For file and directory inputs:**
+**File/directory inputs:**
+- fd-correctness: skip unless DB/migrations/concurrency/async/state (or domain has >=3 injection criteria)
+- fd-user-product: skip unless PRD/proposal/user-facing
+- fd-safety: skip unless security/credentials/deploy/trust
+- fd-game-design: skip unless game-simulation domain detected
+- fd-architecture, fd-quality: always pass (domain-general)
+- fd-performance: always pass for file/dir
 
-1. **Data filter**: Skip fd-correctness unless the document mentions databases, migrations, data models, concurrency, async patterns, state management, validation, invariants, algorithms, contracts, schemas, queries, or SQL. If detected domain has >=3 injection criteria for fd-correctness, always pass this filter.
-2. **Product filter**: Skip fd-user-product unless the document type is PRD, proposal, strategy document, or has user-facing flows.
-3. **Deploy filter**: Skip fd-safety unless the document mentions security, credentials, deployments, infrastructure, or trust boundaries.
+**Diff inputs** (use routing patterns from `phases/slicing.md`):
+- Each domain agent: skip unless changed files match its priority file patterns or hunks contain its keywords
 
-**For file and directory inputs (continued):**
+**Cognitive agents** (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception): skip unless `.md`/`.txt` document or `text` input with document type PRD/brainstorm/plan/strategy/vision/roadmap/options analysis. NEVER for code/diff. Base scores: 3 (systems/strategy content), 2 (PRD/brainstorm/plan), 1 (technical reference).
 
-4. **Game filter**: Skip fd-game-design unless Step 1.0.1 detected `game-simulation` domain OR the document/project mentions game, simulation, AI behavior, storyteller, balance, procedural generation, tick loop, needs/mood systems, or drama management.
-
-**For all input types (cognitive agent filter):**
-
-5. **Cognitive filter**: Skip fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception unless ALL of these conditions are met:
-   - Input type is `file`, `directory`, or `text` (NOT `diff` or code files)
-   - For `file` inputs: file extension is `.md` or `.txt` (NOT code: `.go`, `.py`, `.ts`, `.tsx`, `.rs`, `.sh`, `.c`, `.java`, `.rb`)
-   - For `text` inputs: always passes (inline text is treated as document content)
-   - Document type matches: PRD, brainstorm, plan, strategy, vision, roadmap, architecture doc, research document, options analysis, or topic exploration
-
-When cognitive agents pass the pre-filter, assign base_score using these heuristics:
-   - base_score 3: Document explicitly discusses systems, feedback, strategy, architecture decisions, or organizational dynamics
-   - base_score 2: Document is a PRD, brainstorm, or plan (general document review)
-   - base_score 1: Document is `.md` but content is primarily technical reference (API docs, changelogs)
-
-**For diff inputs** (use routing patterns from `phases/slicing.md`):
-
-1. **Data filter**: Skip fd-correctness unless any changed file matches its priority file patterns or any hunk contains its priority keywords.
-2. **Product filter**: Skip fd-user-product unless any changed file matches its priority file patterns or any hunk contains its priority keywords.
-3. **Deploy filter**: Skip fd-safety unless any changed file matches its priority file patterns or any hunk contains its priority keywords.
-4. **Perf filter**: Skip fd-performance unless any changed file matches its priority file patterns or any hunk contains its priority keywords.
-5. **Game filter**: Skip fd-game-design unless any changed file matches its priority file patterns or any hunk contains its priority keywords.
-
-Domain-general agents always pass the filter: fd-architecture, fd-quality, and fd-performance (for file/directory inputs only — for diffs, fd-performance is filtered by routing patterns like other domain agents).
-
-Cognitive agents (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception) are filtered separately by the cognitive filter above and are NEVER included for diff or code file inputs. Text inputs are treated as documents and DO include cognitive agents. Cognitive agents display as category `cognitive` in the triage table. Technical agents display as category `technical` (default).
-
-Present only passing agents in the scoring table below.
-
-Score the pre-filtered agents against the document profile using a **0-7 scale**:
+#### Step 1.2b: Score agents (0-7 scale)
 
 ```
-Score Components:
-  base_score:     0-3 (0=irrelevant, 1=tangential, 2=adjacent, 3=core domain)
-  domain_boost:   0-2 (from domain profile match — see below)
-  project_bonus:  0-1 (project has CLAUDE.md/AGENTS.md)
-  domain_agent:   0-1 (for domain-specific generated agents from /flux-gen)
-
-  final_score = base_score + domain_boost + project_bonus + domain_agent
-  max possible = 3 + 2 + 1 + 1 = 7
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1)
 ```
 
-> **Note**: Base score 0 means the agent is excluded. Bonuses cannot override irrelevance.
+- base: 3=core overlap, 2=adjacent, 1=tangential, 0=excluded (bonuses can't override 0)
+- domain_boost: +2 if agent has injection criteria in detected domain profile
+- project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin) or always (Project Agent)
+- domain_agent: +1 for flux-gen agents matching detected domain
+- Selection: base >= 3 always included, >= 2 if slots remain, >= 1 only for thin sections
+- Deduplication: exact name match → prefer Project Agent. Partial overlap → keep both.
 
-**Base score guide:**
-- **3 (core)**: Agent's domain directly overlaps with document content (e.g., fd-safety for a security audit).
-- **2 (adjacent)**: Agent's domain is relevant but not the primary focus (e.g., fd-performance for an API plan with a perf section).
-- **1 (tangential)**: Agent's domain is marginally relevant. Include only for thin sections that need more depth.
-- **0 (irrelevant)**: Wrong language, wrong domain, no relationship. Always excluded.
+**Dynamic slot ceiling:** `4(base) + scope(file:0, small-diff:1, large-diff:2, repo:3) + domain(0:0, 1:1, 2+:2)`, hard max 10.
 
-**Project bonus** (+0 or +1): Plugin Agents get +1 when the target project has CLAUDE.md/AGENTS.md (they auto-detect and use codebase-aware mode). Project Agents get +1 (project-specific by definition).
+**Stage assignment:** Stage 1 = top 40% of slots (min 2, max 5). Stage 2 = rest. Expansion pool = scored >= 2 but no slot.
 
-**Domain boost** (+0 or +2; applied only when base score ≥ 1): When Step 1.0.1 detected a project domain, check each agent's injection criteria in the corresponding domain profile (`config/flux-drive/domains/*.md`):
-- Agent has injection criteria section in domain profile → +2
-- No injection criteria section → +0
-
-Domain profiles also provide domain-specific review bullets loaded during Phase 2 (Step 2.1a) and injected into each agent's prompt.
-
-**Domain agent bonus** (+0 or +1): Project-specific agents generated by `/flux-gen` get +1 when the detected domain matches their specialization.
-
-**Selection rules**:
-1. All agents with base_score >= 3 are included (core relevance)
-2. Agents with base_score = 2 are included if slots remain (adjacent)
-3. Agents with base_score = 1 are included only if slots remain AND their domain covers a thin section
-4. Bonuses (domain_boost, project_bonus, domain_agent) affect RANKING within each tier, not inclusion
-5. **Dynamic slot ceiling** (see below) — replaces hard cap
-6. **Deduplication**: When a Project Agent and Plugin Agent overlap:
-   - **Exact name match** (e.g., project `fd-safety` vs plugin `fd-safety`): prefer the Project Agent; exclude the Plugin Agent (does not consume a slot)
-   - **Partial overlap** (e.g., project `web-api-validation` vs plugin `fd-correctness`): keep BOTH — the Project Agent is narrower than the Plugin Agent. Place the Plugin Agent in Stage 2 if slots are limited.
-   - **No overlap** (different domains entirely): no dedup applies
-
-> **Note**: Inclusion is determined by base_score. Bonuses influence Stage 1 vs Stage 2 placement and tie-breaking only.
-
-#### Dynamic slot allocation
-
-The agent ceiling adapts to review scope and domain density:
-
-```
-base_slots    = 4                        # minimum for any review
-scope_slots:
-  - single file:          +0
-  - small diff (<500 lines): +1
-  - large diff (500+):    +2
-  - directory/repo:       +3
-domain_slots:
-  - 0 domains detected:   +0
-  - 1 domain detected:    +1
-  - 2+ domains detected:  +2
-total_ceiling = base + scope + domain
-hard_maximum  = 10                       # absolute cap for resource sanity
-```
-
-**Examples:**
-- Single-file review, no domain → 4 slots (lean)
-- Repo review, 1 domain → 4+3+1 = 8 slots (standard)
-- Repo review, 2 domains → 4+3+2 = 9 slots (full)
-- Small diff, no domain → 4+1 = 5 slots (quick check)
-
-#### Stage assignment
-
-After selecting agents, assign dispatch stages:
-- **Stage 1**: Top 40% of total slots (rounded up, min 2, max 5). Fill with highest-scoring agents. Ties broken by: Project > Plugin > Cross-AI.
-- **Stage 2**: All remaining selected agents
-- **Expansion pool**: Agents that scored ≥2 but didn't get a slot — these are candidates for domain-aware expansion after Stage 1 (see `phases/launch.md` Step 2.2b)
-
-Present the triage table with budget context:
-
-| Agent | Category | Score | Stage | Est. Tokens | Source | Reason | Action |
-|-------|----------|-------|-------|-------------|--------|--------|--------|
+Present triage table: Agent | Category | Score | Stage | Est. Tokens | Source | Reason | Action
 
 ### Scoring Examples
 
-Read `references/scoring-examples.md` for 4 worked examples covering different document types and domain configurations, plus thin-section threshold definitions.
+Read `references/scoring-examples.md` for worked examples and thin-section thresholds.
 
 ### Step 1.2c: Budget-Aware Selection
 
-After scoring and stage assignment, apply budget constraints using `config/flux-drive/budget.yaml` and the cost estimator at `scripts/estimate-costs.sh`. See the compact skill (SKILL-compact.md Step 1.2c) for the complete algorithm.
-
-Key points:
-- Budget lookup by INPUT_TYPE (plan, brainstorm, diff-small, diff-large, repo, etc.)
-- Per-agent cost from interstat historical data, falling back to budget.yaml defaults
-- Slicing multiplier (0.5x) applied for non-cross-cutting agents when slicing is active
-- Minimum 2 agents always selected regardless of budget
-- Deferred agents shown in triage table with override option
+Apply budget constraints from `config/flux-drive/budget.yaml`. See SKILL-compact.md Step 1.2c for the complete algorithm. Key: budget by INPUT_TYPE, per-agent costs from interstat (>= 3 runs) or defaults, slicing multiplier 0.5x, min 2 agents always selected, exempt agents (fd-safety, fd-correctness) never deferred.
 
 ### Step 1.2d: Document Section Mapping
 
-**Trigger:** `INPUT_TYPE = file` AND document exceeds 200 lines.
-
-Split the document into sections and classify relevance per agent. This reduces token cost by sending domain-specific agents only their relevant sections in full, with one-line summaries for the rest. Cross-cutting agents always receive the full document.
-
-Read `phases/slicing.md` → Document Slicing for the complete classification algorithm, including section heading keywords, safety override, 80% threshold, and pyramid summary rules.
-
-**For documents < 200 lines**, skip this step entirely — all agents receive the full document.
-
-**Output**: A `section_map` per agent, used in Step 2.1c to write per-agent temp files.
+**Trigger:** `INPUT_TYPE = file` AND document > 200 lines. Read `phases/slicing.md` → Document Slicing. Output: `section_map` per agent for Step 2.1c. Documents < 200 lines → all agents get full document.
 
 ### Step 1.3: User Confirmation
 
