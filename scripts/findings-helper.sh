@@ -113,9 +113,11 @@ case "$cmd" in
       if (sev != "P0" && sev != "P1") next
 
       # Normalize title: strip severity/ID prefix, lowercase, strip punctuation
+      # Preserve hyphens as spaces to avoid colliding unrelated titles (RXN-04)
       title = line
       gsub(/^-[[:space:]]*/, "", title)
       gsub(/[Pp][0-9]+[[:space:]]*\|[[:space:]]*[A-Za-z]+-[0-9]+[[:space:]]*\|[[:space:]]*"[^"]*"[[:space:]]*\|[[:space:]]*/, "", title)
+      gsub(/-/, " ", title)
       gsub(/[^a-zA-Z0-9 ]/, "", title)
       title = tolower(title)
       gsub(/[[:space:]]+/, " ", title)

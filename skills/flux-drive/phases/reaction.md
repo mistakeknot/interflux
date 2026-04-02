@@ -6,15 +6,59 @@ Controlled by `config/flux-drive/reaction.yaml`. If `reaction_round.enabled` is 
 
 ### Step 2.5.0: Convergence Gate
 
-Run `scripts/findings-helper.sh convergence {OUTPUT_DIR}`. Parse the tab-separated output: `overlap_ratio`, `total_findings`, `overlapping_findings`, `agent_count`.
+**Step 2.5.0a: Collect stats.** Run `scripts/findings-helper.sh convergence {OUTPUT_DIR}`. Parse the tab-separated output: `overlap_ratio`, `total_findings`, `overlapping_findings`, `agent_count`. Also run `scripts/findings-helper.sh read-indexes {OUTPUT_DIR}` to collect the full findings index text.
 
-**Scaled threshold:** `effective_threshold = config.skip_if_convergence_above * (agent_count / 5)`. Cap at `config.skip_if_convergence_above` (never exceed original threshold). For N=2: threshold ~0.24 (reactions almost always fire). For N=5: threshold stays at 0.6. For N=8: threshold caps at 0.6.
+**Step 2.5.0b: Fast-path guards.** Skip the haiku gate and proceed directly to Step 2.5.1 if ANY of:
+- `agent_count == 0` — all Phase 2 agents failed. Emit skip event with `{"type":"skip","reason":"no_agents"}` and proceed to Phase 3.
+- `agent_count == 1` — no peers to react to. Emit skip event with `{"type":"skip","reason":"single_agent"}` and proceed to Phase 3.
+- `total_findings == 0` — nothing to react to. Emit skip event with `{"type":"skip","reason":"no_findings"}` and proceed to Phase 3.
 
-**Peer-priming discount:** If `{OUTPUT_DIR}/peer-findings.jsonl` exists, read it. For each finding title in the overlap set, check if the first report timestamp in peer-findings.jsonl precedes a second agent's Findings Index entry. Discount peer-primed findings from the overlap count before computing `overlap_ratio`.
+**Step 2.5.0c: Haiku gate agent.** Dispatch a single Agent call (model: `haiku`) with this prompt:
 
-**Decision:** If `overlap_ratio > effective_threshold`, skip reaction round — emit an `interspect-reaction` event with context `{"type":"skip","overlap_ratio":X,"threshold":Y,"effective_threshold":Z,"agent_count":N,"finding_count":M}` via `_interspect_emit_reaction_dispatched()` (with `agents_dispatched: 0`). Also write `{OUTPUT_DIR}/reaction-skipped.json` with the same fields. Proceed to Phase 3.
+````
+You are the reaction-round gate. Decide whether a reaction round would add value.
 
-Otherwise, continue to Step 2.5.1.
+## Agent Findings Indexes
+
+{findings_index_text}
+
+## Stats
+- overlap_ratio: {overlap_ratio} (title-normalized, may miss semantic overlap)
+- total_p0_p1_findings: {total_findings}
+- overlapping_findings: {overlapping_findings}
+- agent_count: {agent_count}
+
+## Decision Criteria
+
+Answer PROCEED if ANY of these are true:
+1. **Implicit contradictions**: One agent's finding contradicts another's (e.g., agent A says "safe" but agent B found a P0 in the same area)
+2. **Severity disagreement**: Agents flag the same issue at different severity levels
+3. **Semantic overlap missed by stats**: Findings about the same underlying issue use different titles (overlap_ratio underestimates true convergence)
+4. **Domain-expert blind spots**: An agent's finding falls squarely in another agent's domain but wasn't reported by them
+5. **Low confidence signals**: Any agent's verdict is "needs-changes" or "risky" with few findings (under-reporting)
+
+Answer SKIP if ALL of these are true:
+1. Findings are complementary — each agent reviewed a different domain with no overlap
+2. No implicit contradictions or severity disagreements exist
+3. Agents that share a domain agree on what they found
+4. Reactions would only produce "agree" stances with no new evidence
+
+## Output Format (strict)
+
+```
+DECISION: PROCEED | SKIP
+CONFIDENCE: high | medium | low
+RATIONALE: [1-2 sentences]
+```
+
+Nothing else. No markdown headers, no explanations beyond the rationale.
+````
+
+Parse the response. If `DECISION: SKIP`, emit skip event with `{"type":"skip","reason":"haiku_gate","confidence":"{confidence}","rationale":"{rationale}","overlap_ratio":X,"agent_count":N,"finding_count":M}` via `_interspect_emit_reaction_dispatched()` (with `agents_dispatched: 0`). Also write `{OUTPUT_DIR}/reaction-skipped.json`. Proceed to Phase 3.
+
+If `DECISION: PROCEED` or the haiku agent fails/times out, continue to Step 2.5.1.
+
+**Cost:** ~1-2K tokens (~$0.002). The haiku gate replaces the formula-based threshold — no `effective_threshold` or `skip_if_convergence_above` computation needed.
 
 ### Step 2.5.1: Cleanup
 

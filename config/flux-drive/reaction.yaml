@@ -4,7 +4,8 @@ reaction_round:
   severity_filter: ["P0", "P1"]
   severity_filter_p2_light: true  # show P2 for single-sentence severity check
   max_reactions_per_agent: 3
-  skip_if_convergence_above: 0.6
+  gate: haiku              # haiku = LLM gate agent, formula = legacy threshold
+  skip_if_convergence_above: 0.6  # only used when gate: formula
   timeout_seconds: 60
   # Disabled by default for quality-gates mode (speed > depth)
   mode_overrides:
