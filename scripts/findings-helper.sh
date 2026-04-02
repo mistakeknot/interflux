@@ -3,6 +3,8 @@
 # Usage:
 #   findings-helper.sh write <findings_file> <severity> <agent> <category> <summary> [file_refs...]
 #   findings-helper.sh read <findings_file> [--severity blocking|notable|all]
+#   findings-helper.sh read-indexes <output_dir>
+#   findings-helper.sh convergence <output_dir>
 set -euo pipefail
 
 cmd="${1:-}"
@@ -68,18 +70,88 @@ case "$cmd" in
         summary|synthesis|findings) continue ;;
         *.reactions|*.reactions.error) continue ;;
       esac
-      # Extract between "### Findings Index" and next "###" or end
+      # Extract between "## Findings Index" (any heading depth 2-4, case-insensitive) and next heading
       awk '
-        /^### Findings Index/ { found=1; next }
-        found && /^###/ { exit }
+        /^#{2,4}[[:space:]]+[Ff]indings[[:space:]]+[Ii]ndex/ { found=1; next }
+        found && /^#{2,4}[[:space:]]/ { exit }
         found { print }
       ' "$f" | while IFS= read -r line; do
-        [[ -n "$line" ]] && echo "$base	$line"
-      done
+        if [[ -n "$line" ]]; then echo "$base	$line"; fi
+      done || true
     done
     ;;
+  convergence)
+    # Compute overlap ratio for convergence gate
+    # Usage: findings-helper.sh convergence <output_dir>
+    # Output: overlap_ratio<TAB>total_findings<TAB>overlapping_findings<TAB>agent_count
+    output_dir="$1"; shift
+    if [[ ! -d "$output_dir" ]]; then
+      echo "Error: directory '$output_dir' not found" >&2
+      exit 1
+    fi
+
+    # Collect all P0/P1 findings with agent attribution via read-indexes
+    raw=$("$0" read-indexes "$output_dir")
+    if [[ -z "$raw" ]]; then
+      printf '0.0\t0\t0\t0\n'
+      exit 0
+    fi
+
+    # Parse: agent<TAB>- SEVERITY | ID | "Section" | Title
+    # Extract severity and normalized title, count agents per finding
+    awk -F'\t' '
+    {
+      agent = $1
+      line = $2
+      # Extract severity (P0, P1, etc.)
+      if (match(line, /[Pp][0-2]/)) {
+        sev = toupper(substr(line, RSTART, RLENGTH))
+      } else {
+        next
+      }
+      # Only count P0 and P1
+      if (sev != "P0" && sev != "P1") next
+
+      # Normalize title: strip severity/ID prefix, lowercase, strip punctuation
+      title = line
+      gsub(/^-[[:space:]]*/, "", title)
+      gsub(/[Pp][0-9]+[[:space:]]*\|[[:space:]]*[A-Za-z]+-[0-9]+[[:space:]]*\|[[:space:]]*"[^"]*"[[:space:]]*\|[[:space:]]*/, "", title)
+      gsub(/[^a-zA-Z0-9 ]/, "", title)
+      title = tolower(title)
+      gsub(/[[:space:]]+/, " ", title)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", title)
+
+      # Track agents per normalized title
+      key = title
+      if (!(key SUBSEP agent in seen)) {
+        seen[key SUBSEP agent] = 1
+        agent_count[key]++
+      }
+      if (!(agent in agents)) {
+        agents[agent] = 1
+        total_agents++
+      }
+      if (!(key in findings)) {
+        findings[key] = 1
+        total_findings++
+      }
+    }
+    END {
+      overlapping = 0
+      for (k in findings) {
+        if (agent_count[k] >= 2) overlapping++
+      }
+      if (total_findings > 0) {
+        ratio = overlapping / total_findings
+      } else {
+        ratio = 0.0
+      }
+      printf "%.4f\t%d\t%d\t%d\n", ratio, total_findings, overlapping, total_agents
+    }
+    ' <<< "$raw"
+    ;;
   *)
-    echo "Usage: findings-helper.sh {write|read|read-indexes} <findings_file|output_dir> ..." >&2
+    echo "Usage: findings-helper.sh {write|read|read-indexes|convergence} <findings_file|output_dir> ..." >&2
     exit 1
     ;;
 esac

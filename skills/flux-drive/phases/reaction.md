@@ -6,7 +6,15 @@ Controlled by `config/flux-drive/reaction.yaml`. If `reaction_round.enabled` is 
 
 ### Step 2.5.0: Convergence Gate
 
-Read Findings Indexes via `scripts/findings-helper.sh read-indexes {OUTPUT_DIR}`. Count P0/P1 findings, compute `overlap_ratio = findings_with_2plus_agents / total_p0_p1_findings`. If `overlap_ratio > skip_if_convergence_above` (default: 0.6), skip reaction round and proceed to Phase 3.
+Run `scripts/findings-helper.sh convergence {OUTPUT_DIR}`. Parse the tab-separated output: `overlap_ratio`, `total_findings`, `overlapping_findings`, `agent_count`.
+
+**Scaled threshold:** `effective_threshold = config.skip_if_convergence_above * (agent_count / 5)`. Cap at `config.skip_if_convergence_above` (never exceed original threshold). For N=2: threshold ~0.24 (reactions almost always fire). For N=5: threshold stays at 0.6. For N=8: threshold caps at 0.6.
+
+**Peer-priming discount:** If `{OUTPUT_DIR}/peer-findings.jsonl` exists, read it. For each finding title in the overlap set, check if the first report timestamp in peer-findings.jsonl precedes a second agent's Findings Index entry. Discount peer-primed findings from the overlap count before computing `overlap_ratio`.
+
+**Decision:** If `overlap_ratio > effective_threshold`, skip reaction round — emit an `interspect-reaction` event with context `{"type":"skip","overlap_ratio":X,"threshold":Y,"effective_threshold":Z,"agent_count":N,"finding_count":M}` via `_interspect_emit_reaction_dispatched()` (with `agents_dispatched: 0`). Also write `{OUTPUT_DIR}/reaction-skipped.json` with the same fields. Proceed to Phase 3.
+
+Otherwise, continue to Step 2.5.1.
 
 ### Step 2.5.1: Cleanup
 
@@ -35,12 +43,18 @@ If enabled, compute from all-severity findings:
 
 Concatenate fired injections into `fixative_context`.
 
+**Sequencing constraint:** Step 2.5.2b MUST complete before Step 2.5.3 begins — do not parallelize. Fixative context depends on the complete findings set and Gini/novelty computation.
+
 ### Step 2.5.3-4: Build and Dispatch Reactions
 
 For each Phase 2 agent with valid output: fill `config/flux-drive/reaction-prompt.md` template with `{agent_name}`, `{own_findings_index}`, `{peer_findings}` (topology-filtered), `{fixative_context}`, `{output_path}`. Skip agents with empty peer findings.
 
 Dispatch as parallel Agent calls: model=`sonnet`, `run_in_background: true`, same `subagent_type` as original agent. Timeout: `timeout_seconds` from config (default: 60s). Output: `{agent-name}.reactions.md` or `.reactions.error.md`.
 
-### Step 2.5.5: Report
+### Step 2.5.5: Report and Emit Evidence
 
-`Reaction round: {N} dispatched, {M} produced, {K} empty, {E} errors/timeouts. Fixative: {status} ({N} injections)`. Proceed to Phase 3.
+`Reaction round: {N} dispatched, {M} produced, {K} empty, {E} errors/timeouts. Fixative: {status} ({N} injections)`.
+
+**Emit `reaction-dispatched` evidence** via `_interspect_emit_reaction_dispatched()` with: `review_id` (OUTPUT_DIR basename), `input_path` (reviewed file), `agents_dispatched`, `reactions_produced`, `reactions_empty`, `reactions_errors`, `convergence_before` (overlap_ratio from Step 2.5.0), `agent_count` (Phase 2 agents), `fixative_injections` (count of fired injections from Step 2.5.2b).
+
+Proceed to Phase 3.

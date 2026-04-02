@@ -7,14 +7,17 @@ dialogue_game:
   move_types:
     attack: "Challenge a specific claim with counter-evidence"
     defense: "Provide evidence supporting a challenged claim"
+    distinction: "Accept part of a claim while rejecting or narrowing the rest"
     new-assertion: "Introduce a new claim not yet in the dialogue"
     concession: "Accept an attack and withdraw or modify the original claim"
   validation:
     attack_requires_evidence: true
     defense_requires_new_evidence: true
+    distinction_requires_boundary: true  # must specify what is accepted vs rejected
     new_assertion_max_per_agent: 2
   legality_scoring:
     valid_attack: 1.0
     valid_defense: 1.0
+    valid_distinction: 0.9
     valid_new_assertion: 0.8
     invalid_move: 0.2

@@ -52,9 +52,13 @@ Use this exact structure:
 
 [Repeat for each P2 finding in your domain, if any]
 
-## Reactive Additions
+## Reactive Additions Index
 
-[If peer findings revealed something new in YOUR domain that you missed, add it here. Mark with provenance: reactive. Use the standard finding format from your initial review. If nothing new, write "None."]
+[If peer findings revealed something new in YOUR domain that you missed, add them here using the compact Findings Index format. Mark with provenance: reactive. If nothing new, write "None."]
+
+- SEVERITY | ID | "Section" | Title (provenance: reactive)
+
+[Repeat for each reactive addition, using your agent's ID prefix.]
 
 ### Verdict
 
@@ -66,6 +70,7 @@ Use this exact structure:
 Classify each reaction as a formal dialogue move:
 - `disagree` → **attack** (you must cite counter-evidence in the Evidence field)
 - `agree` with your own new evidence → **defense** (your Evidence field must contain references not in the original finding)
+- `partially-agree` → **distinction** (you accept part of the claim but draw a boundary — explain what you accept and what you reject)
 - `missed-this` → **new-assertion** (a new claim you're introducing)
 - `agree` while withdrawing or modifying one of your own prior findings → **concession**
 

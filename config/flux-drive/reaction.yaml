@@ -14,7 +14,11 @@ reaction_round:
 
 sycophancy_detection:
   enabled: true
-  agreement_threshold: 0.8    # flag if agreement_rate > this
+  # Threshold tuned for 5-10 agent populations (rsj TALMUDIC-01).
+  # At 0.8, sycophancy was invisible in small fleets — 4/5 agree = 0.8, not flagged.
+  # At 0.65, 4/5 = 0.8 > 0.65 → flagged for review.
+  # Per-finding sycophancy (vs per-agent) is a future enhancement.
+  agreement_threshold: 0.65   # flag if agreement_rate > this
   independence_threshold: 0.3  # AND independent_rate < this
   contrarian_threshold: 0.2    # flag if agreement_rate < this
 

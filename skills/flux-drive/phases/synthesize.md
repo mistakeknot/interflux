@@ -313,6 +313,21 @@ The `AGENT_ID_MAP` associative array is populated during Phase 2 dispatch — se
 - If 2+ agents agree on a finding AND reviewed different priority sections (per `slicing_map`), boost the convergence score by 1. Cross-section agreement is higher confidence than same-section agreement. Tag with `"slicing_boost": true` in findings.json.
 - Track "Request full section" annotations: count total across all agent outputs. Quality target: ≤5% of agent outputs contain section requests after 10 reviews. Include this request verbatim in synthesis output (v1 — do NOT re-dispatch or re-read sections).
 
+### Step 3.4d: Emit reaction-outcome evidence [review only]
+
+**Skip** if the reaction round was skipped (no `.reactions.md` files in OUTPUT_DIR) or if research mode.
+
+Read reaction-related data from `{OUTPUT_DIR}/findings.json`:
+- `convergence_after`: recompute overlap_ratio from the post-synthesis deduplicated findings
+- `sycophancy_flags`: array of agent names flagged by sycophancy detection
+- `discourse_health`: Sawyer envelope object (from findings.json `discourse_health` field, or `{}` if absent)
+- `hearsay_count`: count of reactions classified as hearsay
+- `independent_count`: count of independent confirmations
+- `contested_count`: count of findings with divergent reactions (at least one `disagree` stance)
+- `minority_preserved`: boolean — true if any contested P0/P1 finding appears in the final synthesis (not dropped)
+
+Emit via `_interspect_emit_reaction_outcome()` with the review_id matching the dispatched event from Phase 2.5.
+
 ### Step 3.5-research: Present Research Output [research only]
 
 Read `{OUTPUT_DIR}/synthesis.md` and present to user. When complete, display:
