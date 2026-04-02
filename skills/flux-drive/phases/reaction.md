@@ -13,52 +13,29 @@ Controlled by `config/flux-drive/reaction.yaml`. If `reaction_round.enabled` is 
 - `agent_count == 1` — no peers to react to. Emit skip event with `{"type":"skip","reason":"single_agent"}` and proceed to Phase 3.
 - `total_findings == 0` — nothing to react to. Emit skip event with `{"type":"skip","reason":"no_findings"}` and proceed to Phase 3.
 
-**Step 2.5.0c: Haiku gate agent.** Dispatch a single Agent call (model: `haiku`) with this prompt:
+**Step 2.5.0c: Intercept gate.** Build the input JSON from Step 2.5.0a stats and findings text, then call:
 
-````
-You are the reaction-round gate. Decide whether a reaction round would add value.
+```bash
+input_json=$(jq -n \
+    --arg findings "$findings_index_text" \
+    --argjson ratio "$overlap_ratio" \
+    --argjson total "$total_findings" \
+    --argjson overlapping "$overlapping_findings" \
+    --argjson agents "$agent_count" \
+    '{findings_index_text:$findings, overlap_ratio:$ratio,
+      total_findings:$total, overlapping_findings:$overlapping,
+      agent_count:$agents}')
 
-## Agent Findings Indexes
-
-{findings_index_text}
-
-## Stats
-- overlap_ratio: {overlap_ratio} (title-normalized, may miss semantic overlap)
-- total_p0_p1_findings: {total_findings}
-- overlapping_findings: {overlapping_findings}
-- agent_count: {agent_count}
-
-## Decision Criteria
-
-Answer PROCEED if ANY of these are true:
-1. **Implicit contradictions**: One agent's finding contradicts another's (e.g., agent A says "safe" but agent B found a P0 in the same area)
-2. **Severity disagreement**: Agents flag the same issue at different severity levels
-3. **Semantic overlap missed by stats**: Findings about the same underlying issue use different titles (overlap_ratio underestimates true convergence)
-4. **Domain-expert blind spots**: An agent's finding falls squarely in another agent's domain but wasn't reported by them
-5. **Low confidence signals**: Any agent's verdict is "needs-changes" or "risky" with few findings (under-reporting)
-
-Answer SKIP if ALL of these are true:
-1. Findings are complementary — each agent reviewed a different domain with no overlap
-2. No implicit contradictions or severity disagreements exist
-3. Agents that share a domain agree on what they found
-4. Reactions would only produce "agree" stances with no new evidence
-
-## Output Format (strict)
-
-```
-DECISION: PROCEED | SKIP
-CONFIDENCE: high | medium | low
-RATIONALE: [1-2 sentences]
+decision=$(intercept decide convergence-gate --input "$input_json")
 ```
 
-Nothing else. No markdown headers, no explanations beyond the rationale.
-````
+If `intercept` is not installed, fall back to `PROCEED` (fail-open).
 
-Parse the response. If `DECISION: SKIP`, emit skip event with `{"type":"skip","reason":"haiku_gate","confidence":"{confidence}","rationale":"{rationale}","overlap_ratio":X,"agent_count":N,"finding_count":M}` via `_interspect_emit_reaction_dispatched()` (with `agents_dispatched: 0`). Also write `{OUTPUT_DIR}/reaction-skipped.json`. Proceed to Phase 3.
+If `SKIP`: emit skip event with `{"type":"skip","reason":"intercept_gate","overlap_ratio":X,"agent_count":N,"finding_count":M}` via `_interspect_emit_reaction_dispatched()` (with `agents_dispatched: 0`). Write `{OUTPUT_DIR}/reaction-skipped.json`. Proceed to Phase 3.
 
-If `DECISION: PROCEED` or the haiku agent fails/times out, continue to Step 2.5.1.
+If `PROCEED`: continue to Step 2.5.1.
 
-**Cost:** ~1-2K tokens (~$0.002). The haiku gate replaces the formula-based threshold — no `effective_threshold` or `skip_if_convergence_above` computation needed.
+**How it works:** `intercept` checks for a trained local model first (~0ms). If none exists, it calls `claude -p --model haiku` (~2-5s, ~$0.002). Every decision is logged. After 50+ logged decisions with interspect outcomes, `intercept train convergence-gate` distills a local xgboost classifier that replaces haiku. See `interverse/intercept/gates/convergence-gate.yaml` for the gate definition, prompt template, and training config.
 
 ### Step 2.5.1: Cleanup
 
