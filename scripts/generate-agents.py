@@ -361,6 +361,7 @@ def generate_from_specs(
 
     report: dict[str, Any] = {
         "status": "ok",
+        "specs_count": 0,
         "generated": [],
         "skipped": [],
         "errors": [],
@@ -390,6 +391,7 @@ def generate_from_specs(
         )
         return report
 
+    report["specs_count"] = len(specs)
     _log(f"parsed {len(specs)} spec(s), agents_dir={agents_dir}")
 
     existing = check_existing_agents(agents_dir)
@@ -495,19 +497,33 @@ def main() -> int:
                 print(f"Error: {err}", file=sys.stderr)
         return 2
 
+    gen = report["generated"]
+    skip = report["skipped"]
+    errs = report.get("errors", [])
+
+    # Detect silent failure: specs had entries but nothing was generated or skipped
+    specs_count = report.get("specs_count", 0)
+    if not gen and not skip and specs_count > 0:
+        report["status"] = "warning"
+        report["errors"].append(
+            f"Specs file had {specs_count} entries but produced 0 agents and 0 skips. "
+            f"Check that spec objects have 'name' fields starting with 'fd-'."
+        )
+        _log(f"silent failure: {specs_count} specs produced nothing")
+
     if args.json_output:
         print(json.dumps(report, indent=2))
     else:
-        gen = report["generated"]
-        skip = report["skipped"]
         action = "Would generate" if args.dry_run else "Generated"
         print(f"{action} {len(gen)} agent(s), skipped {len(skip)}.")
         if gen:
             print(f"  Generated: {', '.join(gen)}")
         if skip:
             print(f"  Skipped: {', '.join(skip)}")
-        for err in report.get("errors", []):
-            print(f"  Error: {err}", file=sys.stderr)
+        for err in errs:
+            print(f"  Warning: {err}", file=sys.stderr)
+        if not gen and not skip:
+            print("  Warning: no agents generated or skipped — check specs file content", file=sys.stderr)
 
     return 0
 

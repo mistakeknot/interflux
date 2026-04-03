@@ -54,13 +54,15 @@ Use **AskUserQuestion** to confirm:
 
 1. **Save specs** to `{PROJECT_ROOT}/.claude/flux-gen-specs/{slug}.json` for future regeneration without re-running the LLM design step. Derive `{slug}` from the task prompt (e.g., `mcp-agent-mail-research`, `auth-refactor-review`). Use the Write tool.
 
-2. **Write specs** to a temp file and run the generation script:
+2. **Validate specs** before writing: verify the JSON is a non-empty array where each object has a `name` field starting with `fd-`. If validation fails, show the raw subagent output and offer to retry Step 1.
+
+3. **Write specs** to a temp file using the Write tool (NOT heredoc/echo in Bash) and run the generation script:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-specs /tmp/flux-gen-specs.json --mode=skip-existing --json
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py {PROJECT_ROOT} --from-specs /tmp/flux-gen-specs.json --mode=skip-existing --json --verbose
 ```
 
-Parse the JSON report and display per-agent results.
+Parse the JSON report. If `generated` is empty and `errors` contains a warning, display it prominently — this means the specs were malformed or all agents already exist.
 
 ## Step 5: Report
 
