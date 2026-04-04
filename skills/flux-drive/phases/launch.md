@@ -26,37 +26,7 @@ Source Clavain's `lib-routing.sh` (find in `~/.claude/plugins/cache/*/clavain/*/
 
 ### Step 2.1: Retrieve knowledge context
 
-Before launching agents, retrieve relevant knowledge entries for each selected agent. This step is OPTIONAL — if qmd (via interknow plugin) is unavailable, skip and proceed to Step 2.2.
-
-**For each selected agent**, construct a retrieval query:
-1. Combine the agent's domain keywords with the document summary from Phase 1
-2. Use the qmd MCP tool (provided by interknow) to search:
-   ```
-   Tool: mcp__plugin_interknow_qmd__vsearch
-   Parameters:
-     collection: "interknow"
-     query: "{agent domain} {document summary keywords}"
-     path: "config/knowledge/"
-     limit: 5
-   ```
-3. If qmd returns results, format them as a knowledge context block
-
-**Domain keywords by agent:**
-| Agent | Domain keywords |
-|-------|----------------|
-| fd-architecture | architecture boundaries coupling patterns complexity |
-| fd-safety | security threats credentials deployment rollback trust |
-| fd-correctness | data integrity transactions races concurrency async |
-| fd-quality | naming conventions testing code quality style idioms |
-| fd-user-product | user experience flows UX value proposition scope |
-| fd-performance | performance bottlenecks rendering memory scaling |
-| fd-game-design | game balance pacing player psychology feedback loops emergent behavior |
-
-**Cap**: 5 entries per agent maximum. If qmd returns more, take the top 5 by relevance score.
-
-**Fallback**: If qmd MCP tool is unavailable or errors, skip knowledge injection entirely — agents run without it (effectively v1 behavior). Do NOT block agent launch on qmd failures.
-
-**Pipelining**: Start qmd queries before agent dispatch. While queries run, prepare agent prompts. Inject results when both are ready.
+OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1 for the qmd retrieval protocol and domain keyword table. Skip if qmd unavailable.
 
 ### Step 2.1-research: Build research prompts and dispatch [research only]
 
@@ -68,39 +38,11 @@ Dispatch all agents via Task tool with `run_in_background: true`. Project Agents
 
 ### Step 2.1a: Load domain-specific review criteria [review only]
 
-**Skip this step if Step 1.0.1 detected no domains** (document profile shows "none detected"). **Skip this step in research mode** (research agents receive domain directives via the research prompt template above).
-
-For each detected domain (from the Document Profile's `Project domains` field), load the corresponding domain profile and extract per-agent injection criteria:
-
-1. **Read the domain profile file**: `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/domains/{domain-name}.md`
-2. **For each selected agent**, find the `### fd-{agent-name}` subsection under `## Injection Criteria`
-3. **Extract the bullet points** — these are the domain-specific review criteria for that agent
-4. **Store as `{DOMAIN_CONTEXT}`** per agent, formatted as shown in the prompt template below
-
-**Multi-domain injection:**
-- Inject criteria from ALL detected domains, not just the primary one (a game server should get both `game-simulation` and `web-api` criteria)
-- Order sections by confidence score (primary domain first)
-- **Cap at 3 domains** to prevent prompt bloat — if more than 3 detected, use only the top 3 by confidence
-- If a domain profile has no matching `### fd-{agent-name}` section for a particular agent, skip that domain for that agent
-
-**Fallback**: If the domain profile file doesn't exist or can't be read, skip that domain silently. Do NOT block agent launch on domain profile failures.
-
-**Performance**: Domain profile files are small (~90-100 lines each). Reading 1-3 files adds negligible overhead. This step should take <1 second.
+**Skip if** no domains detected or research mode. Read `references/progressive-enhancements.md` § Step 2.1a for the domain profile loading protocol. Store results as `{DOMAIN_CONTEXT}` per agent.
 
 ### Step 2.1d: Load active overlays (interspect Type 1) [review only]
 
-For each selected agent, load pre-computed overlay content using the shared library functions from `lib-interspect.sh`. **Do NOT inline YAML parsing** — use the canonical functions to avoid divergence (finding A2).
-
-1. Source `lib-interspect.sh` and call `_interspect_read_overlays "{agent-name}"`
-2. The function handles: directory existence check, file scanning, YAML frontmatter parsing via `_interspect_overlay_is_active`, body extraction via `_interspect_overlay_body`, and concatenation
-3. If the function returns non-empty content, store it as `{OVERLAY_CONTEXT}` for that agent
-4. **Re-sanitize** the returned content before injection (defense-in-depth against hand-edited overlays): call `_interspect_sanitize "$content" 2000`. If sanitization fails (returns non-zero), skip the overlay and log a warning.
-
-**Budget check:** Call `_interspect_count_overlay_tokens "$content"` (canonical: `wc -w * 1.3`). If total exceeds 500 tokens, log `"WARNING: Overlay budget exceeded for {agent}. Using first N of M overlays."` and truncate to the overlays that fit.
-
-**Fallback:** If the overlays directory doesn't exist or contains no active overlays for an agent, skip silently. The Overlay Context section is omitted from that agent's prompt.
-
-**Performance:** Overlay files are tiny (~100 words each, max 500 tokens total per agent). Reading 1-5 files per agent adds negligible overhead.
+OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1d for the overlay loading protocol. Use canonical `lib-interspect.sh` functions (do NOT inline YAML parsing). Store results as `{OVERLAY_CONTEXT}` per agent. Skip silently if overlays directory doesn't exist.
 
 ### Step 2.1c: Write document to temp file(s) [review only]
 
@@ -154,27 +96,7 @@ The orchestrator performs string substitution when building the Task prompt — 
 
 ### Step 2.1e: Apply trust multiplier (intertrust feedback) [review only]
 
-Before ranking agents for dispatch, load trust scores and apply as a multiplier on each agent's triage score. See scoring spec: [Trust Multiplier](../../docs/spec/core/scoring.md#trust-multiplier-005-10).
-
-```bash
-# Try intertrust first (extracted plugin), fall back to legacy interspect location
-TRUST_PLUGIN=$(find ~/.claude/plugins/cache -path "*/intertrust/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
-[[ -z "$TRUST_PLUGIN" ]] && TRUST_PLUGIN=$(find ~/.claude/plugins/cache -path "*/interspect/*/hooks/lib-trust.sh" 2>/dev/null | head -1)
-if [[ -n "$TRUST_PLUGIN" ]]; then
-    source "$TRUST_PLUGIN"
-    PROJECT=$(_trust_project_name)
-    TRUST_SCORES=$(_trust_scores_batch "$PROJECT")
-fi
-```
-
-For each candidate agent, look up its trust score from `TRUST_SCORES` (tab-separated `agent\tscore` lines). Multiply the agent's raw triage score by its trust score. If no trust data: use 1.0 (no change).
-
-**Debug output** (when `FLUX_DEBUG=1`):
-```
-Trust: fd-safety=0.85, fd-correctness=0.92, fd-game-design=0.15, fd-quality=0.78
-```
-
-**Fallback:** If lib-trust.sh not found or `_trust_scores_batch` fails, skip entirely (all multipliers = 1.0). Trust is progressive enhancement, never a gate.
+OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1e for the trust score loading and multiplication protocol. Multiply each agent's raw triage score by its trust score (1.0 if unavailable). Safety floors: fd-safety and fd-correctness never below sonnet.
 
 ### Step 2.2: Stage 1 — Launch top agents [review only]
 
@@ -190,37 +112,7 @@ Wait for Stage 1 agents to complete (use the monitoring from Step 2.3).
 
 ### Step 2.2a: Research context dispatch (optional, between stages) [review only]
 
-**Skip this step in research mode** — research agents ARE the context providers; dispatching them to research themselves is circular.
-
-After Stage 1 agents complete but BEFORE the expansion decision (Step 2.2b), check if any Stage 1 findings would benefit from research context.
-
-**Trigger conditions** (any of these):
-- A finding references a library/framework version and questions whether the pattern is current best practice
-- A finding flags a pattern as "possibly deprecated" or "may have changed"
-- A finding identifies a concurrency or data pattern but is uncertain about the framework's recommended approach
-- A finding notes "this looks like [known pattern] but I'm not sure" — external confirmation needed
-
-**If triggered:**
-1. Select 1-2 research agents based on the finding type:
-   - Best practice uncertainty → `interflux:research:best-practices-researcher`
-   - Framework/version question → `interflux:research:framework-docs-researcher`
-   - Historical context needed → `interflux:research:git-history-analyzer`
-2. Construct a focused research query from the specific finding
-3. Dispatch via Task tool (NOT run_in_background — wait for result, max 60s)
-4. Inject the research result into Stage 2 agent prompts as additional context:
-   ```
-   ## Research Context (from Stage 1.5)
-   Finding [ID] from [agent] prompted research on [topic]:
-   [Research result summary — 3-5 lines]
-   Source: [agent name], confidence: [high/medium/low]
-   ```
-
-**Budget:** Maximum 2 research dispatches between stages. If more findings need research, pick the 2 with highest severity.
-
-**Skip conditions:**
-- All Stage 1 findings are P2/improvements (no uncertainty worth resolving)
-- User selected "Stop here" (no Stage 2 planned)
-- No Stage 1 findings reference external patterns or frameworks
+OPTIONAL — read `references/progressive-enhancements.md` § Step 2.2a for trigger conditions, agent selection, and injection format. Max 2 dispatches between stages. Skip in research mode and when all findings are P2/improvements.
 
 ### Steps 2.2a.5–2.2c: Expansion (AgentDropout + Staged Expansion + Stage 2) [review only]
 
