@@ -156,7 +156,9 @@ if agent has domain injection criteria for a detected domain: expansion_score +=
 | 2 | **OFFER expansion** — user's choice, no default |
 | <= 1 | **RECOMMEND stop** — "Stop here" is the default |
 
-Present via AskUserQuestion with reasoning about why each agent should be added. If user chooses expansion, launch only the recommended agents unless they select "Launch all."
+**Auto-proceed (default):** If max score >= 3, auto-expand with recommended agents. If <= 1, auto-stop. If score == 2, use AskUserQuestion (this is the one gate worth pausing for — Stage 1 findings provide real evidence).
+
+**Interactive mode** (`INTERACTIVE = true`): Always present via AskUserQuestion with reasoning about why each agent should be added. If user chooses expansion, launch only the recommended agents unless they select "Launch all."
 
 ### Step 2.2c: Stage 2 — Remaining agents (if expanded) [review only]
 

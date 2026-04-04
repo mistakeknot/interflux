@@ -32,6 +32,13 @@ Determine the mode from the user's invocation:
 
 The mode gates behavior throughout all phases. Look for **[review only]** and **[research only]** markers below.
 
+## Flags
+
+- `--interactive`: Restore confirmation gates before agent dispatch. Without this flag, the orchestrator auto-proceeds after displaying the triage result. Use `--interactive` when you want to review and edit the agent selection before launch.
+- `--output-dir <path>`: Override the default timestamped OUTPUT_DIR with a fixed path (enables iterative reviews of the same document).
+
+Set: `INTERACTIVE = true` if `--interactive` is present, `false` otherwise.
+
 ## Input
 
 **[review mode]**: The user provides a file path, directory path, or inline text/topic as an argument. If no argument is provided, ask for one using AskUserQuestion.
@@ -200,44 +207,26 @@ Apply budget constraints from `config/flux-drive/budget.yaml`. See SKILL-compact
 
 **Trigger:** `INPUT_TYPE = file` AND document > 200 lines. Read `phases/slicing.md` → Document Slicing. Output: `section_map` per agent for Step 2.1c. Documents < 200 lines → all agents get full document.
 
-### Step 1.3: User Confirmation
+### Step 1.3: Display Triage and Dispatch
 
-**[research mode]**: Present the triage result via AskUserQuestion:
+**[research mode]**: Display the triage result as a one-line summary: `Research: {N} agents ({agent_names}), depth: {estimated_depth}`.
+
+**[review mode]**: Display the triage table showing all agents, tiers, scores, stages, reasons, and Launch/Skip actions. Then display: `Stage 1: [agent names]. Stage 2 (on-demand): [agent names].`
+
+**Auto-proceed (default):** Proceed directly to Phase 2. No confirmation needed — the triage algorithm is deterministic and the user can inspect the table output.
+
+**Interactive mode** (`INTERACTIVE = true`): Use AskUserQuestion to get approval before proceeding:
 
 ```
 AskUserQuestion:
-  question: "Research plan for: '{RESEARCH_QUESTION}'. Query type: {type}. Launching {N} agents ({agent_names}). Estimated depth: {estimated_depth}. Proceed?"
-  header: "Research"
+  question: "[research] Launching {N} agents. Proceed?" / "[review] Stage 1: [names]. Launch?"
   options:
     - label: "Launch (Recommended)"
-      description: "Dispatch {N} agents in parallel for {estimated_depth} research"
-    - label: "Edit agents"
-      description: "Add or remove specific agents before launch"
-    - label: "Cancel"
-      description: "Abort research"
-```
-
-If user selects "Edit agents", present a multi-select AskUserQuestion with all 5 agents and let them toggle.
-If user selects "Cancel", stop immediately.
-
-**[review mode]**: First, present the triage table showing all agents, tiers, scores, stages, reasons, and Launch/Skip actions.
-
-Then use **AskUserQuestion** to get approval:
-
-```
-AskUserQuestion:
-  question: "Stage 1: [agent names]. Stage 2 (on-demand): [agent names]. Launch Stage 1?"
-  options:
-    - label: "Approve"
-      description: "Launch Stage 1 agents"
     - label: "Edit selection"
-      description: "Adjust stage assignments or agents"
     - label: "Cancel"
-      description: "Stop flux-drive review"
 ```
 
-If user selects "Edit selection", adjust and re-present.
-If user selects "Cancel", stop here.
+If user selects "Edit selection", adjust and re-present. If "Cancel", stop here.
 
 ---
 

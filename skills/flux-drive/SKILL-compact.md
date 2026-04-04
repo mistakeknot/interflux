@@ -9,6 +9,13 @@ Multi-agent document/codebase review and research. Follow phases in order.
 - Explicit `--mode=review|research` overrides
 - Default: `MODE = review`
 
+## Flags
+
+- `--interactive`: Restore confirmation gates before dispatch. Default: auto-proceed.
+- `--output-dir <path>`: Fixed OUTPUT_DIR instead of timestamped default.
+
+Set: `INTERACTIVE = true` if `--interactive` present, `false` otherwise.
+
 ## Input
 
 **[review mode]**: User provides a file path, directory path, or inline text/topic. Detect type:
@@ -207,20 +214,17 @@ for agent in stage_2_agents_sorted_by_score:
 
 **No-data graceful degradation:** If interstat DB doesn't exist or returns no data, use defaults for ALL agents. Log: "Using default cost estimates (no interstat data)." Do NOT skip budget enforcement — defaults provide reasonable bounds.
 
-### Step 1.3: User Confirmation
+### Step 1.3: Display Triage and Dispatch
 
-**[research mode]**: AskUserQuestion: "Research plan for: '{RESEARCH_QUESTION}'. Query type: {type}. Launching {N} agents ({names}). Estimated depth: {depth}. Proceed?" Options: Launch (Recommended), Edit agents, Cancel.
+**[research mode]**: Display: `Research: {N} agents ({names}), depth: {depth}`.
 
 **[review mode]**: Present triage table with budget context:
 
 Agent | Score | Stage | Est. Tokens | Source | Reason | Action
 
-After the table, add a budget summary line:
 Budget: {cumulative_selected}K / {BUDGET_TOTAL/1000}K ({percentage}%) | Deferred: {N} agents ({deferred_total}K est.)
 
-If agents were deferred, include an override option:
-AskUserQuestion: "Stage 1: [names]. Stage 2: [names]. Launch?"
-Options: Approve, Launch all (override budget), Edit selection, Cancel.
+**Auto-proceed (default):** Proceed to Phase 2. **Interactive mode** (`--interactive`): AskUserQuestion before launch. Options: Approve, Launch all (override budget), Edit selection, Cancel.
 
 ## Agent Roster
 
