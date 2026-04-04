@@ -23,7 +23,8 @@ case "$cmd" in
       refs=$(printf '%s\n' "$@" | jq -R . | jq -s .)
     fi
     timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    # Build JSON line in memory, then write as single atomic append (< PIPE_BUF)
+    # Build JSON line in memory, then write under flock to serialize concurrent appends.
+    # Note: echo >> is NOT atomic on regular files (PIPE_BUF only applies to pipes).
     line=$(jq -n -c \
       --arg sev "$severity" \
       --arg agt "$agent" \
@@ -32,7 +33,10 @@ case "$cmd" in
       --arg ts "$timestamp" \
       --argjson refs "$refs" \
       '{severity:$sev, agent:$agt, category:$cat, summary:$sum, file_refs:$refs, timestamp:$ts}')
-    echo "$line" >> "$findings_file"
+    (
+      flock -x 200
+      echo "$line" >> "$findings_file"
+    ) 200>"${findings_file}.lock"
     ;;
   read)
     findings_file="$1"; shift

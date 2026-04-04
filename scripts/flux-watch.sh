@@ -33,27 +33,45 @@ report_existing() {
     [[ "$EXPECTED" -gt 0 && "$seen" -ge "$EXPECTED" ]] && return 0 || return 1
 }
 
-# Check if all expected files are already present
-if report_existing 2>/dev/null; then
-    exit 0
-fi
-
 # Preferred: inotifywait (blocks until file events, near-zero CPU)
-# Uses process substitution to avoid subshell/SIGPIPE issues with pipefail.
+# Start inotifywait BEFORE scanning existing files to close the race window:
+# any agent completing between scan and watch would otherwise be missed.
 if command -v inotifywait >/dev/null 2>&1; then
-    while IFS= read -r file; do
+    # Start watcher first — events queue in its buffer while we scan
+    exec 3< <(inotifywait -m -t "$TIMEOUT" -e close_write,moved_to --format '%f' "$OUTPUT_DIR" 2>/dev/null)
+    INOTIFY_PID=$!
+
+    # Now scan for files that already completed before the watcher started
+    if report_existing 2>/dev/null; then
+        kill "$INOTIFY_PID" 2>/dev/null || true
+        exec 3<&-
+        exit 0
+    fi
+
+    # Read events from the already-running watcher
+    while IFS= read -r file <&3; do
         [[ "$file" == *.md && "$file" != *.md.partial ]] || continue
         [[ "$file" == triage-table.md || "$file" == triage.md || "$file" == synthesis.md ]] && continue
         if [[ -z "${reported[$file]:-}" ]]; then
             reported[$file]=1
             echo "$file"
             seen=$((seen + 1))
-            [[ "$EXPECTED" -gt 0 && "$seen" -ge "$EXPECTED" ]] && exit 0
+            if [[ "$EXPECTED" -gt 0 && "$seen" -ge "$EXPECTED" ]]; then
+                kill "$INOTIFY_PID" 2>/dev/null || true
+                exec 3<&-
+                exit 0
+            fi
         fi
-    done < <(inotifywait -m -t "$TIMEOUT" -e close_write,moved_to --format '%f' "$OUTPUT_DIR" 2>/dev/null)
+    done
+    exec 3<&-
     # inotifywait exited (timeout or error) — check if we have everything
     report_existing 2>/dev/null && exit 0
     exit 1
+fi
+
+# Check if all expected files are already present (no inotifywait available)
+if report_existing 2>/dev/null; then
+    exit 0
 fi
 
 # Fallback: 5s polling loop

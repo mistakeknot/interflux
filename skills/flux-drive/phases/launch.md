@@ -6,15 +6,13 @@ This phase respects the `MODE` parameter set in Phase 1. Steps marked **[review 
 
 Create the output directory before launching agents. Resolve to an absolute path:
 ```bash
-mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research/flux-drive/my-doc-name
+mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research/flux-drive/my-doc-name-20260404T1930
 ```
 
-Then enforce run isolation before dispatch:
+OUTPUT_DIR is timestamped by default (see SKILL.md § Run isolation) to prevent cross-run contamination. If the caller passed `--output-dir` explicitly (reusing a fixed path), enforce run isolation by cleaning stale files:
 ```bash
 find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete
 ```
-
-Use a timestamped `OUTPUT_DIR` only when you intentionally need to preserve previous run artifacts.
 
 ### Step 2.0.4: Composer dispatch plan (optional)
 

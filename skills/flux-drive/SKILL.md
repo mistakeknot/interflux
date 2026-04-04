@@ -72,9 +72,15 @@ OUTPUT_DIR        = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}
 INPUT_TYPE        = research
 ```
 
-**Run isolation:** Before launching agents, clean or verify the output directory:
-- If `{OUTPUT_DIR}/` already exists and contains `.md` files, remove them to prevent stale results from contaminating this run.
-- Alternatively, append a short timestamp to OUTPUT_DIR (e.g., `{INPUT_STEM}-20260209T1430`) to isolate runs. Use the simpler clean approach by default.
+**Run isolation:** Append a timestamp to OUTPUT_DIR to prevent cross-run contamination:
+```
+RUN_TS = $(date +%Y%m%dT%H%M)
+OUTPUT_DIR = {OUTPUT_DIR}-{RUN_TS}
+```
+This is the default because `find -delete` on a shared OUTPUT_DIR races with slow agents from previous runs (e.g., Oracle with a 10-minute timeout). A still-writing agent's `.partial` gets deleted, but when it renames to `.md`, the file reappears — contaminating the new run's synthesis with stale findings.
+
+To reuse a fixed OUTPUT_DIR (e.g., for iterative reviews of the same document), pass `--output-dir <path>` explicitly. In that case, enforce run isolation with the clean approach:
+- Remove existing `.md`, `.md.partial`, and `peer-findings.jsonl` files before dispatch.
 
 **Critical:** Resolve `OUTPUT_DIR` to an **absolute path** before using it in agent prompts. Agents inherit the main session's CWD, so relative paths write to the wrong project during cross-project reviews.
 
