@@ -220,10 +220,12 @@ For each expansion candidate with score > 0:
 
 #### Cross-model dispatch (if enabled)
 
-Check feature gate:
+Check feature gate (read from budget.yaml at skill init, not per-dispatch):
 ```bash
-cmd_enabled=$(python3 -c "import yaml; d=yaml.safe_load(open('budget.yaml')); print(d.get('cross_model_dispatch',{}).get('enabled','false'))" 2>/dev/null) || cmd_enabled="false"
-cmd_mode=$(python3 -c "import yaml; d=yaml.safe_load(open('budget.yaml')); print(d.get('cross_model_dispatch',{}).get('mode','shadow'))" 2>/dev/null) || cmd_mode="shadow"
+# These values are resolved once during Step 2.0.5 (alongside model resolution)
+# and stored as env vars. Do NOT re-read budget.yaml via Python subprocess per dispatch.
+# cmd_enabled: "true" | "false"
+# cmd_mode: "shadow" | "enforce"
 ```
 
 If `cmd_enabled == "true"`:
@@ -265,6 +267,9 @@ max_downgrades = floor(len(candidates) / 2)
 if downgraded_count > max_downgrades:
     # Restore lowest-scored agents to original model (they were downgraded last in merit order)
     # until downgraded_count <= max_downgrades
+    # IMPORTANT: After restoring each agent, reapply:
+    #   1. Domain intersection tier_cap check (may re-cap to haiku)
+    #   2. _routing_apply_safety_floor (non-negotiable)
 ```
 
 **5. Upgrade pass (savings recycling):**
@@ -288,6 +293,11 @@ if planner_reviewer_at_sonnet == 0:
 if cmd_mode == "shadow":
     # Log all adjustments with [shadow] prefix
     # Dispatch at original models from Step 2.0.5 map
+    # Shadow proxy signal: for each agent that WOULD have been downgraded,
+    # log [shadow-proxy] agent={name} original={orig} adjusted={adj} —
+    # after completion, check if agent returned P0/P1 at original model.
+    # This provides calibration data for the shadow→enforce transition
+    # without requiring actual enforcement.
 else:
     # Dispatch at adjusted models
 ```
