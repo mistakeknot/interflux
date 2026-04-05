@@ -52,3 +52,10 @@ dropout:
 incremental_expansion:
   enabled: true
   max_speculative: 2          # max agents launched speculatively during Stage 1
+
+# Cross-model dispatch — evidence-proportional tier routing for expansion pool
+# Adjusts Stage 2 / speculative agent model tiers based on expansion score,
+# domain complexity, and budget pressure. Safety floors always enforced.
+cross_model_dispatch:
+  enabled: true
+  mode: shadow    # shadow = log adjustments without applying | enforce = apply adjustments

@@ -13,6 +13,15 @@
 # min_model: ENFORCED safety floor — lib-routing.sh clamps resolved model
 # to at least this tier. Added iv-db5pc (2026-03-01).
 #
+# domain_complexity: low|medium|high — minimum reasoning tier for coherent analysis
+#   in this domain. Used by cross-model dispatch to prevent downgrading complex-domain
+#   agents below their reasoning floor. low=pattern matching, medium=practical analysis,
+#   high=architectural/correctness reasoning.
+#
+# max_model: haiku|sonnet|opus (optional) — maximum tier warranted for this role.
+#   Prevents over-resourcing simple-domain agents during upgrade passes.
+#   If absent, no ceiling is enforced.
+#
 # Safety rule (from iv-dthn Loop 4): fd-safety and fd-correctness NEVER
 # route below Sonnet regardless of role assignment.
 
@@ -21,6 +30,7 @@ roles:
     description: Architectural decisions requiring high reasoning capability
     model_tier: opus
     min_model: sonnet   # safety floor — never downgrade below this
+    domain_complexity: high
     agents:
       - fd-architecture
       - fd-systems
@@ -29,6 +39,7 @@ roles:
     description: Detailed checking requiring medium-high capability
     model_tier: sonnet
     min_model: sonnet  # safety floor — never downgrade below this
+    domain_complexity: high
     agents:
       - fd-correctness
       - fd-quality
@@ -37,6 +48,7 @@ roles:
   editor:
     description: Practical suggestions and domain-specific analysis
     model_tier: sonnet
+    domain_complexity: medium
     agents:
       - fd-performance
       - fd-user-product
@@ -45,6 +57,8 @@ roles:
   checker:
     description: Pattern matching and cognitive lens application
     model_tier: haiku
+    domain_complexity: low
+    max_model: sonnet   # checkers shouldn't get opus even on upgrade
     agents:
       - fd-perception
       - fd-resilience
