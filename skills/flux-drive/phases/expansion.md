@@ -105,6 +105,20 @@ As each Stage 1 agent completes (`.md` file appears in `{OUTPUT_DIR}/`):
 
 Speculative launches do NOT count against the slot ceiling — they are bonus agents justified by Stage 1 evidence.
 
+**Cross-model dispatch for speculative launches:**
+
+If `cross_model_dispatch.enabled`:
+1. Apply speculative discount: `effective_score = max(expansion_score - 1, 1)`
+   Note: since speculative triggers at score>=3, discount yields score=2 ("keep model") —
+   the discount prevents the score=3 upgrade path, not the base tier. This is intentional:
+   speculative evidence is partial, so upgrades shouldn't fire, but the base tier is preserved.
+2. Budget pressure: use current `remaining_budget` (no speculative reserve needed — this IS the speculative launch)
+3. Call `routing_adjust_expansion_tier(agent, model, effective_score, pressure_label)`
+4. If `mode == "shadow"`: log with `[shadow][speculative]` prefix, dispatch at original model
+5. If `mode == "enforce"`: dispatch at adjusted model
+
+Log: `[speculative Stage 2] Launching {agent} at {model} (score={original_score}, discounted={effective_score})`
+
 **Cap:** Maximum 2 speculative launches during Stage 1.
 
 **Skip conditions:**
@@ -141,11 +155,30 @@ adjacency:
 #### Expansion scoring algorithm
 
 ```
-expansion_score = 0
-if any P0 in an adjacent agent's domain:    expansion_score += 3
-if any P1 in an adjacent agent's domain:    expansion_score += 2
-if Stage 1 agents disagree on a finding in this agent's domain: expansion_score += 2
-if agent has domain injection criteria for a detected domain: expansion_score += 1
+expansion_contributions = []  # list of (source_id, score_increment)
+
+for each Stage 1 finding:
+    source_id = "{agent}:{finding_index}"  # unique per finding
+    if P0 in an adjacent agent's domain:
+        expansion_contributions.append((source_id, 3))
+    if P1 in an adjacent agent's domain:
+        expansion_contributions.append((source_id, 2))
+
+for each Stage 1 agent pair:
+    if agents disagree on a finding in this agent's domain:
+        source_id = "disagree:{agent_a}:{agent_b}:{finding}"
+        expansion_contributions.append((source_id, 2))
+
+if agent has domain injection criteria for a detected domain:
+    source_id = "domain:{domain_name}"
+    expansion_contributions.append((source_id, 1))
+
+# Deduplication: keep max contribution per source_id (pool-wide)
+deduplicated = {}
+for (sid, inc) in expansion_contributions:
+    deduplicated[sid] = max(deduplicated.get(sid, 0), inc)
+
+expansion_score = min(sum(deduplicated.values()), 3)
 ```
 
 #### Expansion decision
@@ -160,8 +193,147 @@ if agent has domain injection criteria for a detected domain: expansion_score +=
 
 **Interactive mode** (`INTERACTIVE = true`): Always present via AskUserQuestion with reasoning about why each agent should be added. If user chooses expansion, launch only the recommended agents unless they select "Launch all."
 
+#### Pre-dispatch sort (merit order)
+
+Before dispatching Stage 2 agents, sort candidates by:
+1. `expansion_score` descending (highest-confidence agents first)
+2. `role_priority` descending: planner=4 > reviewer=3 > editor=2 > checker=1
+3. `name` ascending (stable tiebreaker)
+
+High-score agents get first claim on budget headroom. Process in this order
+for both tier adjustment and dispatch.
+
+#### Domain intersection validation
+
+For each expansion candidate with score > 0:
+- Resolve the candidate's primary domain from `adjacency` map or agent focus
+- Resolve the trigger finding's domain from the Stage 1 agent that produced it
+- If `trigger_domain ∩ candidate_domain == ∅` (no adjacency relationship exists):
+  - Log: `[expansion] {agent}: score={score} but no domain overlap with trigger — capping tier at haiku`
+  - Set `tier_cap = haiku` for this candidate (applied during cross-model dispatch)
+- This check prevents phantom adjacency inflation: a domain-specific P0 should not
+  drive a non-adjacent agent to sonnet
+
 ### Step 2.2c: Stage 2 — Remaining agents (if expanded) [review only]
 
 **Skip this step in research mode.**
 
-Launch Stage 2 agents with `run_in_background: true`. Wait for completion using the same monitoring mechanism (Step 2.3).
+#### Cross-model dispatch (if enabled)
+
+Check feature gate:
+```bash
+cmd_enabled=$(python3 -c "import yaml; d=yaml.safe_load(open('budget.yaml')); print(d.get('cross_model_dispatch',{}).get('enabled','false'))" 2>/dev/null) || cmd_enabled="false"
+cmd_mode=$(python3 -c "import yaml; d=yaml.safe_load(open('budget.yaml')); print(d.get('cross_model_dispatch',{}).get('mode','shadow'))" 2>/dev/null) || cmd_mode="shadow"
+```
+
+If `cmd_enabled == "true"`:
+
+**1. Compute budget pressure:**
+```
+speculative_reserve = incremental_expansion.max_speculative × agent_defaults.review
+effective_budget = remaining_budget - speculative_reserve
+pressure_ratio = 1.0 - (effective_budget / sum(stage2_cost_estimates))
+pressure_label = "low" if < 0.2, "medium" if 0.2-0.5, "high" if > 0.5
+```
+
+**2. First pass — tentative tier adjustment (sorted order):**
+For each candidate in merit-order (from pre-dispatch sort):
+```
+original_model = resolved_model_for(agent)  # from routing_resolve_agents output in Step 2.0.5, or agent frontmatter default
+adjusted_model = routing_adjust_expansion_tier(agent, original_model, expansion_score, pressure_label)
+# Apply tier_cap from domain intersection check
+if tier_cap[agent] == "haiku":
+    adjusted_model_tier = _routing_model_tier(adjusted_model)
+    if adjusted_model_tier > 1:  # > haiku
+        adjusted_model = "haiku"
+        adjusted_model = _routing_apply_safety_floor(agent, adjusted_model, "tier-cap")
+tentative_adjustments[agent] = adjusted_model
+```
+
+**3. Recompute pressure from adjusted costs:**
+```
+adjusted_total = sum(cost_estimate(agent, tentative_adjustments[agent]) for agent in candidates)
+revised_pressure_ratio = 1.0 - (effective_budget / adjusted_total)
+revised_pressure_label = classify(revised_pressure_ratio)
+```
+If `revised_pressure_label` differs from `pressure_label`, run a second pass with the revised pressure. Cap at 2 passes to prevent oscillation.
+
+**4. Downgrade cap:**
+```
+downgraded_count = count(agents where adjusted_model < original_model)
+max_downgrades = floor(len(candidates) / 2)
+if downgraded_count > max_downgrades:
+    # Restore lowest-scored agents to original model (they were downgraded last in merit order)
+    # until downgraded_count <= max_downgrades
+```
+
+**5. Upgrade pass (savings recycling):**
+```
+tokens_saved = sum(cost(original) - cost(adjusted) for each agent)
+if tokens_saved > 10000:
+    # Find highest-scored score=2 agent that was NOT upgraded
+    # Upgrade one tier: haiku→sonnet or sonnet→opus
+    # Apply safety floor and max_model ceiling
+```
+
+**6. Pool-level quality assertion (runs AFTER upgrade pass):**
+```
+planner_reviewer_at_sonnet = count(agents where role in (planner, reviewer) AND tier >= sonnet)
+if planner_reviewer_at_sonnet == 0:
+    # Upgrade highest-scored planner/reviewer to sonnet
+```
+
+**7. Shadow vs enforce:**
+```
+if cmd_mode == "shadow":
+    # Log all adjustments with [shadow] prefix
+    # Dispatch at original models from Step 2.0.5 map
+else:
+    # Dispatch at adjusted models
+```
+
+**8. Dispatch Stage 2 agents** with `run_in_background: true`, passing the final model per agent.
+
+#### Dispatch logging (always, when cross-model dispatch enabled)
+
+After dispatch, log the tier adjustment summary:
+
+```
+Cross-model dispatch (Stage 2):
+  {agent}: {original} → {adjusted} (score={score}, domain_complexity={dc}, {reason})
+  ...
+  🛡 {agent}: {model} → {floor_model} (safety floor clamped)
+Budget pressure: {pressure_ratio:.2f} ({pressure_label}), reserve: {reserve}
+Pool audit: {n} planners/reviewers at sonnet ✓|✗
+Savings: ~{tokens_saved} tokens{" (recycled {recycled} → upgraded {agent} {from}→{to})" if upgrade_pass_fired}
+Mode: {shadow|enforce}
+```
+
+#### Calibration emit
+
+After all Stage 2 agents complete (in Step 2.3 or synthesis), emit calibration data:
+
+```
+For each tier-adjusted agent (where adjusted_model != original_model OR mode == "shadow"):
+    Log: [cmd-calibration] agent={name} score={score} original={orig} adjusted={adj}
+         findings={count} max_severity={P0|P1|P2|P3|none} downgraded={true|false}
+```
+
+This structured log line enables future analysis: `grep cmd-calibration <logs> | jq` to build the calibration dataset.
+
+#### Escalation advisory
+
+After reading each completed agent's findings (Step 2.3):
+
+```
+if agent was tier-adjusted AND agent's max_finding_severity in (P0, P1):
+    Log: [tier-escalation] {agent} was downgraded {orig}→{adj} but returned {severity} finding
+         — candidate for tier escalation in future runs
+```
+
+#### Agent tier metadata
+
+Agents dispatched via cross-model dispatch include `tier: {model}` in their output frontmatter, enabling downstream analysis of per-tier finding quality.
+
+If `cmd_enabled == "false"`:
+Launch Stage 2 agents with `run_in_background: true` using models from Step 2.0.5 map (existing behavior, unchanged).
