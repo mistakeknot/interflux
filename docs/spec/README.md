@@ -44,6 +44,10 @@ This spec serves two audiences:
 |----------|-------|-------------|
 | [extensions/domain-detection.md](extensions/domain-detection.md) | 168 | Project classification via weighted signal scoring (directories, files, frameworks, keywords). Multi-domain support, caching, staleness detection. |
 | [extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md) | 141 | Review memory: knowledge accumulation, provenance tracking (independent vs. primed), temporal decay (10 reviews), sanitization. |
+| [extensions/reaction-round.md](extensions/reaction-round.md) | ~60 | Phase 2.5 inter-agent critique: convergence gate, discourse topology, fixative, sycophancy/hearsay detection, budget cap. |
+| [extensions/budget-system.md](extensions/budget-system.md) | ~60 | Token budget enforcement: per-type budgets, historical cost estimation, billing vs total token split, reaction cap. |
+| [extensions/cross-model-dispatch.md](extensions/cross-model-dispatch.md) | ~55 | Evidence-proportional model tier routing: expansion score → tier, safety floors, downgrade caps, shadow/enforce modes. |
+| [extensions/agent-dropout.md](extensions/agent-dropout.md) | ~45 | Redundancy filter: domain convergence + adjacency saturation scoring, exempt agents, advisory-only pruning. |
 
 ## Conformance levels
 
@@ -114,7 +118,11 @@ docs/spec/
 │   └── synthesis.md                     # Findings aggregation
 ├── extensions/
 │   ├── domain-detection.md              # Domain signal scoring
-│   └── knowledge-lifecycle.md           # Knowledge decay + accumulation
+│   ├── knowledge-lifecycle.md           # Knowledge decay + accumulation
+│   ├── reaction-round.md               # Phase 2.5 inter-agent critique
+│   ├── budget-system.md                # Token budget enforcement
+│   ├── cross-model-dispatch.md         # Model tier routing
+│   └── agent-dropout.md               # Redundancy filtering
 └── contracts/
     ├── findings-index.md                # Agent output format
     └── completion-signal.md             # Completion signaling
