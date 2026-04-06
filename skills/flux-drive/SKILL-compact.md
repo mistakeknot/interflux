@@ -49,15 +49,18 @@ Clean OUTPUT_DIR of stale `.md` files before starting.
 2. Read CLAUDE.md/AGENTS.md if present
 3. If qmd MCP available, search for project conventions
 
-### Step 1.0.1: Classify Domains (LLM)
+### Step 1.0.1: Classify Domains
 
-Based on your Step 1.0 project understanding (README, build files, CLAUDE.md/AGENTS.md, source files), classify the project's domain(s). Output as part of your analysis:
-
+Run the deterministic domain detector:
+```bash
+DETECTED_DOMAINS=$(bash ${CLAUDE_PLUGIN_ROOT}/scripts/detect-domains.sh "${PROJECT_ROOT}")
 ```
-Project domains: [comma-separated list from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]
-```
 
-A project can match multiple domains (e.g., a monorepo with CLIs, TUI tools, and plugins). If no domain fits, output `Project domains: none`. No external scripts needed — you already have the context.
+Output is a JSON array: `[{"domain":"web-api","confidence":0.45,"matched":12,"total":26}]`. Empty array = no domains detected.
+
+Extract domain names for downstream use: `Project domains: [comma-separated from JSON]`. If empty, output `Project domains: none`.
+
+**Fallback:** If detect-domains.sh fails (missing yq, etc.), classify manually from your Step 1.0 project understanding. Valid domains: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri.
 
 ### Step 1.0.4: Generate Project Agents
 
