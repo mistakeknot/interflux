@@ -79,9 +79,46 @@ Before building reaction prompts, sanitize all `{peer_findings}` content. Peer f
 
 **Implementation:** The orchestrator performs this as string processing before template substitution. No external tool required.
 
+### Step 2.5.3a: Budget Gate
+
+Before dispatching reactions, check whether the reaction round fits within budget.
+
+**Estimate reaction cost:**
+```
+reaction_pool = [agents with valid output AND non-empty peer findings]
+per_agent_cost = agent_defaults.reaction from budget.yaml (default 15000)
+estimated_reaction_cost = len(reaction_pool) × per_agent_cost
+```
+
+**Compute reaction budget cap:**
+```
+reaction_cap = BUDGET_TOTAL × reaction_budget.fraction (default 0.25)
+tokens_already_spent = sum of Phase 1 + Phase 2 estimated costs (from triage table)
+remaining = BUDGET_TOTAL - tokens_already_spent
+effective_cap = min(reaction_cap, remaining)
+```
+
+**Apply cap:**
+```
+if estimated_reaction_cost > effective_cap and len(reaction_pool) > reaction_budget.min_agents:
+    # Drop agents by ascending triage score until cost fits or pool reaches min_agents
+    pool_sorted = sort reaction_pool by original triage score ascending
+    while estimated_reaction_cost > effective_cap and len(pool_sorted) > min_agents:
+        dropped = pool_sorted.pop(0)  # lowest score
+        estimated_reaction_cost -= per_agent_cost
+        log: "[reaction-budget] Dropped {dropped} from reaction pool (score too low for remaining budget)"
+```
+
+**Log (always):**
+```
+Reaction budget: {estimated_reaction_cost/1000}K / {effective_cap/1000}K cap ({len(reaction_pool)} agents)
+```
+
+If `estimated_reaction_cost == 0` (all agents dropped or no pool): skip to Phase 3.
+
 ### Step 2.5.4: Build and Dispatch Reactions
 
-For each Phase 2 agent with valid output: fill `config/flux-drive/reaction-prompt.md` template with `{agent_name}`, `{own_findings_index}`, `{peer_findings}` (sanitized, topology-filtered), `{fixative_context}`, `{output_path}`. Skip agents with empty peer findings.
+For each agent remaining in the reaction pool: fill `config/flux-drive/reaction-prompt.md` template with `{agent_name}`, `{own_findings_index}`, `{peer_findings}` (sanitized, topology-filtered), `{fixative_context}`, `{output_path}`. Skip agents with empty peer findings.
 
 Dispatch as parallel Agent calls: model=`sonnet`, `run_in_background: true`, same `subagent_type` as original agent. Timeout: `timeout_seconds` from config (default: 60s). Output: `{agent-name}.reactions.md` or `.reactions.error.md`.
 

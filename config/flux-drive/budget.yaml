@@ -21,6 +21,7 @@ agent_defaults:
   research: 15000          # best-practices-researcher, framework-docs-researcher, etc.
   oracle: 80000            # cross-AI Oracle review
   generated: 40000         # flux-gen project-specific agents
+  reaction: 15000          # per-agent reaction round cost (sonnet, focused prompt)
 
 # Slicing discount: multiply estimate by this factor when document slicing is active
 slicing_multiplier: 0.5
@@ -30,6 +31,14 @@ min_agents: 2
 
 # Budget enforcement
 enforcement: soft          # soft = warn + offer override | hard = block
+
+# Reaction round budget cap (Phase 2.5)
+# Reaction tokens are charged against the same BUDGET_TOTAL as dispatch.
+# fraction: max fraction of BUDGET_TOTAL that reaction round may consume
+# If estimated reaction cost would exceed this, drop lowest-score agents from reaction pool.
+reaction_budget:
+  fraction: 0.25           # reaction round can use up to 25% of total budget
+  min_agents: 2            # always react with at least 2 agents (even if over budget)
 
 # Safety-critical agents — never dropped by budget cuts or AgentDropout (T8.1 mitigation)
 # These agents always run regardless of budget constraints or redundancy signals

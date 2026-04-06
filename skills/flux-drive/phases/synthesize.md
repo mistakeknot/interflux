@@ -271,6 +271,13 @@ Extend the findings.json schema with a `cost_report` field:
         "fd-game-design": 0.1,
         "fd-safety": 0.8
       }
+    },
+    "reaction": {
+      "dispatched": 3,
+      "estimated": 45000,
+      "actual": 41000,
+      "budget_cap": 37500,
+      "dropped_by_budget": ["fd-quality"]
     }
   }
 }
