@@ -182,4 +182,6 @@ After each stage launch, tell the user:
 
 Monitor via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {TIMEOUT}` (N=agent count, TIMEOUT=300 for Task/600 for Codex). Falls back to 5s polling if inotifywait unavailable. Research mode: use `<!-- flux-research:complete -->` sentinel and depth-based timeouts (quick=30s, standard=2min, deep=5min).
 
+**Progress display:** flux-watch.sh outputs progress lines as each agent completes: `[N/M | elapsed] agent-name`. Display these to the user as they arrive — this is the primary UX feedback during agent runs. Do not suppress or buffer this output.
+
 **Completion verification:** List `{OUTPUT_DIR}/` — expect `.md` per agent. For `.md.partial` only (incomplete): retry once with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if `.md` exists. If retry fails, write error stub per `phases/shared-contracts.md`. Clean up `.md.partial` files. Report: "N/M completed, K retried, J failed".

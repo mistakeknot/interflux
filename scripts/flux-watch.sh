@@ -13,6 +13,30 @@ TIMEOUT="${3:-300}"
 
 seen=0
 declare -A reported  # track already-reported files
+START_TIME=$(date +%s)
+
+# Format elapsed time
+elapsed_str() {
+    local now elapsed
+    now=$(date +%s)
+    elapsed=$((now - START_TIME))
+    if [[ "$elapsed" -lt 60 ]]; then
+        echo "${elapsed}s"
+    else
+        echo "$((elapsed / 60))m$((elapsed % 60))s"
+    fi
+}
+
+# Report a completed agent with progress
+report_agent() {
+    local base="$1"
+    local agent_name="${base%.md}"
+    if [[ "$EXPECTED" -gt 0 ]]; then
+        echo "[${seen}/${EXPECTED} | $(elapsed_str)] ${agent_name}"
+    else
+        echo "[${seen} | $(elapsed_str)] ${agent_name}"
+    fi
+}
 
 # Report files that already exist (agents that completed before we started watching)
 report_existing() {
@@ -26,8 +50,8 @@ report_existing() {
         [[ "$base" == synthesis.md ]] && continue
         if [[ -z "${reported[$base]:-}" ]]; then
             reported[$base]=1
-            echo "$base"
             seen=$((seen + 1))
+            report_agent "$base"
         fi
     done
     [[ "$EXPECTED" -gt 0 && "$seen" -ge "$EXPECTED" ]] && return 0 || return 1
@@ -54,8 +78,8 @@ if command -v inotifywait >/dev/null 2>&1; then
         [[ "$file" == triage-table.md || "$file" == triage.md || "$file" == synthesis.md ]] && continue
         if [[ -z "${reported[$file]:-}" ]]; then
             reported[$file]=1
-            echo "$file"
             seen=$((seen + 1))
+            report_agent "$file"
             if [[ "$EXPECTED" -gt 0 && "$seen" -ge "$EXPECTED" ]]; then
                 kill "$INOTIFY_PID" 2>/dev/null || true
                 exec 3<&-
