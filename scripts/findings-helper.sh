@@ -116,6 +116,16 @@ case "$cmd" in
       # Only count P0 and P1
       if (sev != "P0" && sev != "P1") next
 
+      # Extract section from "Section" field (between quotes after second |)
+      section = ""
+      if (match(line, /"[^"]*"/)) {
+        section = substr(line, RSTART+1, RLENGTH-2)
+        section = tolower(section)
+        gsub(/[^a-zA-Z0-9 ]/, "", section)
+        gsub(/[[:space:]]+/, " ", section)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", section)
+      }
+
       # Normalize title: strip severity/ID prefix, lowercase, strip punctuation
       # Preserve hyphens as spaces to avoid colliding unrelated titles (RXN-04)
       title = line
@@ -127,8 +137,8 @@ case "$cmd" in
       gsub(/[[:space:]]+/, " ", title)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", title)
 
-      # Track agents per normalized title
-      key = title
+      # Key on section+title to avoid false overlaps across different sections
+      key = section ":" title
       if (!(key SUBSEP agent in seen)) {
         seen[key SUBSEP agent] = 1
         agent_count[key]++
