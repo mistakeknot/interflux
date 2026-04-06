@@ -31,6 +31,7 @@ min_agents: 2
 
 # Budget enforcement
 enforcement: soft          # soft = warn + offer override | hard = block
+cost_basis: billing        # billing = input+output (cache reads free) | total = all tokens incl. cache
 
 # Reaction round budget cap (Phase 2.5)
 # Reaction tokens are charged against the same BUDGET_TOTAL as dispatch.

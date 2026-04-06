@@ -182,7 +182,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/estimate-costs.sh --model {current_model} [--
 ```
 
 For each selected agent, look up its estimate:
-1. If `estimates[agent_name]` exists (from interstat, >= 3 runs): use `est_tokens`, note `source: interstat (N runs)`
+1. If `estimates[agent_name]` exists (from interstat, >= 3 runs): use `est_billing` when `cost_basis: billing` (default), else `est_tokens`. Note `source: interstat (N runs)`
 2. Else: classify agent (review/cognitive/research/oracle/generated) and use `defaults[type]`, note `source: default`
 3. If slicing is active AND agent is domain-specific (NOT fd-architecture or fd-quality, which always review full content): multiply estimate by `slicing_multiplier`
 

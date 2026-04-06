@@ -210,18 +210,21 @@ After collecting findings and generating findings.json, compile a cost report co
 
 **Step 3.4b.1: Collect actual token data**
 
-For each launched agent, query interstat for actual tokens:
+For each launched agent, query interstat for actual tokens. Report both billing (budget-relevant) and total (context-relevant):
 ```bash
 sqlite3 ~/.claude/interstat/metrics.db "
   SELECT agent_name,
          COALESCE(input_tokens,0) + COALESCE(output_tokens,0) as billing_tokens,
-         COALESCE(input_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_creation_tokens,0) as effective_context
+         COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_creation_tokens,0) as total_tokens,
+         COALESCE(cache_read_tokens,0) as cache_read
   FROM agent_runs
   WHERE session_id = '{current_session_id}'
     AND agent_name IN ({launched_agents_quoted})
   ORDER BY agent_name;
 "
 ```
+
+Use `billing_tokens` for budget comparisons (per `cost_basis: billing` in budget.yaml). Report `cache_read` to show cache efficiency.
 
 **Fallback:** If interstat has no data yet (tokens not backfilled until SessionEnd), use `result_length` as a proxy and note "Actual tokens pending backfill — showing result length."
 
@@ -240,14 +243,19 @@ Extend the findings.json schema with a `cost_report` field:
   "cost_report": {
     "budget": 150000,
     "budget_type": "plan",
+    "cost_basis": "billing",
     "estimated_total": 120000,
+    "actual_billing": 85000,
     "actual_total": 115000,
+    "cache_read_total": 30000,
     "agents": [
       {
         "name": "fd-architecture",
         "estimated": 42000,
-        "actual": 38000,
-        "delta_pct": -10,
+        "actual_billing": 28000,
+        "actual_total": 38000,
+        "cache_read": 10000,
+        "delta_pct": -33,
         "source": "interstat",
         "slicing_applied": false
       }

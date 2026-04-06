@@ -81,9 +81,10 @@ classify_agent() {
 ESTIMATES="{}"
 if [[ -f "$DB_PATH" ]]; then
   # Query agents with >= 3 runs for reliable estimates
-  # Use total_tokens for consistency with fleet registry enrichment (SEMANTICS-001)
+  # Return both billing tokens (input+output, for budget) and total tokens (for context/reporting)
   INTERSTAT_DATA=$(sqlite3 -json "$DB_PATH" "
     SELECT REPLACE(agent_name, 'interflux:', '') as agent_name,
+           CAST(ROUND(AVG(COALESCE(input_tokens,0) + COALESCE(output_tokens,0))) AS INTEGER) as est_billing,
            CAST(ROUND(AVG(total_tokens)) AS INTEGER) as est_tokens,
            COUNT(*) as sample_size
     FROM agent_runs
@@ -97,7 +98,7 @@ if [[ -f "$DB_PATH" ]]; then
   if [[ "$INTERSTAT_DATA" != "[]" && -n "$INTERSTAT_DATA" ]]; then
     ESTIMATES=$(echo "$INTERSTAT_DATA" | jq -c '
       reduce .[] as $row ({};
-        . + {($row.agent_name): {est_tokens: $row.est_tokens, sample_size: $row.sample_size, source: "interstat"}}
+        . + {($row.agent_name): {est_tokens: $row.est_tokens, est_billing: $row.est_billing, sample_size: $row.sample_size, source: "interstat"}}
       )
     ')
   fi
