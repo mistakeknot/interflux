@@ -184,7 +184,10 @@ After collecting and deduplicating findings, generate `{OUTPUT_DIR}/findings.jso
       "agent": "fd-architecture",
       "section": "Section Name",
       "title": "Short description",
-      "convergence": 3
+      "convergence": 3,
+      "provider": "claude",
+      "model_family": "claude",
+      "model_id": "claude-sonnet-4-6"
     }
   ],
   "improvements": [

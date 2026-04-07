@@ -139,6 +139,32 @@ For each deduplicated finding, count how many agents independently reported it.
 | 2 agents | Medium | Likely real, worth addressing |
 | 1 agent | Low | May be false positive or domain-specific concern |
 
+**Adjustment for Cross-Family Convergence:**
+
+When agents are dispatched across multiple model families (e.g., Claude + DeepSeek via OpenRouter), track how many distinct `model_family` values contributed to each finding's convergence:
+
+```
+cross_family_convergence = count(distinct model_family values among agents reporting this finding)
+```
+
+Cross-family agreement is stronger evidence than same-family agreement because different training pipelines produce genuinely independent assessments. Apply a 1.5x weight multiplier:
+
+```
+weighted_convergence = same_family_count + (cross_family_bonus * 1.5)
+where cross_family_bonus = cross_family_convergence - 1  (0 if single family)
+```
+
+Example: A finding reported by 3 agents (2 Claude + 1 DeepSeek):
+- Raw convergence: 3
+- Cross-family convergence: 2 (claude, deepseek)
+- Weighted convergence: 2 + (1 × 1.5) = 3.5
+
+Include `cross_family_convergence` in findings.json. When all agents share a model family, this field is 1 (or 0 if single agent) and the weight multiplier has no effect.
+
+**Verification flagging for non-top-tier providers:**
+
+When a P0 or P1 finding is single-source AND the reporting agent's `model_family` is not the top-tier provider (as defined in `agent-roles.yaml`), tag the finding with `"verification_recommended": true`. This flags potentially hallucinated high-severity findings from cheaper models for manual or automated verification.
+
 **Adjustment for Early Stop:**
 
 If the orchestrator stopped after Stage 1 (shallow analysis sufficient):
@@ -199,6 +225,11 @@ Generate a machine-readable summary for programmatic access:
       "title": "Session tokens stored in localStorage",
       "convergence": 2,
       "confidence": "medium",
+      "cross_family_convergence": 1,
+      "provenance": {
+        "fd-architecture": {"provider": "claude", "model_family": "claude", "model_id": "claude-sonnet-4-6"},
+        "fd-safety": {"provider": "openrouter", "model_family": "deepseek", "model_id": "deepseek/deepseek-chat"}
+      },
       "co_located": false,
       "cross_references": []
     },
@@ -210,11 +241,16 @@ Generate a machine-readable summary for programmatic access:
       "title": "SQL injection vulnerability in user search",
       "convergence": 1,
       "confidence": "low",
+      "cross_family_convergence": 0,
+      "provenance": {
+        "fd-safety": {"provider": "openrouter", "model_family": "deepseek", "model_id": "deepseek/deepseek-chat"}
+      },
+      "verification_recommended": true,
       "co_located": true,
       "co_located_with": ["P2-3"],
       "cross_references": ["P0-4"],
       "severity_conflict": {"fd-safety": "P0", "fd-quality": "P1"},
-      "note": "Single-agent finding — verify independently"
+      "note": "Single-source finding from non-top-tier provider — verify independently"
     }
   ],
   "improvements": [

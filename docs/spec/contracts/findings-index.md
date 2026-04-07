@@ -114,6 +114,25 @@ If an agent's output doesn't start with `### Findings Index` or the index lines 
 3. Report to user: "Agent {name} produced malformed index — using prose fallback"
 4. Include prose-extracted findings in synthesis, but mark them with lower confidence (they weren't structured)
 
+## Model Provenance Metadata
+
+When agents are dispatched across multiple model providers (e.g., Claude + OpenRouter), the orchestrator records three provenance fields per agent at dispatch time:
+
+| Field | Example | Purpose |
+|-------|---------|---------|
+| `provider` | `claude`, `openrouter`, `direct` | Dispatch backend — drives cost accounting and fallback routing |
+| `model_family` | `claude`, `deepseek`, `qwen`, `yi` | Training lineage — drives cross-family convergence weighting |
+| `model_id` | `deepseek/deepseek-chat`, `claude-sonnet-4-6` | Exact model — drives reproducibility, version pinning, per-model quality tracking |
+
+These fields are **not part of the Findings Index text format** (agents don't write them). The orchestrator injects them into `findings.json` during synthesis based on dispatch metadata. They enable:
+
+- **Cross-family convergence**: Agreement between agents from different `model_family` values is weighted higher (1.5x) than same-family agreement, because different training pipelines produce genuinely independent assessments.
+- **Cost accounting**: `provider` and `model_id` determine per-token cost rates for the cost report.
+- **Quality tracking**: Per-`model_id` finding recall and precision over time, enabling data-driven routing decisions.
+- **Verification flagging**: Single-source P0/P1 findings from non-top-tier providers are flagged `verification_recommended`.
+
+When all agents run on the same provider (single-family mode), these fields are still populated but cross-family weighting has no effect.
+
 ## interflux Reference
 
 In interflux, the Findings Index contract is defined in `skills/flux-drive/phases/shared-contracts.md`. The synthesizer (`phases/synthesize.md`) parses indices in Step 3.1 (validation) and Step 3.2 (collection). ID prefixes follow the pattern of agent abbreviations: `AR` for architecture, `SF` for safety, `CR` for correctness, `QS` for quality, `UP` for user-product, `PF` for performance, `GD` for game-design.
