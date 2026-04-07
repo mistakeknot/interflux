@@ -138,17 +138,20 @@ Domain bonus: +1 for best-practices/framework-docs if detected domain has Resear
 - fd-performance: always pass for file/dir; filter for diffs
 - fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input OR `text` input (PRD, brainstorm, plan, strategy, options analysis, topic exploration) — NEVER for code/diff
 
-**Step 1.2b: Score** (0-7 scale):
+**Step 1.2b: Score** (0-8 scale):
 
 ```
-final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1)
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1) + tier_bonus(-1 to +1)
 ```
 
 - base 3=core domain overlap, 2=adjacent, 1=tangential, 0=excluded
 - domain_boost: +2 if agent has injection criteria section in domain profile, +0 otherwise (binary)
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin Agents), +1 for Project Agents
+- tier_bonus (from `.claude/agents/.index.yaml`): +1.0 if tier=proven, +0.5 if tier=used, +0 if tier=generated, -1.0 if tier=stub AND use_count=0 AND lines≤80. If no index exists, tier_bonus=0 for all agents.
 - Selection: base_score determines inclusion (>=3 always, >=2 if slots, >=1 for thin). Bonuses affect ranking/staging only.
 - Deduplication: exact name match → prefer Project Agent. Partial domain overlap → keep both (Plugin in Stage 2).
+
+**Tier bonus lookup:** Read `.claude/agents/.index.yaml` (if it exists). Look up each Project Agent in the `proven` or `used` lists by name. If found, apply the tier bonus. If the index is missing, skip tier bonuses (don't fail — the index is a cache). Rebuild the index with `/interflux:flux-agent index` if needed.
 
 **Dynamic slot ceiling:**
 
@@ -302,12 +305,14 @@ Read `phases/synthesize.md` for the full synthesis protocol. The synthesis phase
 - Score findings (P0-P3), compute verdict
 - Create beads from P0/P1 findings
 - Silent knowledge compounding
+- **Record agent usage**: run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/flux-agent.py {PROJECT_ROOT} record <agent1> <agent2> ...` with the names of all Project Agents (`.claude/agents/fd-*.md`) that were launched in this review. This increments their `use_count`, updates `last_used`, and auto-promotes tiers (stub→generated→used→proven). Skip Plugin Agents (they're not in the registry). If the script is not found, skip silently.
 
 **[research mode]**:
 - Delegate to `intersynth:synthesize-research`
 - Merge findings with source attribution, rank sources
 - Write `{OUTPUT_DIR}/synthesis.md`
 - Skip: bead creation, knowledge compounding
+- **Record agent usage**: same as review mode — record usage for any Project Agents that participated.
 
 ## Phase 4: Cross-AI (Optional)
 

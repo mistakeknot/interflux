@@ -27,7 +27,8 @@
     "./commands/flux-gen.md",
     "./commands/fetch-findings.md",
     "./commands/flux-explore.md",
-    "./commands/flux-review.md"
+    "./commands/flux-review.md",
+    "./commands/flux-agent.md"
   ],
   "agents": [
     "./agents/review/fd-architecture.md",

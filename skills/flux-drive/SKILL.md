@@ -176,16 +176,17 @@ Eliminate agents that cannot score >= 1:
 
 **Cognitive agents** (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception): skip unless `.md`/`.txt` document or `text` input with document type PRD/brainstorm/plan/strategy/vision/roadmap/options analysis. NEVER for code/diff. Base scores: 3 (systems/strategy content), 2 (PRD/brainstorm/plan), 1 (technical reference).
 
-#### Step 1.2b: Score agents (0-7 scale)
+#### Step 1.2b: Score agents (0-8 scale)
 
 ```
-final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1)
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1) + tier_bonus(-1 to +1)
 ```
 
 - base: 3=core overlap, 2=adjacent, 1=tangential, 0=excluded (bonuses can't override 0)
 - domain_boost: +2 if agent has injection criteria in detected domain profile
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin) or always (Project Agent)
 - domain_agent: +1 for flux-gen agents matching detected domain
+- tier_bonus: Read from `.claude/agents/.index.yaml` (cache). +1.0 if tier=proven, +0.5 if tier=used, +0 if tier=generated, -1.0 if tier=stub AND use_count=0 AND lines≤80. If index is missing, tier_bonus=0 (don't fail). Rebuild with `/interflux:flux-agent index`.
 - Selection: base >= 3 always included, >= 2 if slots remain, >= 1 only for thin sections
 - Deduplication: exact name match → prefer Project Agent. Partial overlap → keep both.
 
@@ -267,6 +268,9 @@ Read `phases/reaction.md` now.
 **Read the synthesis phase file now:**
 - Read `phases/synthesize.md` (in the flux-drive skill directory)
 - The synthesis phase respects the `MODE` parameter — research mode delegates to `intersynth:synthesize-research` and skips bead creation and knowledge compounding
+
+**After synthesis completes — record agent usage:**
+Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/flux-agent.py {PROJECT_ROOT} record <agent1> <agent2> ...` with the names of all Project Agents (`.claude/agents/fd-*.md`) that were launched in this review. This increments `use_count`, updates `last_used`, and auto-promotes tiers. Skip Plugin Agents. If the script is not found, skip silently — the registry is a best-effort optimization, not a hard dependency.
 
 ## Phase 4: Cross-AI Comparison (Optional)
 

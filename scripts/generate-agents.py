@@ -34,7 +34,8 @@ def _log(msg: str) -> None:
 
 # Current generation version — bump when template format changes
 # v5: severity calibration (severity_examples field + escalation instruction)
-FLUX_GEN_VERSION = 5
+# v6: extended frontmatter (tier, domains, use_count, source_spec)
+FLUX_GEN_VERSION = 6
 
 # Core agents that should NOT be generated from specs
 CORE_AGENTS = frozenset({
@@ -129,7 +130,48 @@ def _render_severity_calibration(
     return "\n".join(lines)
 
 
-def render_agent(spec: dict[str, Any]) -> str:
+def _infer_domains_from_spec(spec: dict[str, Any]) -> list[str]:
+    """Infer domain tags from spec fields."""
+    domains = set()
+    name = spec.get("name", "").lower()
+    focus = (spec.get("focus") or "").lower()
+    source_domain = (spec.get("source_domain") or "").lower()
+
+    # Check name segments
+    segments = name.split("-")[1:]  # drop "fd"
+    domain_map = {
+        "routing": "routing", "navigation": "navigation", "wayfinding": "navigation",
+        "security": "security", "safety": "safety", "auth": "security",
+        "trust": "security", "performance": "performance", "architecture": "architecture",
+        "migration": "migration", "schema": "data-modeling", "ontology": "data-modeling",
+        "pipeline": "pipeline", "queue": "pipeline", "dispatch": "orchestration",
+        "orchestration": "orchestration", "scheduler": "orchestration",
+        "governance": "governance", "authority": "governance",
+        "budget": "economics", "cost": "economics",
+        "test": "testing", "benchmark": "testing",
+        "observability": "observability", "monitor": "observability",
+        "agent": "agent-systems", "inference": "ml-inference",
+        "cache": "infrastructure", "storage": "infrastructure",
+    }
+    for seg in segments:
+        if seg in domain_map:
+            domains.add(domain_map[seg])
+
+    # Check for esoteric source domains
+    esoteric_signals = [
+        "wayfinding", "calligraphy", "gamelan", "qanat", "heraldic",
+        "byzantine", "benedictine", "akkadian", "polynesian", "andean",
+        "subak", "liturgical", "sword",
+    ]
+    for sig in esoteric_signals:
+        if sig in name or sig in source_domain:
+            domains.add("esoteric-lens")
+            break
+
+    return sorted(domains) if domains else ["uncategorized"]
+
+
+def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> str:
     """Render an LLM-generated agent spec into the full agent markdown file.
 
     Returns the complete file content including YAML frontmatter.
@@ -158,6 +200,7 @@ def render_agent(spec: dict[str, Any]) -> str:
     effective_version = FLUX_GEN_VERSION if has_severity else 4
 
     now_utc = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    domains = _infer_domains_from_spec(spec)
 
     review_sections = ""
     for idx, area in enumerate(spec.get("review_areas", []), start=1):
@@ -200,11 +243,17 @@ def render_agent(spec: dict[str, Any]) -> str:
         "label it P0 or P1 — do not downgrade to appear less alarming."
     )
 
+    domains_yaml = json.dumps(domains)
+    source_line = f"\nsource_spec: '{source_spec_file}'" if source_spec_file else ""
+
     content = f"""---
 model: sonnet
 generated_by: flux-gen-prompt
 generated_at: '{now_utc}'
 flux_gen_version: {effective_version}
+tier: generated
+domains: {domains_yaml}
+use_count: 0{source_line}
 ---
 # {name} — Task-Specific Reviewer
 
@@ -364,6 +413,7 @@ def generate_from_specs(
         "specs_count": 0,
         "generated": [],
         "skipped": [],
+        "reused": [],  # existing proven/used agents that cover the domain
         "errors": [],
     }
 
@@ -397,6 +447,17 @@ def generate_from_specs(
     existing = check_existing_agents(agents_dir)
     _log(f"found {len(existing)} existing flux-gen agent(s)")
 
+    # Build domain→proven/used agent index for overlap detection
+    _domain_agents: dict[str, list[str]] = {}
+    for ename, efm in existing.items():
+        etier = efm.get("tier", "")
+        if etier in ("proven", "used"):
+            for d in efm.get("domains", []):
+                _domain_agents.setdefault(d, []).append(ename)
+    _log(f"domain index: {len(_domain_agents)} domains with proven/used agents")
+
+    specs_file_name = specs_path.name
+
     for spec in specs:
         name = spec.get("name", "")
         if not name.startswith("fd-"):
@@ -417,7 +478,23 @@ def generate_from_specs(
                     report["skipped"].append(name)
                     continue
 
-        content = render_agent(spec)
+        # Domain overlap check: if a proven/used agent covers the same domains,
+        # log it as "reused" but still generate (the triage will prefer the
+        # proven agent via scoring). Only skip if exact name match (above).
+        spec_domains = _infer_domains_from_spec(spec)
+        overlapping = set()
+        for d in spec_domains:
+            if d != "uncategorized":
+                overlapping.update(_domain_agents.get(d, []))
+        if overlapping:
+            _log(f"{name}: domain overlap with proven/used agents: {overlapping}")
+            report["reused"].append({
+                "new": name,
+                "overlapping": sorted(overlapping),
+                "domains": spec_domains,
+            })
+
+        content = render_agent(spec, source_spec_file=specs_file_name)
         if not dry_run:
             target = agents_dir / f"{name}.md"
             _atomic_write(target, content)
@@ -499,6 +576,7 @@ def main() -> int:
 
     gen = report["generated"]
     skip = report["skipped"]
+    reused = report.get("reused", [])
     errs = report.get("errors", [])
 
     # Detect silent failure: specs had entries but nothing was generated or skipped
@@ -520,6 +598,10 @@ def main() -> int:
             print(f"  Generated: {', '.join(gen)}")
         if skip:
             print(f"  Skipped: {', '.join(skip)}")
+        if reused:
+            print(f"  Domain overlap: {len(reused)} new agents overlap with proven/used agents")
+            for r in reused[:5]:
+                print(f"    {r['new']} ↔ {', '.join(r['overlapping'][:3])}")
         for err in errs:
             print(f"  Warning: {err}", file=sys.stderr)
         if not gen and not skip:
