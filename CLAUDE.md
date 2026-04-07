@@ -4,7 +4,7 @@
 
 ## Overview
 
-Multi-agent review and research engine — 17 agents (12 review + 5 research), 3 commands, 2 skills, 1 MCP server. Companion plugin for Clavain. Provides scored triage, LLM-based domain classification, content slicing, knowledge injection, and parallel multi-agent research.
+Multi-agent review and research engine — 17 agents (12 review + 5 research), 7 commands, 1 skill (unified flux-drive with review/research modes), 1 MCP server. Companion plugin for Clavain. Provides scored triage, LLM-based domain classification, content slicing, knowledge injection, parallel multi-agent research, and quality-tiered agent lifecycle management.
 
 ## Protocol Specification
 
@@ -20,7 +20,7 @@ claude --plugin-dir /root/projects/Interverse/plugins/interflux
 ls skills/*/SKILL.md | wc -l          # Should be 2
 ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
-ls commands/*.md | wc -l              # Should be 3
+ls commands/*.md | wc -l              # Should be 7
 python3 -c "import json; d=json.load(open('.claude-plugin/plugin.json')); print(list(d['mcpServers'].keys()))"  # ['exa']
 grep -l '## Research Directives' config/flux-drive/domains/*.md | wc -l  # Should be 11
 python3 -c "import json; json.load(open('.claude-plugin/plugin.json'))"  # Manifest check

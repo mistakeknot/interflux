@@ -73,6 +73,9 @@ interflux/
 │   ├── flux-drive.md         # Multi-agent review
 │   ├── flux-research.md      # Multi-agent research (routes to flux-drive mode=research)
 │   ├── flux-gen.md           # Generate project-specific agents from domains or prompts
+│   ├── flux-explore.md       # Autonomous multi-round semantic space exploration
+│   ├── flux-review.md        # Multi-track deep review (adjacent → esoteric)
+│   ├── flux-agent.md         # Agent lifecycle manager (index, backfill, stats, prune, promote)
 │   └── fetch-findings.md     # Inspect shared findings from parallel reviews
 ├── config/flux-drive/
 │   ├── domains/              # 11 domain profiles + index.yaml
@@ -95,7 +98,8 @@ interflux/
 │   ├── bump-version.sh       # Version bump + commit + push
 │   ├── estimate-costs.sh     # Per-agent cost estimation (interstat + budget.yaml fallback)
 │   ├── findings-helper.sh    # Write/read peer findings JSONL
-│   ├── generate-agents.py    # LLM specs → .claude/agents/fd-*.md
+│   ├── generate-agents.py    # LLM specs → .claude/agents/fd-*.md (v6: extended frontmatter)
+│   ├── flux-agent.py         # Agent lifecycle manager (index, backfill, stats, prune, promote, record)
 │   ├── launch-exa.sh         # Exa MCP server launcher
 │   ├── launch-qmd.sh         # qmd launcher (vestigial — moved to interknow)
 │   ├── update-domain-profiles.py  # Refresh domain profile markdown from index
@@ -178,13 +182,16 @@ Orchestrated by flux-drive in `mode=research`. Not invoked directly. Research Di
 
 Selection uses a query-type affinity table (onboarding, how-to, why-is-it, what-changed, best-practice, debug-context, exploratory). Agents scoring >= 2 are dispatched. Domain bonus (+1) for agents with Research Directives in detected domain.
 
-## Commands (4)
+## Commands (7)
 
 | Command | Description |
 |---------|-------------|
 | `/interflux:flux-drive` | Multi-agent document/code review (default mode=review) |
 | `/interflux:flux-research` | Multi-agent research — routes to flux-drive with mode=research |
 | `/interflux:flux-gen` | Generate project-specific review agents from detected domains or free-form prompts |
+| `/interflux:flux-explore` | Autonomous multi-round semantic space exploration |
+| `/interflux:flux-review` | Multi-track deep review — agents across adjacent → esoteric distance tiers |
+| `/interflux:flux-agent` | Agent lifecycle manager — index, backfill, stats, prune, promote, record |
 | `/interflux:fetch-findings` | Inspect shared findings from parallel reviews |
 
 ### flux-gen Modes
@@ -193,7 +200,7 @@ Selection uses a query-type affinity table (onboarding, how-to, why-is-it, what-
 - **Prompt mode**: LLM (Sonnet subagent) designs 3-5 task-specific agents, then deterministic rendering.
 - **Specs mode** (`--from-specs <path>`): Regenerate from saved specs without re-running LLM design.
 
-Generated agents are written to `.claude/agents/fd-*.md` and get +1 category bonus in triage scoring.
+Generated agents are written to `.claude/agents/fd-*.md` with extended frontmatter (tier, domains, use_count, source_spec). Triage scoring adds tier bonus: +1.0 proven, +0.5 used, -1.0 stub. Use `/interflux:flux-agent stats` to see registry health.
 
 ## Skill: flux-drive
 
@@ -204,7 +211,7 @@ Single unified skill registered in plugin.json. Two modes selected by invocation
 
 ### Three-Phase Protocol
 
-1. **Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 = max 7), present roster for user approval. Dynamic slot ceiling (4-10 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines.
+1. **Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 + tier_bonus -1 to +1 = max 8), present roster for user approval. Dynamic slot ceiling (4-10 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines. Tier bonus read from `.claude/agents/.index.yaml` (cached registry).
 2. **Launch** — Dispatch Stage 1 agents in parallel, monitor completion, optionally expand to Stage 2 based on findings severity + adjacency scoring. Incremental expansion launches speculative Stage 2 agents as Stage 1 results arrive. AgentDropout prunes redundant agents (threshold 0.6). Safety-critical agents (fd-safety, fd-correctness) exempt from budget cuts and dropout.
 3. **Synthesize** — Validate outputs, deduplicate findings, track convergence, compute verdict (safe/needs-changes/risky), generate findings.json + summary.md. Research mode delegates to `intersynth:synthesize-research`.
 
@@ -390,7 +397,8 @@ uv run pytest tests/structural/test_namespace.py -v
 | `bump-version.sh` | bash | Version bump, commit, push (plugin + marketplace) |
 | `estimate-costs.sh` | bash | Per-agent cost estimation (interstat historical + budget.yaml fallback) |
 | `findings-helper.sh` | bash | Write/read peer findings JSONL during parallel reviews |
-| `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from LLM-designed specs JSON |
+| `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from LLM-designed specs JSON (v6: extended frontmatter, domain overlap detection) |
+| `flux-agent.py` | python | Agent lifecycle manager — index, backfill, stats, prune, promote, record. Manages quality tiers and cached `.index.yaml`. |
 | `launch-exa.sh` | bash | Launch Exa MCP server (checks `EXA_API_KEY`) |
 | `update-domain-profiles.py` | python | Refresh domain profile markdown from index.yaml |
 | `validate-gitleaks-waivers.sh` | bash | Validate gitleaks waiver entries |
