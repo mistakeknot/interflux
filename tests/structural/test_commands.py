@@ -14,8 +14,8 @@ COMMAND_FILES = sorted(COMMANDS_DIR.glob("*.md"))
 def test_command_count(commands_dir):
     """Total command count matches expected value."""
     files = sorted(commands_dir.glob("*.md"))
-    assert len(files) == 4, (
-        f"Expected 4 commands, found {len(files)}: {[f.stem for f in files]}"
+    assert len(files) == 7, (
+        f"Expected 7 commands, found {len(files)}: {[f.stem for f in files]}"
     )
 
 

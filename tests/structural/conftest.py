@@ -1,60 +1,22 @@
-"""Shared fixtures for interflux structural tests."""
+"""Shared fixtures for structural tests."""
 
-import json
+import sys
 from pathlib import Path
 
-import pytest
+# Add interverse/ to path so _shared package is importable
+_interverse = Path(__file__).resolve().parents[3]
+if str(_interverse) not in sys.path:
+    sys.path.insert(0, str(_interverse))
 
+from _shared.tests.structural.conftest_base import create_structural_fixtures
 
-@pytest.fixture(scope="session")
-def project_root() -> Path:
-    """Path to the interflux repository root."""
-    return Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+fixtures = create_structural_fixtures(PROJECT_ROOT)
 
-
-@pytest.fixture(scope="session")
-def agents_dir(project_root: Path) -> Path:
-    return project_root / "agents"
-
-
-@pytest.fixture(scope="session")
-def skills_dir(project_root: Path) -> Path:
-    return project_root / "skills"
-
-
-@pytest.fixture(scope="session")
-def commands_dir(project_root: Path) -> Path:
-    return project_root / "commands"
-
-
-@pytest.fixture(scope="session")
-def all_agent_files(agents_dir: Path) -> list[Path]:
-    """All agent .md files from review/ and research/ directories."""
-    agent_files = []
-    for category in ["review", "research"]:
-        category_dir = agents_dir / category
-        if category_dir.is_dir():
-            agent_files.extend(sorted(category_dir.glob("*.md")))
-    return sorted(agent_files)
-
-
-@pytest.fixture(scope="session")
-def all_skill_dirs(skills_dir: Path) -> list[Path]:
-    """All skill directories that contain a SKILL.md file."""
-    return sorted(
-        d for d in skills_dir.iterdir()
-        if d.is_dir() and (d / "SKILL.md").exists()
-    )
-
-
-@pytest.fixture(scope="session")
-def all_command_files(commands_dir: Path) -> list[Path]:
-    """All command .md files."""
-    return sorted(commands_dir.glob("*.md"))
-
-
-@pytest.fixture(scope="session")
-def plugin_json(project_root: Path) -> dict:
-    """Parsed plugin.json."""
-    with open(project_root / ".claude-plugin" / "plugin.json") as f:
-        return json.load(f)
+# Register fixtures in this module's namespace so pytest discovers them
+project_root = fixtures["project_root"]
+plugin_json = fixtures["plugin_json"]
+skills_dir = fixtures["skills_dir"]
+commands_dir = fixtures["commands_dir"]
+agents_dir = fixtures["agents_dir"]
+scripts_dir = fixtures["scripts_dir"]

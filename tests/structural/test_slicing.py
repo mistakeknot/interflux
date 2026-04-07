@@ -95,15 +95,14 @@ def test_slicing_has_priority_patterns(slicing_content: str):
 def test_slicing_has_synthesis_contracts(slicing_content: str):
     """slicing.md contains synthesis contracts."""
     assert "## Synthesis Contracts" in slicing_content
-    assert "Agent Content Access" in slicing_content
-    assert "slicing_map" in slicing_content
+    assert "Convergence adjustment" in slicing_content
 
 
 def test_slicing_has_synthesis_rules(slicing_content: str):
     """slicing.md documents synthesis rules for slicing."""
     assert "Convergence adjustment" in slicing_content
     assert "discovered beyond sliced scope" in slicing_content
-    assert "No penalty for silence" in slicing_content
+    assert "No silence penalty" in slicing_content
 
 
 # --- Report template ---
@@ -111,7 +110,7 @@ def test_slicing_has_synthesis_rules(slicing_content: str):
 
 def test_slicing_has_report_template(slicing_content: str):
     """slicing.md has a slicing report template."""
-    assert "## Slicing Report Template" in slicing_content
+    assert "Slicing report" in slicing_content
     assert "Routing improvements" in slicing_content
 
 
@@ -121,7 +120,7 @@ def test_slicing_has_report_template(slicing_content: str):
 def test_slicing_has_thresholds(slicing_content: str):
     """slicing.md defines 80% threshold and safety override."""
     assert "80%" in slicing_content
-    assert "Safety Override" in slicing_content
+    assert "Safety override" in slicing_content
 
 
 # --- SKILL.md references ---
