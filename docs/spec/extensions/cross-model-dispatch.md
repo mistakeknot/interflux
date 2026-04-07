@@ -33,6 +33,20 @@ Defined in `agent-roles.yaml`:
 | editor | sonnet | fd-quality, fd-user-product, fd-resilience, fd-perception |
 | checker | haiku | fd-performance, fd-game-design |
 
+## Model Discovery (interrank/AgMoDB Integration)
+
+When interrank MCP is available, interflux can automatically discover Pareto-efficient models for each agent tier:
+
+1. **Query**: `recommend_model` with per-tier task descriptions (checker, analytical, judgment) and budget filter
+2. **Pareto frontier**: `cost_leaderboard` for coding and agentic domains — models with best benchmark-per-dollar
+3. **Registry**: New candidates written to `model-registry.yaml` with `status: candidate`
+4. **Qualification**: Shadow runs compare candidate output against Claude baseline (format compliance, finding recall, severity accuracy)
+5. **Promotion**: Qualified models enter `status: active` and become eligible for dispatch
+
+This creates a continuous improvement loop: AgMoDB tracks new model releases → interrank scores them → discover-models.sh surfaces candidates → qualification validates them → cross-model dispatch routes to them.
+
+**Reference:** `config/flux-drive/model-registry.yaml`, `scripts/discover-models.sh`, `references/progressive-enhancements.md § Step 1.0.6`
+
 ## Conformance
 
 Optional extension. An implementation without cross-model dispatch uses a single model for all agents.

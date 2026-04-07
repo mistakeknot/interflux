@@ -69,3 +69,19 @@ incremental_expansion:
 cross_model_dispatch:
   enabled: true
   mode: shadow    # shadow = log adjustments without applying | enforce = apply adjustments
+
+# Model discovery — automatic Pareto-efficient model scouting via interrank/AgMoDB
+# Queries interrank MCP for best models per agent tier, writes candidates to model-registry.yaml.
+# Progressive enhancement: skipped silently if interrank MCP unavailable.
+model_discovery:
+  enabled: true
+  refresh_interval: weekly     # how often to re-query interrank (daily, weekly, manual)
+  budget_filter: low           # interrank budget tier: low (<$1/MTok), medium (<$10/MTok), high (unlimited)
+  min_confidence: 0.5          # interrank recommendation confidence threshold
+  task_queries:                # per-tier task descriptions for interrank recommend_model
+    checker: "code review agent for finding style issues, naming problems, and test coverage gaps"
+    analytical: "code review agent for architecture analysis, system design patterns, and dependency evaluation"
+    judgment: "code review agent requiring deep reasoning about security vulnerabilities, data integrity, and race conditions"
+  # Models that pass discovery are written to model-registry.yaml as candidates.
+  # They still require qualification (shadow runs) before production dispatch.
+  auto_qualify: false          # if true, skip qualification and dispatch immediately (not recommended)

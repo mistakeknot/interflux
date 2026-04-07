@@ -91,3 +91,28 @@ Multiply each agent's raw triage score by its trust score. No trust data → use
 **If triggered**: Select 1-2 research agents, construct focused query, dispatch (NOT background — wait, max 60s). Inject result into Stage 2 prompts as `## Research Context (from Stage 1.5)`.
 
 **Budget**: Max 2 dispatches. **Skip if**: All P2/improvements, no Stage 2 planned, no external references.
+
+---
+
+## Step 1.0.6: Model Discovery (interrank)
+
+**Activates when:** interrank MCP server is available AND `budget.yaml → model_discovery.enabled` is true.
+
+Run model discovery to refresh the candidate pool for multi-provider dispatch:
+
+```bash
+queries=$(bash ${CLAUDE_PLUGIN_ROOT}/scripts/discover-models.sh 2>/dev/null)
+```
+
+If the script outputs query lines (JSON objects), execute each via the corresponding MCP tool:
+1. `recommend_model` queries — one per agent tier (checker, analytical, judgment)
+2. `cost_leaderboard` queries — Pareto frontier for coding and agentic domains
+
+For each result, merge new candidates into `config/flux-drive/model-registry.yaml`:
+- Skip models already in registry (match by `model_id`)
+- Add new models with `status: candidate`, `discovered: {today}`, interrank score/confidence
+- Set `eligible_tiers` from the query's tier parameter
+
+**Frequency**: Controlled by `model_discovery.refresh_interval` (default: weekly). The script checks `last_discovery` timestamp and exits early if within interval. Use `--force` to override.
+
+**Fallback**: Skip silently if interrank MCP unavailable, script fails, or no queries generated. Never a gate.

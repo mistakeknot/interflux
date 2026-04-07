@@ -1,0 +1,45 @@
+# Model Registry — candidate models for multi-provider dispatch
+# Populated automatically by scripts/discover-models.sh via interrank/AgMoDB.
+# Manual entries also accepted. Each model must pass qualification before production use.
+#
+# Status lifecycle: candidate → qualifying → qualified → active → retired
+#   candidate:  discovered by interrank, not yet tested
+#   qualifying: shadow runs in progress (parallel with Claude, comparing output)
+#   qualified:  passed qualification (format compliance, finding recall, severity accuracy)
+#   active:     dispatched in production for eligible agent tiers
+#   retired:    removed from dispatch (quality regression, model deprecated, newer version available)
+
+# Provider configuration
+providers:
+  claude:
+    type: native               # dispatched via Agent tool (Claude Code built-in)
+    tier: top                  # top-tier: safety floors, judgment-critical agents
+  # openrouter:                # uncomment when MCP server built
+  #   type: mcp                # dispatched via openrouter-dispatch MCP server
+  #   tier: standard           # standard: analytical and checker agents only
+  #   endpoint: openrouter     # MCP server name
+  #   rate_limit: 20           # max concurrent requests (free tier: 20/min)
+
+# Model candidates (populated by discover-models.sh, editable manually)
+# Each entry: model_id, provider, model_family, tier, status, qualification data
+models: []
+  # Example entry (uncommented when first candidate discovered):
+  # - model_id: deepseek/deepseek-chat
+  #   provider: openrouter
+  #   model_family: deepseek
+  #   eligible_tiers: [checker]        # which agent-tiers.yaml categories this model can serve
+  #   status: candidate
+  #   discovered: 2026-04-07
+  #   interrank_score: 0.82
+  #   interrank_confidence: 0.65
+  #   cost_per_mtok: 0.27
+  #   qualification:
+  #     shadow_runs: 0
+  #     format_compliance: null         # % of runs producing valid Findings Index
+  #     finding_recall: null            # % of Claude findings also found by this model
+  #     severity_accuracy: null         # % of severity ratings matching Claude baseline
+  #     qualified_date: null
+
+# Discovery metadata (written by discover-models.sh)
+last_discovery: null
+last_discovery_source: null    # interrank snapshot timestamp
