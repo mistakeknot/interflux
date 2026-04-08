@@ -1,0 +1,33 @@
+{
+  "fixture_id": "fixture-02-sql-injection",
+  "agent_type": "judgment",
+  "findings": [
+    {
+      "severity": "P0",
+      "location": "server.js:19",
+      "description": "SQL injection: user-supplied query parameters 'name' and 'role' are interpolated directly into the SQL string without parameterization or escaping",
+      "category": "security"
+    },
+    {
+      "severity": "P0",
+      "location": "server.js:16",
+      "description": "Missing authentication: the /api/users endpoint has no auth middleware, exposing user data (including emails and roles) to unauthenticated requests",
+      "category": "security"
+    },
+    {
+      "severity": "P1",
+      "location": "server.js:16",
+      "description": "No rate limiting on the search endpoint: allows unrestricted query volume, enabling enumeration attacks or denial of service",
+      "category": "security"
+    },
+    {
+      "severity": "P2",
+      "location": "server.js:23-27",
+      "description": "Verbose error disclosure: error response leaks internal error message, stack trace, and the raw SQL query to the client",
+      "category": "security"
+    }
+  ],
+  "annotator": "human",
+  "annotation_date": "2026-04-07",
+  "notes": "Two P0 findings reflect that SQL injection and missing auth are both independently exploitable for full data breach. The error disclosure at P2 compounds the SQL injection risk by revealing query structure to attackers."
+}

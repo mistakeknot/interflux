@@ -1,0 +1,33 @@
+{
+  "fixture_id": "fixture-04-race-condition",
+  "agent_type": "judgment",
+  "findings": [
+    {
+      "severity": "P1",
+      "location": "counter.py:12-14",
+      "description": "Race condition on shared dict: the check-then-act pattern on self.counts (key existence check followed by increment) is not atomic — concurrent threads can overwrite each other's initialization or lose increments",
+      "category": "correctness"
+    },
+    {
+      "severity": "P1",
+      "location": "counter.py:15",
+      "description": "Unsynchronized counter increment: self.total += 1 is not thread-safe in CPython (compound operation on int), leading to lost updates under concurrent access",
+      "category": "correctness"
+    },
+    {
+      "severity": "P2",
+      "location": "counter.py:37",
+      "description": "Missing thread join timeout: t.join() without a timeout argument will block indefinitely if a collector thread hangs, with no way to detect or recover from the stall",
+      "category": "correctness"
+    },
+    {
+      "severity": "P3",
+      "location": "counter.py:25",
+      "description": "Magic number: default iterations=1000 is an unexplained constant — should be a named constant or documented parameter with rationale",
+      "category": "style"
+    }
+  ],
+  "annotator": "human",
+  "annotation_date": "2026-04-07",
+  "notes": "The two P1 race conditions are distinct: the dict mutation (check-then-act) can lose entire event type initializations, while the integer increment can silently drop counts. Both require a threading.Lock to fix. The GIL does not protect compound operations like dict key check + set or augmented assignment."
+}

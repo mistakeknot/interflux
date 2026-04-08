@@ -82,3 +82,22 @@ if [[ -n "$_if_session_id" && -z "${FLUX_BUDGET_REMAINING:-}" ]]; then
     fi
   fi
 fi
+
+# --- FluxBench model awareness (lightweight, no API calls) ---
+_if_registry="${HOOK_DIR}/../config/flux-drive/model-registry.yaml"
+if [[ -f "$_if_registry" ]] && command -v python3 &>/dev/null; then
+  _if_awareness=$(python3 -c "
+import yaml, sys
+try:
+    with open('$_if_registry') as f:
+        d = yaml.safe_load(f)
+    models = d.get('models', {}) or {}
+    requalify = [k for k, v in models.items() if isinstance(v, dict) and v.get('requalification_needed')]
+    if requalify:
+        names = ', '.join(requalify[:3])
+        print(f'[fluxbench] {len(requalify)} model(s) need requalification: {names}')
+except Exception:
+    pass
+" 2>/dev/null) || _if_awareness=""
+  [[ -n "$_if_awareness" ]] && echo "$_if_awareness" >&2
+fi

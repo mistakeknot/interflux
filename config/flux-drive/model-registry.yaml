@@ -22,9 +22,9 @@ providers:
 
 # Model candidates (populated by discover-models.sh, editable manually)
 # Each entry: model_id, provider, model_family, tier, status, qualification data
-models: []
+models: {}
   # Example entry (uncommented when first candidate discovered):
-  # - model_id: deepseek/deepseek-chat
+  # deepseek-chat:
   #   provider: openrouter
   #   model_family: deepseek
   #   eligible_tiers: [checker]        # which agent-tiers.yaml categories this model can serve
@@ -39,7 +39,36 @@ models: []
   #     finding_recall: null            # % of Claude findings also found by this model
   #     severity_accuracy: null         # % of severity ratings matching Claude baseline
   #     qualified_date: null
+  #   # FluxBench scores (written by fluxbench-score.sh)
+  #   fluxbench:
+  #     format_compliance: null
+  #     finding_recall: null
+  #     false_positive_rate: null
+  #     severity_accuracy: null
+  #     persona_adherence: null
+  #     instruction_compliance: null
+  #     disagreement_rate: null
+  #     latency_p50: null
+  #     token_efficiency: null
+  #   # Frozen baseline — IMMUTABLE snapshot at qualification time.
+  #   # Written once by fluxbench-qualify.sh on first qualification.
+  #   # Drift is always measured against this, never running averages.
+  #   # Write-once contract: all registry writers MUST check if qualified_baseline
+  #   # is non-null before writing. Only fluxbench-qualify.sh may set it, and only
+  #   # when transitioning status to qualified/auto-qualified.
+  #   # To reset: operator must manually null it and re-qualify.
+  #   qualified_baseline: null
 
 # Discovery metadata (written by discover-models.sh)
 last_discovery: null
 last_discovery_source: null    # interrank snapshot timestamp
+
+# FluxBench configuration
+fluxbench:
+  sample_rate: 10              # 1-in-N reviews for drift sampling
+  max_sample_gap: 20           # Force shadow if unsampled for this many reviews
+  drift_threshold: 0.15        # Flag drift if any core metric drops >15%
+  hysteresis_band: 0.05        # Clear drift only when within 5% of baseline
+  correlated_drift_threshold: 0.50  # >=50% simultaneous drift = baseline shift
+  challenger_slots: 1          # Integer, 0 to disable
+  weekly_budget_ceiling: 5     # Max candidates per weekly qualification cycle

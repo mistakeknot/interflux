@@ -1,0 +1,39 @@
+{
+  "fixture_id": "fixture-03-naming-conventions",
+  "agent_type": "checker",
+  "findings": [
+    {
+      "severity": "P2",
+      "location": "main.go:9",
+      "description": "Package-level variable uses snake_case (item_cache): Go convention requires camelCase for unexported identifiers",
+      "category": "style"
+    },
+    {
+      "severity": "P2",
+      "location": "main.go:12-17",
+      "description": "Struct name inventory_item uses snake_case: Go convention requires CamelCase for type names (InventoryItem if exported, inventoryItem if unexported)",
+      "category": "style"
+    },
+    {
+      "severity": "P2",
+      "location": "main.go:14-16",
+      "description": "Mixed field naming within struct: item_count and is_active use snake_case while ItemName and CategoryID use CamelCase, violating consistent naming within the type",
+      "category": "style"
+    },
+    {
+      "severity": "P3",
+      "location": "main.go:19",
+      "description": "Exported function GetItem lacks a doc comment: Go convention requires comments on all exported symbols (golint/revive)",
+      "category": "style"
+    },
+    {
+      "severity": "P3",
+      "location": "main.go:26",
+      "description": "Exported-style function naming inconsistency: update_item_count is unexported but uses snake_case instead of camelCase (updateItemCount)",
+      "category": "style"
+    }
+  ],
+  "annotator": "human",
+  "annotation_date": "2026-04-07",
+  "notes": "All findings are style violations — no correctness or security issues. The ClearExpired function at line 40 also lacks a doc comment and is not guarded by the mutex, but the mutex omission would be a correctness finding outside the scope of this checker-focused fixture."
+}

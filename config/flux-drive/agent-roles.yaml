@@ -65,6 +65,13 @@ roles:
       - fd-decisions
       - fd-people
 
+  challenger:
+    description: Unqualified model under evaluation via FluxBench challenger slot
+    model_tier: sonnet
+    domain_complexity: medium
+    max_model: sonnet   # challengers capped at sonnet until promoted
+    agents: []          # populated dynamically by fluxbench-challenger.sh
+
 # Experiment tracking — which experiments have been run and their status.
 # Updated by experiment execution scripts, read by framework_score.py.
 experiments:

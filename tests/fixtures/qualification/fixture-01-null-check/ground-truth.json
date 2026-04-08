@@ -1,0 +1,33 @@
+{
+  "fixture_id": "fixture-01-null-check",
+  "agent_type": "judgment",
+  "findings": [
+    {
+      "severity": "P0",
+      "location": "app.py:16",
+      "description": "Unchecked null dereference: cursor.fetchone() can return None when user_id does not exist, causing TypeError on row[0] access",
+      "category": "correctness"
+    },
+    {
+      "severity": "P1",
+      "location": "app.py:20-21",
+      "description": "File I/O has no exception handling: open() and json.dump() can raise IOError/OSError if /tmp/cache/ does not exist or disk is full",
+      "category": "correctness"
+    },
+    {
+      "severity": "P2",
+      "location": "app.py:8",
+      "description": "No input validation on user_id parameter: should verify it is non-None and of expected type before database query",
+      "category": "correctness"
+    },
+    {
+      "severity": "P3",
+      "location": "app.py:7",
+      "description": "Missing docstring: public function load_user_profile lacks documentation of parameters, return value, and possible exceptions",
+      "category": "style"
+    }
+  ],
+  "annotator": "human",
+  "annotation_date": "2026-04-07",
+  "notes": "The P0 null dereference is the critical finding — a missing user row causes an unhandled crash. The nested key access on profile['settings']['notifications'] at line 18 is also fragile but secondary to the fetchone() None case."
+}

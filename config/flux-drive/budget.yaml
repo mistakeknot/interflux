@@ -85,3 +85,15 @@ model_discovery:
   # Models that pass discovery are written to model-registry.yaml as candidates.
   # They still require qualification (shadow runs) before production dispatch.
   auto_qualify: false          # if true, skip qualification and dispatch immediately (not recommended)
+
+# Challenger slot — allows unqualified/auto-qualified models into real reviews
+challenger:
+  enabled: true
+  slots: 1                    # Integer, 0 to disable
+  pre_inclusion_runs: 2       # Synthetic fixture runs before real dispatch
+  promotion_threshold: 10     # Minimum real runs before evaluation
+  early_exit_margin: 0.20     # Fast-track at run 5 if passing by this margin
+  stale_threshold: 20         # Reject after this many runs without passing
+  safety_exclusions:           # Roles challenger can never fill
+    - fd-safety
+    - fd-correctness

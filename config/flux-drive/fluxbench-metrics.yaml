@@ -1,0 +1,67 @@
+# FluxBench Metric Definitions
+# 5 core gates (qualification requirement) + 4 extended (routing/informational)
+version: 1
+
+core_gates:
+  fluxbench-format-compliance:
+    type: binary_gate
+    description: "% of runs producing valid Findings Index (header, pipe-delimited, verdict)"
+    threshold_default: 0.95
+    gate: true
+    higher_is_better: true
+
+  fluxbench-finding-recall:
+    type: weighted_score
+    description: "Severity-weighted recall vs baseline/ground-truth"
+    threshold_default: 0.60
+    gate: true
+    higher_is_better: true
+    severity_weights:
+      P0: 4
+      P1: 2
+      P2: 1
+      P3: 0.5
+    p0_auto_fail: true  # Missing any P0 fails regardless of aggregate
+
+  fluxbench-false-positive-rate:
+    type: rate
+    description: "% of findings not in baseline AND not independently validated"
+    threshold_default: 0.20
+    gate: true
+    higher_is_better: false  # Lower is better
+
+  fluxbench-severity-accuracy:
+    type: score
+    description: "% of severity ratings matching baseline ±1 level"
+    threshold_default: 0.70
+    gate: true
+    higher_is_better: true
+
+  fluxbench-persona-adherence:
+    type: llm_judge
+    description: "Domain persona adherence vs generic analysis (0-1, LLM-judged)"
+    threshold_default: 0.60
+    gate: true
+    higher_is_better: true
+    judge_model: haiku
+
+extended:
+  fluxbench-instruction-compliance:
+    type: score
+    description: "Follows multi-step prompt structure (sections, peer protocol, focus area)"
+    higher_is_better: true
+
+  fluxbench-disagreement-rate:
+    type: rate
+    description: "% of findings unique to this model (not in baseline)"
+    higher_is_better: true  # Diversity value
+
+  fluxbench-latency-p50:
+    type: latency_ms
+    description: "p50 response latency in milliseconds"
+    higher_is_better: false
+
+  fluxbench-token-efficiency:
+    type: ratio
+    description: "Findings per 1K output tokens"
+    higher_is_better: true

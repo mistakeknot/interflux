@@ -1,0 +1,39 @@
+{
+  "fixture_id": "fixture-05-api-design",
+  "agent_type": "analytical",
+  "findings": [
+    {
+      "severity": "P1",
+      "location": "api-spec:error-responses",
+      "description": "Inconsistent error format across endpoints: POST returns {error: string}, GET returns {code, message, request_id}, PUT returns {success, reason}, and DELETE returns {error: string} — clients cannot reliably parse errors",
+      "category": "architecture"
+    },
+    {
+      "severity": "P1",
+      "location": "api-spec:GET /tasks",
+      "description": "Unbounded list endpoint: GET /tasks returns all tasks in a single response with no pagination (offset/limit or cursor), which will degrade or fail as the dataset grows",
+      "category": "performance"
+    },
+    {
+      "severity": "P2",
+      "location": "api-spec:DELETE /tasks/:id",
+      "description": "Wrong HTTP status code: successful DELETE returns 200 with a body, but should return 204 No Content for a resource deletion, or if a body is needed, the response should include the deleted resource",
+      "category": "architecture"
+    },
+    {
+      "severity": "P2",
+      "location": "api-spec:POST /tasks",
+      "description": "Missing content-type validation: no mention of requiring Content-Type: application/json header, allowing clients to send malformed bodies without a clear 415 Unsupported Media Type response",
+      "category": "architecture"
+    },
+    {
+      "severity": "P3",
+      "location": "api-spec:base-url",
+      "description": "No API versioning: endpoints lack a version prefix (e.g., /v1/tasks), making backward-incompatible changes risky once clients are integrated",
+      "category": "architecture"
+    }
+  ],
+  "annotator": "human",
+  "annotation_date": "2026-04-07",
+  "notes": "The inconsistent error format is the most impactful finding — it forces every client to handle four different error shapes. The unbounded list is a latent production risk. PUT returning {ok: true} instead of the updated resource is also a minor design smell but not separately listed."
+}
