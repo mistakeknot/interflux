@@ -61,6 +61,152 @@ if [[ $mode_count -gt 1 ]]; then
   echo "Error: --mock, --emit, and --score are mutually exclusive" >&2; exit 1
 fi
 
+# --- Shared: compute aggregate format_compliance_rate ---
+_compute_format_compliance_rate() {
+  local valid="$1" total="$2"
+  if [[ $total -gt 0 ]]; then
+    export _FB_VALID="$valid"
+    export _FB_TOTAL="$total"
+    python3 -c "
+import os
+print(round(int(os.environ['_FB_VALID']) / int(os.environ['_FB_TOTAL']), 4))
+"
+  else
+    echo "0.0"
+  fi
+}
+
+# --- Shared: compute avg_metrics across scored fixtures ---
+_compute_avg_metrics() {
+  local fc_rate="$1"
+  shift
+  local -a result_files=("$@")
+  if [[ ${#result_files[@]} -gt 0 ]]; then
+    export _FB_FC_RATE="$fc_rate"
+    python3 -c "
+import json, sys, os
+
+fc_rate = float(os.environ['_FB_FC_RATE'])
+results = []
+for path in sys.argv[1:]:
+    with open(path) as f:
+        results.append(json.load(f))
+
+metrics = {}
+for key in ['fluxbench-finding-recall', 'fluxbench-false-positive-rate',
+            'fluxbench-severity-accuracy']:
+    vals = [r['metrics'][key] for r in results if r['metrics'].get(key) is not None]
+    if vals:
+        metrics[key] = round(sum(vals) / len(vals), 4)
+
+metrics['fluxbench-format-compliance'] = fc_rate
+
+print(json.dumps(metrics))
+" "${result_files[@]}"
+  else
+    echo "{}"
+  fi
+}
+
+# --- Shared: write summary JSONL entry with correct aggregate metrics ---
+_write_summary_jsonl() {
+  local model_slug="$1" qual_run_id="$2" timestamp="$3"
+  local format_compliance_rate="$4" avg_metrics="$5" tmp_dir="$6"
+
+  local summary_result="${tmp_dir}/summary-result.json"
+
+  jq -n \
+    --arg model_slug "$model_slug" \
+    --arg qual_run_id "summary-${qual_run_id}" \
+    --arg timestamp "$timestamp" \
+    --argjson format_compliance_rate "$format_compliance_rate" \
+    --argjson avg_metrics "$avg_metrics" \
+    '{
+      model_slug: $model_slug,
+      qualification_run_id: $qual_run_id,
+      timestamp: $timestamp,
+      format_compliance_rate: $format_compliance_rate,
+      metrics: $avg_metrics,
+      is_summary: true,
+      fixture_count: ($avg_metrics | length)
+    }' > "$summary_result"
+
+  local json_line
+  json_line=$(jq -c . "$summary_result")
+  local results_jsonl="${FLUXBENCH_RESULTS_JSONL:-${SCRIPT_DIR}/../data/fluxbench-results.jsonl}"
+  mkdir -p "$(dirname "$results_jsonl")"
+  (flock -x 200; echo "$json_line" >> "$results_jsonl") 200>"${results_jsonl}.lock"
+}
+
+# --- Shared: atomic registry update ---
+_update_registry() {
+  local tmp_reg
+  tmp_reg=$(mktemp)
+  trap 'rm -f "$tmp_reg"' RETURN
+  export _FB_TMP_REG="$tmp_reg"
+
+  cp "$MODEL_REGISTRY" "$tmp_reg"
+
+  python3 -c "
+import yaml, json, sys, os
+
+reg_path = os.environ['_FB_TMP_REG']
+slug = os.environ['_FB_SLUG']
+new_status = os.environ['_FB_STATUS']
+avg_json = os.environ.get('_FB_AVG_METRICS') or '{}'
+qual_mode = os.environ.get('_FB_QUAL_MODE')
+if not qual_mode or qual_mode not in ('real', 'mock'):
+    raise ValueError(f'_FB_QUAL_MODE must be real or mock, got: {qual_mode!r}')
+
+with open(reg_path) as f:
+    reg = yaml.safe_load(f)
+
+if reg is None:
+    reg = {}
+if 'models' not in reg or reg['models'] is None:
+    reg['models'] = {}
+if isinstance(reg['models'], list):
+    reg['models'] = {}
+
+model = reg['models'].get(slug)
+if model is None:
+    model = {}
+    reg['models'][slug] = model
+
+model['status'] = new_status
+model['qualified_via'] = qual_mode
+
+metrics = json.loads(avg_json) if avg_json else {}
+if metrics:
+    if 'fluxbench' not in model or model['fluxbench'] is None:
+        model['fluxbench'] = {}
+    fb = model['fluxbench']
+    fb['format_compliance'] = metrics.get('fluxbench-format-compliance')
+    fb['finding_recall'] = metrics.get('fluxbench-finding-recall')
+    fb['false_positive_rate'] = metrics.get('fluxbench-false-positive-rate')
+    fb['severity_accuracy'] = metrics.get('fluxbench-severity-accuracy')
+
+if new_status in ('auto-qualified', 'qualified') and metrics:
+    current_baseline = model.get('qualified_baseline')
+    if current_baseline is None:
+        model['qualified_baseline'] = {
+            'fluxbench-format-compliance': metrics.get('fluxbench-format-compliance'),
+            'fluxbench-finding-recall': metrics.get('fluxbench-finding-recall'),
+            'fluxbench-false-positive-rate': metrics.get('fluxbench-false-positive-rate'),
+            'fluxbench-severity-accuracy': metrics.get('fluxbench-severity-accuracy'),
+        }
+    else:
+        print('  qualified_baseline already set — preserving existing baseline', file=sys.stderr)
+
+with open(reg_path, 'w') as f:
+    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
+" 2>&1
+
+  export _FB_TMP_REG_VAL="$tmp_reg"
+  python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG_VAL']))" || { echo "Error: registry validation failed" >&2; return 1; }
+  mv "$tmp_reg" "$MODEL_REGISTRY"
+}
+
 # --- Validate fixtures directory (needed for --mock and --emit) ---
 if $mock_mode || $emit_mode; then
   [[ -d "$fixtures_dir" ]] || { echo "Error: fixtures directory not found: $fixtures_dir" >&2; exit 1; }
@@ -86,6 +232,7 @@ fi
 if $emit_mode; then
   work_dir=$(mktemp -d /tmp/fluxbench-qual-XXXX)
   manifest_entries=()
+  manifest_detail=()
 
   for fixture_dir in "${fixture_dirs[@]}"; do
     fixture_id=$(basename "$fixture_dir")
@@ -126,12 +273,19 @@ print(json.dumps(desc))
 "
 
     manifest_entries+=("$fixture_id")
+    export _FB_DETAIL_FID="$fixture_id"
+    export _FB_DETAIL_GT="$ground_truth_abs"
+    manifest_detail+=("$(python3 -c "
+import json, os
+print(json.dumps({'fixture_id': os.environ['_FB_DETAIL_FID'], 'ground_truth_path': os.environ['_FB_DETAIL_GT']}, separators=(',', ':')))
+")")
   done
 
-  # Write manifest
+  # Write manifest (includes fixtures_detail with ground_truth_path per fixture)
   export _FB_EMIT_WORK_DIR="$work_dir"
   export _FB_EMIT_MANIFEST_SLUG="$model_slug"
   export _FB_EMIT_MANIFEST_ENTRIES="$(printf '%s\n' "${manifest_entries[@]}")"
+  export _FB_EMIT_MANIFEST_DETAIL="$(printf '%s\n' "${manifest_detail[@]}")"
   python3 -c "
 import json, os
 
@@ -140,10 +294,17 @@ slug = os.environ['_FB_EMIT_MANIFEST_SLUG']
 entries_raw = os.environ['_FB_EMIT_MANIFEST_ENTRIES']
 entries = [e for e in entries_raw.strip().split('\n') if e]
 
+detail_raw = os.environ.get('_FB_EMIT_MANIFEST_DETAIL', '')
+detail = []
+for line in detail_raw.strip().split('\n'):
+    if line.strip():
+        detail.append(json.loads(line))
+
 manifest = {
     'model_slug': slug,
     'work_dir': work_dir,
     'fixtures': entries,
+    'fixtures_detail': detail,
 }
 with open(os.path.join(work_dir, 'manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2)
@@ -192,8 +353,31 @@ for fid in m['fixtures']:
     total_fixtures=$((total_fixtures + 1))
 
     response_file="${work_dir}/${fixture_id}/response.json"
-    # Locate ground-truth: use --fixtures-dir if provided, else default
-    ground_truth="${fixtures_dir}/${fixture_id}/ground-truth.json"
+    # Read ground_truth_path from manifest detail if available (written by --emit)
+    export _FB_CUR_FIXTURE="$fixture_id"
+    manifest_gt=$(python3 -c "
+import json, os
+with open(os.environ['_FB_SCORE_MANIFEST']) as f:
+    m = json.load(f)
+for fid in m.get('fixtures_detail', []):
+    if fid.get('fixture_id') == os.environ.get('_FB_CUR_FIXTURE', ''):
+        print(fid.get('ground_truth_path', ''))
+        break
+" 2>/dev/null) || manifest_gt=""
+    # Fall back to fixtures_dir derivation if manifest detail unavailable
+    # Validate manifest path stays within fixtures dir (prevent path redirect via tampered manifest)
+    if [[ -n "$manifest_gt" && -f "$manifest_gt" ]]; then
+      _real_gt=$(realpath -m "$manifest_gt")
+      _real_fixtures=$(realpath -m "$fixtures_dir")
+      if [[ "$_real_gt" == "$_real_fixtures"/* ]]; then
+        ground_truth="$manifest_gt"
+      else
+        echo "  Warning: manifest ground_truth_path outside fixtures dir, using default" >&2
+        ground_truth="${fixtures_dir}/${fixture_id}/ground-truth.json"
+      fi
+    else
+      ground_truth="${fixtures_dir}/${fixture_id}/ground-truth.json"
+    fi
 
     echo "  Scoring fixture: $fixture_id" >&2
 
@@ -277,16 +461,7 @@ for fid in m['fixtures']:
   echo "  Mode: real" >&2
 
   # --- Compute final format_compliance_rate ---
-  export _FB_VALID="$valid_outputs"
-  export _FB_TOTAL="$total_fixtures"
-  if [[ $total_fixtures -gt 0 ]]; then
-    format_compliance_rate=$(python3 -c "
-import os
-print(round(int(os.environ['_FB_VALID']) / int(os.environ['_FB_TOTAL']), 4))
-")
-  else
-    format_compliance_rate="0.0"
-  fi
+  format_compliance_rate=$(_compute_format_compliance_rate "$valid_outputs" "$total_fixtures")
 
   echo "" >&2
   echo "Qualification summary:" >&2
@@ -294,30 +469,10 @@ print(round(int(os.environ['_FB_VALID']) / int(os.environ['_FB_TOTAL']), 4))
   echo "  Fixtures passed: $((total_fixtures - ${#failure_reasons[@]}))/$total_fixtures" >&2
 
   # --- Aggregate scores across all fixtures ---
-  avg_metrics="{}"
-  if [[ ${#all_results[@]} -gt 0 ]]; then
-    export _FB_FC_RATE="$format_compliance_rate"
-    avg_metrics=$(python3 -c "
-import json, sys, os
+  avg_metrics=$(_compute_avg_metrics "$format_compliance_rate" "${all_results[@]}")
 
-fc_rate = float(os.environ['_FB_FC_RATE'])
-results = []
-for path in sys.argv[1:]:
-    with open(path) as f:
-        results.append(json.load(f))
-
-metrics = {}
-for key in ['fluxbench-finding-recall', 'fluxbench-false-positive-rate',
-            'fluxbench-severity-accuracy']:
-    vals = [r['metrics'][key] for r in results if r['metrics'].get(key) is not None]
-    if vals:
-        metrics[key] = round(sum(vals) / len(vals), 4)
-
-metrics['fluxbench-format-compliance'] = fc_rate
-
-print(json.dumps(metrics))
-" "${all_results[@]}")
-  fi
+  # --- Write summary JSONL with correct aggregate metrics (P0-5 fix) ---
+  _write_summary_jsonl "$model_slug" "$qual_run_id" "$timestamp" "$format_compliance_rate" "$avg_metrics" "$score_tmp"
 
   # --- Decide status ---
   if [[ "$overall_pass" == "true" ]]; then
@@ -335,81 +490,13 @@ print(json.dumps(metrics))
   export _FB_QUAL_MODE="real"
 
   if [[ -f "$MODEL_REGISTRY" ]]; then
-    _update_registry() {
-      local tmp_reg
-      tmp_reg=$(mktemp)
-      trap 'rm -f "$tmp_reg"' RETURN
-      export _FB_TMP_REG="$tmp_reg"
-
-      cp "$MODEL_REGISTRY" "$tmp_reg"
-
-      python3 -c "
-import yaml, json, sys, os
-
-reg_path = os.environ['_FB_TMP_REG']
-slug = os.environ['_FB_SLUG']
-new_status = os.environ['_FB_STATUS']
-avg_json = os.environ.get('_FB_AVG_METRICS') or '{}'
-qual_mode = os.environ.get('_FB_QUAL_MODE')
-if not qual_mode or qual_mode not in ('real', 'mock'):
-    raise ValueError(f'_FB_QUAL_MODE must be real or mock, got: {qual_mode!r}')
-
-with open(reg_path) as f:
-    reg = yaml.safe_load(f)
-
-if reg is None:
-    reg = {}
-if 'models' not in reg or reg['models'] is None:
-    reg['models'] = {}
-if isinstance(reg['models'], list):
-    reg['models'] = {}
-
-model = reg['models'].get(slug)
-if model is None:
-    model = {}
-    reg['models'][slug] = model
-
-model['status'] = new_status
-model['qualified_via'] = qual_mode
-
-metrics = json.loads(avg_json) if avg_json else {}
-if metrics:
-    if 'fluxbench' not in model or model['fluxbench'] is None:
-        model['fluxbench'] = {}
-    fb = model['fluxbench']
-    fb['format_compliance'] = metrics.get('fluxbench-format-compliance')
-    fb['finding_recall'] = metrics.get('fluxbench-finding-recall')
-    fb['false_positive_rate'] = metrics.get('fluxbench-false-positive-rate')
-    fb['severity_accuracy'] = metrics.get('fluxbench-severity-accuracy')
-
-if new_status in ('auto-qualified', 'qualified') and metrics:
-    current_baseline = model.get('qualified_baseline')
-    if current_baseline is None:
-        model['qualified_baseline'] = {
-            'fluxbench-format-compliance': metrics.get('fluxbench-format-compliance'),
-            'fluxbench-finding-recall': metrics.get('fluxbench-finding-recall'),
-            'fluxbench-false-positive-rate': metrics.get('fluxbench-false-positive-rate'),
-            'fluxbench-severity-accuracy': metrics.get('fluxbench-severity-accuracy'),
-        }
-    else:
-        print('  qualified_baseline already set — preserving existing baseline', file=sys.stderr)
-
-with open(reg_path, 'w') as f:
-    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
-" 2>&1
-
-      export _FB_TMP_REG_VAL="$tmp_reg"
-      python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG_VAL']))" || { echo "Error: registry validation failed" >&2; return 1; }
-      mv "$tmp_reg" "$MODEL_REGISTRY"
-    }
-
     (
       flock -x 201
       export _FB_SLUG="$model_slug"
       export _FB_STATUS="$new_status"
       export _FB_AVG_METRICS="${avg_metrics:-"{}"}"
-      _update_registry
-    ) 201>"${MODEL_REGISTRY}.lock"
+      _update_registry || exit 1
+    ) 201>"${MODEL_REGISTRY}.lock" || { echo "  Error: registry write failed" >&2; exit 1; }
     echo "  Registry updated: $MODEL_REGISTRY" >&2
   else
     echo "  Warning: could not update registry (registry file missing)" >&2
@@ -512,16 +599,7 @@ for fixture_dir in "${fixture_dirs[@]}"; do
 done
 
 # --- Compute final format_compliance_rate ---
-export _FB_VALID="$valid_outputs"
-export _FB_TOTAL="$total_fixtures"
-if [[ $total_fixtures -gt 0 ]]; then
-  format_compliance_rate=$(python3 -c "
-import os
-print(round(int(os.environ['_FB_VALID']) / int(os.environ['_FB_TOTAL']), 4))
-")
-else
-  format_compliance_rate="0.0"
-fi
+format_compliance_rate=$(_compute_format_compliance_rate "$valid_outputs" "$total_fixtures")
 
 echo "" >&2
 echo "Qualification summary:" >&2
@@ -529,32 +607,10 @@ echo "  Format compliance rate: $format_compliance_rate" >&2
 echo "  Fixtures passed: $((total_fixtures - ${#failure_reasons[@]}))/$total_fixtures" >&2
 
 # --- Aggregate scores across all fixtures ---
-avg_metrics="{}"
-if [[ ${#all_results[@]} -gt 0 ]]; then
-  # Compute average metrics across all fixtures
-  export _FB_FC_RATE="$format_compliance_rate"
-  avg_metrics=$(python3 -c "
-import json, sys, os
+avg_metrics=$(_compute_avg_metrics "$format_compliance_rate" "${all_results[@]}")
 
-fc_rate = float(os.environ['_FB_FC_RATE'])
-results = []
-for path in sys.argv[1:]:
-    with open(path) as f:
-        results.append(json.load(f))
-
-metrics = {}
-for key in ['fluxbench-finding-recall', 'fluxbench-false-positive-rate',
-            'fluxbench-severity-accuracy']:
-    vals = [r['metrics'][key] for r in results if r['metrics'].get(key) is not None]
-    if vals:
-        metrics[key] = round(sum(vals) / len(vals), 4)
-
-# Format compliance is computed separately
-metrics['fluxbench-format-compliance'] = fc_rate
-
-print(json.dumps(metrics))
-" "${all_results[@]}")
-fi
+# --- Write summary JSONL with correct aggregate metrics (P0-5 fix) ---
+_write_summary_jsonl "$model_slug" "$qual_run_id" "$timestamp" "$format_compliance_rate" "$avg_metrics" "$mock_work_dir"
 
 # --- Decide status ---
 if [[ "$overall_pass" == "true" ]]; then
@@ -572,81 +628,6 @@ fi
 export _FB_QUAL_MODE="mock"
 
 if [[ -f "$MODEL_REGISTRY" ]]; then
-  _update_registry() {
-    local tmp_reg
-    tmp_reg=$(mktemp)
-    trap 'rm -f "$tmp_reg"' RETURN
-    export _FB_TMP_REG="$tmp_reg"
-
-    # Atomic write: read → modify in tmp → validate → mv
-    cp "$MODEL_REGISTRY" "$tmp_reg"
-
-    python3 -c "
-import yaml, json, sys, os
-
-reg_path = os.environ['_FB_TMP_REG']
-slug = os.environ['_FB_SLUG']
-new_status = os.environ['_FB_STATUS']
-avg_json = os.environ.get('_FB_AVG_METRICS') or '{}'
-qual_mode = os.environ.get('_FB_QUAL_MODE')
-if not qual_mode or qual_mode not in ('real', 'mock'):
-    raise ValueError(f'_FB_QUAL_MODE must be real or mock, got: {qual_mode!r}')
-
-with open(reg_path) as f:
-    reg = yaml.safe_load(f)
-
-if reg is None:
-    reg = {}
-if 'models' not in reg or reg['models'] is None:
-    reg['models'] = {}
-# Convert list to dict if needed
-if isinstance(reg['models'], list):
-    reg['models'] = {}
-
-model = reg['models'].get(slug)
-if model is None:
-    model = {}
-    reg['models'][slug] = model
-
-# Update status
-model['status'] = new_status
-model['qualified_via'] = qual_mode
-
-# Update fluxbench scores
-metrics = json.loads(avg_json) if avg_json else {}
-if metrics:
-    if 'fluxbench' not in model or model['fluxbench'] is None:
-        model['fluxbench'] = {}
-    fb = model['fluxbench']
-    fb['format_compliance'] = metrics.get('fluxbench-format-compliance')
-    fb['finding_recall'] = metrics.get('fluxbench-finding-recall')
-    fb['false_positive_rate'] = metrics.get('fluxbench-false-positive-rate')
-    fb['severity_accuracy'] = metrics.get('fluxbench-severity-accuracy')
-
-# Write-once contract for qualified_baseline
-if new_status in ('auto-qualified', 'qualified') and metrics:
-    current_baseline = model.get('qualified_baseline')
-    if current_baseline is None:
-        model['qualified_baseline'] = {
-            'fluxbench-format-compliance': metrics.get('fluxbench-format-compliance'),
-            'fluxbench-finding-recall': metrics.get('fluxbench-finding-recall'),
-            'fluxbench-false-positive-rate': metrics.get('fluxbench-false-positive-rate'),
-            'fluxbench-severity-accuracy': metrics.get('fluxbench-severity-accuracy'),
-        }
-    else:
-        print('  qualified_baseline already set — preserving existing baseline', file=sys.stderr)
-
-with open(reg_path, 'w') as f:
-    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
-" 2>&1
-
-    # Validate before swapping
-    export _FB_TMP_REG_VAL="$tmp_reg"
-    python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG_VAL']))" || { echo "Error: registry validation failed" >&2; return 1; }
-    mv "$tmp_reg" "$MODEL_REGISTRY"
-  }
-
-  # Atomic registry update under flock
   (
     flock -x 201
     export _FB_SLUG="$model_slug"

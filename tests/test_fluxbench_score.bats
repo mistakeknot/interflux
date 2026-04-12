@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+bats_require_minimum_version 1.5.0
 
 setup() {
     SCRIPT_DIR="${BATS_TEST_DIRNAME}/../scripts"
@@ -80,10 +81,16 @@ JSON
           "${TMPDIR_SCORE}/baseline-${i}.json" "${TMPDIR_SCORE}/result-${i}.json" &
     done
     wait
+    # Exactly 10 lines
     lines=$(wc -l < "${FLUXBENCH_RESULTS_JSONL}")
     [ "$lines" -eq 10 ]
-    run jq -e '.' "${FLUXBENCH_RESULTS_JSONL}"
-    [ "$status" -eq 0 ]
+    # Each line must be valid JSON with correct model_slug
+    while IFS= read -r line; do
+        echo "$line" | jq -e '.model_slug' >/dev/null 2>&1
+    done < "${FLUXBENCH_RESULTS_JSONL}"
+    # All 10 model slugs present
+    slugs=$(jq -r '.model_slug' "${FLUXBENCH_RESULTS_JSONL}" | sort -u | wc -l)
+    [ "$slugs" -eq 10 ]
 }
 
 @test "score.sh format-compliance is binary gate" {
@@ -95,4 +102,36 @@ JSON
     [ "$status" -eq 0 ]
     gate=$(jq -r '.gate_results["fluxbench-format-compliance"].passed' "${TMPDIR_SCORE}/result.json")
     [ "$gate" = "false" ]
+}
+
+@test "score.sh fails on invalid qualification output JSON" {
+    echo "not json" > "${TMPDIR_SCORE}/bad-qual.json"
+    cat > "${TMPDIR_SCORE}/baseline.json" <<'JSON'
+    {"findings":[]}
+JSON
+    run bash "${SCRIPT_DIR}/fluxbench-score.sh" "${TMPDIR_SCORE}/bad-qual.json" "${TMPDIR_SCORE}/baseline.json" "${TMPDIR_SCORE}/result.json"
+    [ "$status" -ne 0 ]
+}
+
+@test "score.sh fails when qualification_run_id is missing" {
+    jq -n '{model_slug: "test", findings: [], format_compliance_rate: 1.0, metadata: {}}' > "${TMPDIR_SCORE}/no-id.json"
+    cat > "${TMPDIR_SCORE}/baseline.json" <<'JSON'
+    {"findings":[]}
+JSON
+    run bash "${SCRIPT_DIR}/fluxbench-score.sh" "${TMPDIR_SCORE}/no-id.json" "${TMPDIR_SCORE}/baseline.json" "${TMPDIR_SCORE}/result.json"
+    [ "$status" -ne 0 ]
+}
+
+@test "score.sh detects P0 severity downgrade" {
+    # Model finds the P0 finding but reports it as P1
+    _make_qual_output "test-model" \
+      '[{"severity":"P1","location":"file.py:5","description":"SQL injection vulnerability","category":"security"}]' \
+      > "${TMPDIR_SCORE}/qual-output.json"
+    cat > "${TMPDIR_SCORE}/baseline.json" <<'JSON'
+    {"findings":[{"severity":"P0","location":"file.py:5","description":"SQL injection vulnerability","category":"security"}]}
+JSON
+    run bash "${SCRIPT_DIR}/fluxbench-score.sh" "${TMPDIR_SCORE}/qual-output.json" "${TMPDIR_SCORE}/baseline.json" "${TMPDIR_SCORE}/result.json"
+    [ "$status" -eq 0 ]
+    p0_fail=$(jq -r '.gate_results["fluxbench-finding-recall"].p0_auto_fail' "${TMPDIR_SCORE}/result.json")
+    [ "$p0_fail" = "true" ]
 }

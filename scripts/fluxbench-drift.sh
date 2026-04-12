@@ -12,26 +12,29 @@ if [[ "${3:-}" == "--fleet-check" ]]; then
   fleet_check=true
 fi
 
+# Validate model_slug format (prevent yq injection)
+if [[ ! "$model_slug" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ ]]; then
+  echo "Error: invalid model slug format: $model_slug" >&2
+  exit 1
+fi
+_safe_slug="$model_slug"  # validated above, safe for yq interpolation
+
 registry="${MODEL_REGISTRY:-${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml}"
 metrics_file="${METRICS_FILE:-${SCRIPT_DIR}/../config/flux-drive/fluxbench-metrics.yaml}"
 
 [[ -f "$shadow_result" ]] || { echo "Error: shadow result not found: $shadow_result" >&2; exit 1; }
 [[ -f "$registry" ]]      || { echo "Error: model registry not found: $registry" >&2; exit 1; }
 
-# Read drift config from registry root
-drift_threshold=$(yq -r '.fluxbench.drift_threshold // 0.15' "$registry")
-hysteresis_band=$(yq -r '.fluxbench.hysteresis_band // 0.05' "$registry")
-correlated_drift_threshold=$(yq -r '.fluxbench.correlated_drift_threshold // 0.50' "$registry")
-
-# Read model's qualified baseline
-baseline_json=$(yq -o=json ".models.\"${model_slug}\".qualified_baseline // null" "$registry")
-if [[ "$baseline_json" == "null" || -z "$baseline_json" ]]; then
-  echo "Error: no qualified_baseline for model '$model_slug'" >&2
+# Require yq for registry operations
+if ! command -v yq >/dev/null 2>&1; then
+  echo "Error: yq is required but not found. Install with: pip install yq" >&2
   exit 1
 fi
 
-# Read current drift_flagged state
-drift_flagged=$(yq -r ".models.\"${model_slug}\".drift_flagged // false" "$registry")
+# Read drift config from registry root (root-level config, not per-model)
+drift_threshold=$(yq -r '.fluxbench.drift_threshold // 0.15' "$registry")
+hysteresis_band=$(yq -r '.fluxbench.hysteresis_band // 0.05' "$registry")
+correlated_drift_threshold=$(yq -r '.fluxbench.correlated_drift_threshold // 0.50' "$registry")
 
 # Build higher_is_better map from metrics config
 declare -A higher_is_better_map
@@ -47,19 +50,39 @@ fi
 # Extract current scores from shadow result
 current_metrics=$(jq -c '.metrics // {}' "$shadow_result")
 
-# Compare each baseline metric against current — pass data via env vars (no interpolation)
-export _FB_BASELINE_JSON="$baseline_json"
-export _FB_CURRENT_METRICS="$current_metrics"
-export _FB_DRIFT_THRESHOLD="$drift_threshold"
-export _FB_HYSTERESIS_BAND="$hysteresis_band"
-export _FB_DRIFT_FLAGGED="$drift_flagged"
-export _FB_MODEL_SLUG="$model_slug"
 # Build higher_is_better map as key=value lines
 _hib_lines=""
 for k in "${!higher_is_better_map[@]}"; do _hib_lines+="${k}=${higher_is_better_map[$k]}"$'\n'; done
-export _FB_HIB_MAP="$_hib_lines"
 
-result=$(python3 -c "
+# All registry reads, drift computation, and registry writes under a single
+# exclusive flock to prevent TOCTOU races with concurrent writers.
+# Use a temp file to capture output from the flock subshell.
+_drift_output_file=$(mktemp)
+trap 'rm -f "$_drift_output_file"' EXIT
+
+(
+  flock -x 201
+
+  # Read model's qualified baseline
+  baseline_json=$(yq -o=json ".models.\"${_safe_slug}\".qualified_baseline // null" "$registry")
+  if [[ "$baseline_json" == "null" || -z "$baseline_json" ]]; then
+    echo "Error: no qualified_baseline for model '$_safe_slug'" >&2
+    exit 1
+  fi
+
+  # Read current drift_flagged state
+  drift_flagged=$(yq -r ".models.\"${_safe_slug}\".drift_flagged // false" "$registry")
+
+  # Compare each baseline metric against current — pass data via env vars (no interpolation)
+  export _FB_BASELINE_JSON="$baseline_json"
+  export _FB_CURRENT_METRICS="$current_metrics"
+  export _FB_DRIFT_THRESHOLD="$drift_threshold"
+  export _FB_HYSTERESIS_BAND="$hysteresis_band"
+  export _FB_DRIFT_FLAGGED="$drift_flagged"
+  export _FB_MODEL_SLUG="$_safe_slug"
+  export _FB_HIB_MAP="$_hib_lines"
+
+  _result=$(python3 -c "
 import json, sys, os
 
 baseline = json.loads(os.environ['_FB_BASELINE_JSON'])
@@ -127,29 +150,30 @@ result = {
 print(json.dumps(result))
 ")
 
+  _verdict=$(echo "$_result" | jq -r '.verdict')
+
+  # If drift detected, flag the model in registry
+  if [[ "$_verdict" == "drift_detected" ]]; then
+    cp "$registry" "${registry}.tmp"
+    yq -i ".models.\"${_safe_slug}\".drift_flagged = true" "${registry}.tmp"
+    mv "${registry}.tmp" "$registry"
+  fi
+
+  # If drift cleared, unflag the model
+  if [[ "$_verdict" == "drift_cleared" ]]; then
+    cp "$registry" "${registry}.tmp"
+    yq -i ".models.\"${_safe_slug}\".drift_flagged = false" "${registry}.tmp"
+    mv "${registry}.tmp" "$registry"
+  fi
+
+  echo "$_result" > "$_drift_output_file"
+) 201>"${registry}.lock"
+
+result=$(cat "$_drift_output_file")
 verdict=$(echo "$result" | jq -r '.verdict')
 
-# If drift detected, flag the model in registry
-if [[ "$verdict" == "drift_detected" ]]; then
-  (
-    flock -x 201
-    cp "$registry" "${registry}.tmp"
-    yq -i ".models.\"${model_slug}\".drift_flagged = true" "${registry}.tmp"
-    mv "${registry}.tmp" "$registry"
-  ) 201>"${registry}.lock"
-fi
-
-# If drift cleared, unflag the model
-if [[ "$verdict" == "drift_cleared" ]]; then
-  (
-    flock -x 201
-    cp "$registry" "${registry}.tmp"
-    yq -i ".models.\"${model_slug}\".drift_flagged = false" "${registry}.tmp"
-    mv "${registry}.tmp" "$registry"
-  ) 201>"${registry}.lock"
-fi
-
 # Fleet-check: if drift detected and --fleet-check, check for correlated drift
+# This reads post-write state, so it runs outside the main flock.
 if [[ "$fleet_check" == "true" && "$verdict" == "drift_detected" ]]; then
   export _FB_REGISTRY_PATH="$registry"
   export _FB_CORRELATED_THRESH="$correlated_drift_threshold"

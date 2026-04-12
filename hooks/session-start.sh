@@ -86,18 +86,45 @@ fi
 # --- FluxBench model awareness (lightweight, no API calls) ---
 _if_registry="${HOOK_DIR}/../config/flux-drive/model-registry.yaml"
 if [[ -f "$_if_registry" ]] && command -v python3 &>/dev/null; then
+  export _FB_REGISTRY_PATH="$_if_registry"
   _if_awareness=$(python3 -c "
-import yaml, sys
+import yaml, sys, os
 try:
-    with open('$_if_registry') as f:
+    with open(os.environ['_FB_REGISTRY_PATH']) as f:
         d = yaml.safe_load(f)
     models = d.get('models', {}) or {}
+    msgs = []
+
+    # Check for models needing requalification
     requalify = [k for k, v in models.items() if isinstance(v, dict) and v.get('requalification_needed')]
     if requalify:
         names = ', '.join(requalify[:3])
-        print(f'[fluxbench] {len(requalify)} model(s) need requalification: {names}')
+        msgs.append(f'[fluxbench] {len(requalify)} model(s) need requalification: {names}')
+
+    # Surface new models from interrank not yet in registry
+    # Read task queries from budget config if available
+    budget_path = os.path.join(os.path.dirname(os.environ['_FB_REGISTRY_PATH']), 'budget.yaml')
+    known_slugs = set(models.keys()) if isinstance(models, dict) else set()
+    try:
+        with open(budget_path) as f:
+            budget = yaml.safe_load(f) or {}
+        # interrank recommend_model results are checked at discovery time,
+        # but we can flag models that were discovered but never qualified
+        candidates = [k for k, v in models.items()
+                      if isinstance(v, dict) and v.get('status') == 'candidate'
+                      and not v.get('fluxbench')]
+        if candidates:
+            names = ', '.join(candidates[:3])
+            suffix = f' (+{len(candidates)-3} more)' if len(candidates) > 3 else ''
+            msgs.append(f'[fluxbench] {len(candidates)} unqualified candidate(s): {names}{suffix}')
+    except Exception:
+        pass
+
+    for msg in msgs:
+        print(msg)
 except Exception:
     pass
 " 2>/dev/null) || _if_awareness=""
+  unset _FB_REGISTRY_PATH
   [[ -n "$_if_awareness" ]] && echo "$_if_awareness" >&2
 fi

@@ -37,16 +37,25 @@ _count_runs() {
   jq -c --arg slug "$slug" 'select(.model_slug == $slug)' "$RESULTS_JSONL" 2>/dev/null | wc -l | tr -d ' '
 }
 
-# Atomic registry write under flock fd 201
-# Caller exports env vars consumed by the python snippet passed as $1
-_registry_write() {
-  local py_snippet="$1"
+# Atomic registry write: set a model's status field
+# Args: $1 = model slug, $2 = new status
+_set_model_status() {
+  local slug="$1" new_status="$2"
   (
     flock -x 201
+    _tmp_reg=$(mktemp)
+    trap 'rm -f "$_tmp_reg"' EXIT
+    cp "$MODEL_REGISTRY" "$_tmp_reg"
+
+    export _FB_TMP_REG="$_tmp_reg"
+    export _FB_SLUG="$slug"
+    export _FB_NEW_STATUS="$new_status"
     python3 -c "
 import yaml, json, sys, os
 
-reg_path = os.environ['MODEL_REGISTRY']
+reg_path = os.environ['_FB_TMP_REG']
+slug = os.environ['_FB_SLUG']
+new_status = os.environ['_FB_NEW_STATUS']
 
 with open(reg_path) as f:
     reg = yaml.safe_load(f) or {}
@@ -54,11 +63,69 @@ with open(reg_path) as f:
 if 'models' not in reg or reg['models'] is None:
     reg['models'] = {}
 
-${py_snippet}
+model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
+if model is None and isinstance(reg['models'], list):
+    for m in reg['models']:
+        if isinstance(m, dict) and m.get('model_id', '') == slug:
+            model = m
+            break
+
+if model is not None:
+    model['status'] = new_status
 
 with open(reg_path, 'w') as f:
     yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
 "
+    # Validate before swap
+    python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
+    mv "$_tmp_reg" "$MODEL_REGISTRY"
+  ) 201>"${MODEL_REGISTRY}.lock"
+}
+
+# Atomic registry write: promote a model (set qualified + preserve qualified_via)
+# Args: $1 = model slug
+_promote_model() {
+  local slug="$1"
+  (
+    flock -x 201
+    _tmp_reg=$(mktemp)
+    trap 'rm -f "$_tmp_reg"' EXIT
+    cp "$MODEL_REGISTRY" "$_tmp_reg"
+
+    export _FB_TMP_REG="$_tmp_reg"
+    export _FB_SLUG="$slug"
+    python3 -c "
+import yaml, json, sys, os
+
+reg_path = os.environ['_FB_TMP_REG']
+slug = os.environ['_FB_SLUG']
+
+with open(reg_path) as f:
+    reg = yaml.safe_load(f) or {}
+
+if 'models' not in reg or reg['models'] is None:
+    reg['models'] = {}
+
+model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
+if model is None and isinstance(reg['models'], list):
+    for m in reg['models']:
+        if isinstance(m, dict) and m.get('model_id', '') == slug:
+            model = m
+            break
+
+if model is not None:
+    model['status'] = 'qualified'
+    # Preserve qualified_via on promotion
+    model['qualified_via'] = model.get('qualified_via') or 'unknown'
+    if model['qualified_via'] == 'unknown':
+        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
+
+with open(reg_path, 'w') as f:
+    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
+"
+    # Validate before swap
+    python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
+    mv "$_tmp_reg" "$MODEL_REGISTRY"
   ) 201>"${MODEL_REGISTRY}.lock"
 }
 
@@ -161,18 +228,7 @@ print(json.dumps({
   fi
 
   # Mark as challenger in registry
-  export _FB_SLUG="$selected"
-  _registry_write "
-slug = os.environ['_FB_SLUG']
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-if model is not None:
-    model['status'] = 'challenger'
-"
+  _set_model_status "$selected" "challenger" || { echo "Error: failed to update registry" >&2; return 1; }
 
   echo "Challenger selected: $selected" >&2
 
@@ -199,10 +255,19 @@ _action_evaluate() {
   _require_file "$MODEL_REGISTRY" "model registry"
   _require_file "$BUDGET_CONFIG" "budget config"
 
-  # Read challenger config from budget.yaml (no eval — direct reads)
-  promotion_threshold=$(python3 -c "import yaml,os; d=yaml.safe_load(open(os.environ['BUDGET_CONFIG'])) or {}; print(d.get('challenger',{}).get('promotion_threshold',10))")
-  early_exit_margin=$(python3 -c "import yaml,os; d=yaml.safe_load(open(os.environ['BUDGET_CONFIG'])) or {}; print(d.get('challenger',{}).get('early_exit_margin',0.20))")
-  stale_threshold=$(python3 -c "import yaml,os; d=yaml.safe_load(open(os.environ['BUDGET_CONFIG'])) or {}; print(d.get('challenger',{}).get('stale_threshold',20))")
+  # Read challenger config from budget.yaml (single subprocess)
+  _budget_vals=$(python3 -c "
+import yaml, os
+with open(os.environ['BUDGET_CONFIG']) as f:
+    d = yaml.safe_load(f) or {}
+c = d.get('challenger', {})
+print(c.get('promotion_threshold', 10))
+print(c.get('early_exit_margin', 0.20))
+print(c.get('stale_threshold', 20))
+")
+  promotion_threshold=$(echo "$_budget_vals" | sed -n '1p')
+  early_exit_margin=$(echo "$_budget_vals" | sed -n '2p')
+  stale_threshold=$(echo "$_budget_vals" | sed -n '3p')
 
   run_count=$(_count_runs "$model_slug")
 
@@ -212,6 +277,7 @@ _action_evaluate() {
     if [[ "$run_count" -ge 5 ]] && [[ -f "$RESULTS_JSONL" ]]; then
       export _FB_SLUG="$model_slug"
       export _FB_EARLY_MARGIN="$early_exit_margin"
+      export _FB_PROMO_THRESH="$promotion_threshold"
 
       early_exit=$(python3 -c "
 import json, sys, os
@@ -219,6 +285,7 @@ import json, sys, os
 slug = os.environ['_FB_SLUG']
 results_path = os.environ['RESULTS_JSONL']
 early_margin = float(os.environ['_FB_EARLY_MARGIN'])
+promo_thresh = int(os.environ.get('_FB_PROMO_THRESH', '10'))
 
 with open(results_path) as f:
     lines = [json.loads(l) for l in f if l.strip()]
@@ -228,10 +295,8 @@ if not model_runs:
     print('false')
     sys.exit(0)
 
-# Check all 5 core gate results across recent runs
-# Use the most recent run's gate_results
-latest = model_runs[-1]
-gates = latest.get('gate_results', {})
+# Aggregate gate pass rates across recent runs
+window = model_runs[-min(len(model_runs), promo_thresh):]
 
 core_gates = [
     'fluxbench-format-compliance',
@@ -241,23 +306,52 @@ core_gates = [
     'fluxbench-persona-adherence',
 ]
 
+gate_pass_rates = {}
+for gate_name in core_gates:
+    passes = 0
+    total = 0
+    for run in window:
+        gates = run.get('gate_results', {})
+        gate = gates.get(gate_name, {})
+        passed = gate.get('passed')
+        if passed is None:
+            continue  # skip uncomputed gates
+        total += 1
+        if passed:
+            passes += 1
+    if total > 0:
+        gate_pass_rates[gate_name] = passes / total
+
+# All gates must pass >= 70% of the time
+all_pass = all(rate >= 0.70 for rate in gate_pass_rates.values()) if gate_pass_rates else False
+
+if not all_pass:
+    print('false')
+    sys.exit(0)
+
+# Early-exit margin check: average metric values across window must exceed threshold by margin
 all_pass_by_margin = True
 for gate_name in core_gates:
-    gate = gates.get(gate_name, {})
-    value = gate.get('value')
-    threshold = gate.get('threshold')
-    passed = gate.get('passed')
-    if value is None or threshold is None or passed is None:
+    values = []
+    thresholds = []
+    for run in window:
+        gates = run.get('gate_results', {})
+        gate = gates.get(gate_name, {})
+        value = gate.get('value')
+        threshold = gate.get('threshold')
+        if value is not None and threshold is not None:
+            values.append(float(value))
+            thresholds.append(float(threshold))
+    if not values:
         continue  # skip uncomputed gates
-    if not passed:
-        all_pass_by_margin = False
-        break
+    avg_value = sum(values) / len(values)
+    avg_threshold = sum(thresholds) / len(thresholds)
     # Check margin: for higher-is-better, value should exceed threshold by margin
     # For lower-is-better (false_positive_rate), threshold should exceed value by margin
     if 'false-positive' in gate_name:
-        margin = float(threshold) - float(value)
+        margin = avg_threshold - avg_value
     else:
-        margin = float(value) - float(threshold)
+        margin = avg_value - avg_threshold
     if margin < early_margin:
         all_pass_by_margin = False
         break
@@ -267,21 +361,7 @@ print('true' if all_pass_by_margin else 'false')
 
       if [[ "$early_exit" == "true" ]]; then
         # Fast-track promote
-        _registry_write "
-slug = os.environ['_FB_SLUG']
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-if model is not None:
-    model['status'] = 'qualified'
-    # Preserve qualified_via on promotion
-    model['qualified_via'] = model.get('qualified_via') or 'unknown'
-    if model['qualified_via'] == 'unknown':
-        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
-"
+        _promote_model "$model_slug" || { echo "Error: failed to promote $model_slug" >&2; return 1; }
         echo "Early exit: promoted $model_slug after $run_count runs" >&2
         jq -n \
           --arg slug "$model_slug" \
@@ -310,6 +390,7 @@ if model is not None:
 
   export _FB_SLUG="$model_slug"
   export _FB_STALE="$stale_threshold"
+  export _FB_PROMO_THRESH="$promotion_threshold"
 
   verdict=$(python3 -c "
 import json, sys, os
@@ -317,6 +398,7 @@ import json, sys, os
 slug = os.environ['_FB_SLUG']
 results_path = os.environ['RESULTS_JSONL']
 stale_threshold = int(os.environ['_FB_STALE'])
+promo_thresh = int(os.environ.get('_FB_PROMO_THRESH', '10'))
 
 with open(results_path) as f:
     lines = [json.loads(l) for l in f if l.strip()]
@@ -324,9 +406,12 @@ with open(results_path) as f:
 model_runs = [r for r in lines if r.get('model_slug') == slug]
 run_count = len(model_runs)
 
-# Check all core gates across recent runs (use latest)
-latest = model_runs[-1] if model_runs else {}
-gates = latest.get('gate_results', {})
+if not model_runs:
+    print(json.dumps({'verdict': 'failing', 'model': slug, 'runs': 0, 'failed_gates': []}))
+    sys.exit(0)
+
+# Aggregate gate pass rates across recent runs
+window = model_runs[-min(len(model_runs), promo_thresh):]
 
 core_gates = [
     'fluxbench-format-compliance',
@@ -336,16 +421,25 @@ core_gates = [
     'fluxbench-persona-adherence',
 ]
 
-all_pass = True
-failed_gates = []
+gate_pass_rates = {}
 for gate_name in core_gates:
-    gate = gates.get(gate_name, {})
-    passed = gate.get('passed')
-    if passed is None:
-        continue  # skip uncomputed gates (e.g., persona-adherence)
-    if not passed:
-        all_pass = False
-        failed_gates.append(gate_name)
+    passes = 0
+    total = 0
+    for run in window:
+        gates = run.get('gate_results', {})
+        gate = gates.get(gate_name, {})
+        passed = gate.get('passed')
+        if passed is None:
+            continue  # skip uncomputed gates
+        total += 1
+        if passed:
+            passes += 1
+    if total > 0:
+        gate_pass_rates[gate_name] = passes / total
+
+# All gates must pass >= 70% of the time
+all_pass = all(rate >= 0.70 for rate in gate_pass_rates.values()) if gate_pass_rates else False
+failed_gates = [g for g, r in gate_pass_rates.items() if r < 0.70]
 
 if all_pass:
     print(json.dumps({'verdict': 'promoted', 'model': slug, 'runs': run_count}))
@@ -360,35 +454,10 @@ else:
 
   # Update registry based on verdict
   if [[ "$verdict_type" == "promoted" ]]; then
-    _registry_write "
-slug = os.environ['_FB_SLUG']
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-if model is not None:
-    model['status'] = 'qualified'
-    # Preserve qualified_via on promotion
-    model['qualified_via'] = model.get('qualified_via') or 'unknown'
-    if model['qualified_via'] == 'unknown':
-        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
-"
+    _promote_model "$model_slug" || { echo "Error: failed to promote $model_slug" >&2; return 1; }
     echo "Promoted $model_slug to qualified" >&2
   elif [[ "$verdict_type" == "rejected" ]]; then
-    _registry_write "
-slug = os.environ['_FB_SLUG']
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-if model is not None:
-    model['status'] = 'rejected'
-    model['qualified_via'] = model.get('qualified_via') or 'unknown'
-"
+    _set_model_status "$model_slug" "rejected" || { echo "Error: failed to reject $model_slug" >&2; return 1; }
     echo "Rejected $model_slug after exceeding stale threshold" >&2
   fi
 

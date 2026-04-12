@@ -41,7 +41,7 @@ core_gates:
     type: llm_judge
     description: "Domain persona adherence vs generic analysis (0-1, LLM-judged)"
     threshold_default: 0.60
-    gate: true
+    gate: false  # Informational until LLM judge is wired up — score.sh emits null
     higher_is_better: true
     judge_model: haiku
 
