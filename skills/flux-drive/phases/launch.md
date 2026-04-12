@@ -110,6 +110,46 @@ Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as paral
 
 Wait for Stage 1 agents to complete (use the monitoring from Step 2.3).
 
+### Step 2.2-challenger: FluxBench challenger shadow dispatch [review only]
+
+OPTIONAL — progressive enhancement. Skip if any: budget.yaml `challenger.enabled: false`, `challenger.slots: 0`, no model-registry.yaml, or `cross_model_dispatch.enabled: false`.
+
+After Stage 1 agents are dispatched (Step 2.2), check for an active challenger:
+
+```bash
+challenger_json=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/fluxbench-challenger.sh" select 2>/dev/null) || challenger_json=""
+selected=$(echo "$challenger_json" | jq -r '.selected // empty' 2>/dev/null)
+```
+
+**If `selected` is non-empty:**
+1. Read `prompt_content_policy` and `eligible_tiers` from the JSON
+2. Pick an eligible agent role for the challenger to shadow (must not be in `safety_exclusions`):
+   - Prefer a Stage 1 agent whose role matches an `eligible_tiers` entry
+   - If no eligible Stage 1 agent, skip challenger dispatch
+3. Build the challenger prompt:
+   - Use the same document/diff content as the shadowed agent
+   - Use the shadowed agent's system prompt (from its agent .md file)
+   - If `prompt_content_policy: fixtures_only`, use only fixture-style content (code blocks, no proprietary context)
+   - If `prompt_content_policy: sanitized_diff`, strip file paths to relative, redact secrets
+   - If `prompt_content_policy: full_document`, use full content (same as shadowed agent)
+4. Dispatch via the **openrouter-dispatch MCP server** (NOT the Agent tool — the challenger runs on a non-Claude model):
+   ```
+   Call MCP tool: mcp__plugin_interflux_openrouter-dispatch__review_with_model
+     model_id: <selected model's OpenRouter ID>
+     system_prompt: <shadowed agent's system prompt>
+     prompt: <review content>
+     max_tokens: 4096
+   ```
+   Run this in the background (non-blocking). The MCP call is async — don't wait for it before proceeding to Stage 2.
+5. When the challenger response arrives, write to `{OUTPUT_DIR}/challenger-{model_slug}.md` and record:
+   ```bash
+   # Append to JSONL
+   echo '{"model_slug":"<slug>","fixture_id":"live-review","timestamp":"<iso>","agent_type":"<shadowed-role>","gate_results":{}}' >> "${FLUXBENCH_RESULTS_JSONL:-data/fluxbench-results.jsonl}"
+   ```
+6. The challenger's output is **NOT included in synthesis** — it runs in shadow only. Its findings are logged for FluxBench evaluation but don't affect the review verdict.
+
+**After enough runs** (>= `promotion_threshold`), the orchestrator can run `fluxbench-challenger.sh evaluate <slug>` to check promotion readiness. This is typically done by the weekly automation (fyo3.10), not inline.
+
 ### Step 2.2a: Research context dispatch (optional, between stages) [review only]
 
 OPTIONAL — read `references/progressive-enhancements.md` § Step 2.2a for trigger conditions, agent selection, and injection format. Max 2 dispatches between stages. Skip in research mode and when all findings are P2/improvements.

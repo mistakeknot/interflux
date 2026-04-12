@@ -99,7 +99,7 @@ models:
     eligible_tiers:
     - checker
     - analytical
-    status: candidate
+    status: challenger
     discovered: '2026-04-12'
     interrank_score: 0.804
     interrank_confidence: 0.6

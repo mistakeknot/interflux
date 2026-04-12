@@ -280,6 +280,7 @@ Read `phases/launch.md` for the full launch protocol. The launch phase respects 
 - Step 2.1b: For slicing-eligible diffs, apply diff slicing per `phases/slicing.md`
 - Step 2.1c: For documents >200 lines, apply document slicing (section_map per agent)
 - Step 2.2: Monitor completion via `flux-watch.sh` (inotifywait, fallback 5s polling), expand Stage 2 if severity warrants
+- Step 2.2-challenger: FluxBench shadow dispatch — if `challenger.enabled` and a model is selected via `fluxbench-challenger.sh select`, dispatch it via openrouter-dispatch MCP to shadow an eligible Stage 1 agent. Output excluded from synthesis; logged to JSONL for evaluation.
 - Step 2.2a: Research context dispatch between stages
 - Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates (threshold 0.6)
 - Step 2.2a.6: **Incremental expansion** — speculative Stage 2 launch (max 2) as Stage 1 results arrive
