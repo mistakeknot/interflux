@@ -96,6 +96,10 @@ for slug, model in model_items:
     status = model.get('status', '')
     if status not in ('qualifying', 'auto-qualified'):
         continue
+    # Only consider models qualified via real inference
+    qual_via = model.get('qualified_via')
+    if qual_via != 'real':
+        continue
     fb = model.get('fluxbench')
     if not fb or not isinstance(fb, dict):
         continue
@@ -129,7 +133,10 @@ print(json.dumps({
     'avg_score': best['avg_score'],
     'status': best['status'],
     'pre_inclusion_runs': pre_inclusion_runs,
-    'candidates_evaluated': len(candidates)
+    'candidates_evaluated': len(candidates),
+    'provider': best['model'].get('provider', 'unknown'),
+    'prompt_content_policy': best['model'].get('prompt_content_policy', 'fixtures_only'),
+    'eligible_tiers': best['model'].get('eligible_tiers', []),
 }))
 " 2>&1)
 
@@ -171,12 +178,18 @@ if model is not None:
 
   avg_score=$(echo "$result" | jq -r '.avg_score')
   candidates_evaluated=$(echo "$result" | jq -r '.candidates_evaluated')
+  provider=$(echo "$result" | jq -r '.provider')
+  prompt_content_policy=$(echo "$result" | jq -r '.prompt_content_policy')
+  eligible_tiers=$(echo "$result" | jq -c '.eligible_tiers')
   jq -n \
     --arg slug "$selected" \
     --argjson avg_score "$avg_score" \
     --argjson runs "$run_count" \
     --argjson candidates_evaluated "$candidates_evaluated" \
-    '{"selected": $slug, "avg_score": $avg_score, "runs": $runs, "candidates_evaluated": $candidates_evaluated}'
+    --arg provider "$provider" \
+    --arg prompt_content_policy "$prompt_content_policy" \
+    --argjson eligible_tiers "$eligible_tiers" \
+    '{"selected": $slug, "avg_score": $avg_score, "runs": $runs, "candidates_evaluated": $candidates_evaluated, "provider": $provider, "prompt_content_policy": $prompt_content_policy, "eligible_tiers": $eligible_tiers}'
 }
 
 # --- Action: evaluate ---
@@ -264,6 +277,10 @@ if model is None and isinstance(reg['models'], list):
             break
 if model is not None:
     model['status'] = 'qualified'
+    # Preserve qualified_via on promotion
+    model['qualified_via'] = model.get('qualified_via') or 'unknown'
+    if model['qualified_via'] == 'unknown':
+        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
 "
         echo "Early exit: promoted $model_slug after $run_count runs" >&2
         jq -n \
@@ -353,6 +370,10 @@ if model is None and isinstance(reg['models'], list):
             break
 if model is not None:
     model['status'] = 'qualified'
+    # Preserve qualified_via on promotion
+    model['qualified_via'] = model.get('qualified_via') or 'unknown'
+    if model['qualified_via'] == 'unknown':
+        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
 "
     echo "Promoted $model_slug to qualified" >&2
   elif [[ "$verdict_type" == "rejected" ]]; then
@@ -366,6 +387,7 @@ if model is None and isinstance(reg['models'], list):
             break
 if model is not None:
     model['status'] = 'rejected'
+    model['qualified_via'] = model.get('qualified_via') or 'unknown'
 "
     echo "Rejected $model_slug after exceeding stale threshold" >&2
   fi

@@ -69,6 +69,7 @@ incremental_expansion:
 cross_model_dispatch:
   enabled: true
   mode: shadow    # shadow = log adjustments without applying | enforce = apply adjustments
+  # enforce_since: null  # Set automatically when mode first switched to enforce
 
 # Model discovery — automatic Pareto-efficient model scouting via interrank/AgMoDB
 # Queries interrank MCP for best models per agent tier, writes candidates to model-registry.yaml.

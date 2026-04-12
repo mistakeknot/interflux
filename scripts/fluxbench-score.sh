@@ -72,22 +72,52 @@ def normalize_location(loc):
     loc = loc.lstrip('./')
     return loc.lower()
 
-def match_score(m, b):
-    loc_match = normalize_location(m.get('location', '')) == normalize_location(b.get('location', ''))
-    if not loc_match:
+def parse_loc_parts(loc):
+    \"\"\"Split 'file.py:10-12' into (file, start_line) or (file, None).\"\"\"
+    parts = loc.split(':')
+    if len(parts) < 2:
+        return (loc, None)
+    try:
+        line = int(parts[1].split('-')[0])
+        return (parts[0], line)
+    except ValueError:
+        return (parts[0], None)
+
+def location_score(m_loc, b_loc):
+    \"\"\"Fuzzy location matching: exact=1.0, same file ±5 lines=0.5-0.9, else 0.\"\"\"
+    m_norm = normalize_location(m_loc)
+    b_norm = normalize_location(b_loc)
+    if m_norm == b_norm:
+        return 1.0
+    m_file, m_line = parse_loc_parts(m_norm)
+    b_file, b_line = parse_loc_parts(b_norm)
+    if m_file != b_file:
         return 0.0
+    if m_line is not None and b_line is not None:
+        delta = abs(m_line - b_line)
+        if delta <= 5:
+            return max(0.5, 1.0 - delta * 0.1)
+    return 0.0
+
+def match_score(m, b):
     desc_ratio = SequenceMatcher(None,
         m.get('description', '').lower(),
         b.get('description', '').lower()
     ).ratio()
-    return desc_ratio
+    loc_s = location_score(m.get('location', ''), b.get('location', ''))
+    if loc_s > 0:
+        return loc_s * desc_ratio
+    # Location mismatch but high description similarity — credit with penalty
+    if desc_ratio >= 0.60:
+        return 0.4 * desc_ratio
+    return 0.0
 
 # Greedy bipartite matching: best match first, no credit-stacking
 matches = []  # (model_idx, baseline_idx, score)
 for mi, mf in enumerate(model_findings):
     for bi, bf in enumerate(baseline_findings):
         s = match_score(mf, bf)
-        if s >= 0.70:
+        if s >= 0.20:
             matches.append((mi, bi, s))
 
 # Sort by score descending, greedily assign

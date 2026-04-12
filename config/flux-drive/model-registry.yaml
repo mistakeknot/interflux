@@ -14,11 +14,12 @@ providers:
   claude:
     type: native               # dispatched via Agent tool (Claude Code built-in)
     tier: top                  # top-tier: safety floors, judgment-critical agents
-  # openrouter:                # uncomment when MCP server built
-  #   type: mcp                # dispatched via openrouter-dispatch MCP server
-  #   tier: standard           # standard: analytical and checker agents only
-  #   endpoint: openrouter     # MCP server name
-  #   rate_limit: 20           # max concurrent requests (free tier: 20/min)
+  openrouter:
+    type: mcp
+    tier: standard
+    endpoint: openrouter-dispatch
+    rate_limit: 20
+    spend_ceiling_usd: 1.00
 
 # Model candidates (populated by discover-models.sh, editable manually)
 # Each entry: model_id, provider, model_family, tier, status, qualification data
@@ -39,6 +40,8 @@ models: {}
   #     finding_recall: null            # % of Claude findings also found by this model
   #     severity_accuracy: null         # % of severity ratings matching Claude baseline
   #     qualified_date: null
+  #   qualified_via: null           # real | mock — set by qualify.sh, enforce gate requires "real"
+  #   prompt_content_policy: fixtures_only  # fixtures_only | sanitized_diff | full_document
   #   # FluxBench scores (written by fluxbench-score.sh)
   #   fluxbench:
   #     format_compliance: null

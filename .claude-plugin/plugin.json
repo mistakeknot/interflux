@@ -57,6 +57,16 @@
       "env": {
         "EXA_API_KEY": "${EXA_API_KEY}"
       }
+    },
+    "openrouter-dispatch": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/launch-openrouter.sh",
+      "args": [],
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
+        "OPENROUTER_RATE_LIMIT": "20",
+        "OPENROUTER_SPEND_CEILING_USD": "1.00"
+      }
     }
   }
 }

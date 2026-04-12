@@ -1,32 +1,323 @@
 #!/usr/bin/env bash
 # fluxbench-calibrate.sh — calibrate FluxBench thresholds from ground-truth fixtures
-# Usage: fluxbench-calibrate.sh --fixtures-dir <dir> --output <thresholds.yaml> [--mock]
+# Usage:
+#   fluxbench-calibrate.sh --fixtures-dir <dir> --output <thresholds.yaml> --mock
+#   fluxbench-calibrate.sh --emit --fixtures-dir <dir> --output <thresholds.yaml>
+#   fluxbench-calibrate.sh --score --work-dir <dir> --output <thresholds.yaml>
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${SCRIPT_DIR}/../config/flux-drive"
 
 # --- Argument parsing ---
 fixtures_dir=""
 output_file=""
+work_dir=""
 mock_mode=false
+emit_mode=false
+score_mode=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fixtures-dir) fixtures_dir="$2"; shift 2 ;;
     --output)       output_file="$2"; shift 2 ;;
+    --work-dir)     work_dir="$2"; shift 2 ;;
     --mock)         mock_mode=true; shift ;;
+    --emit)         emit_mode=true; shift ;;
+    --score)        score_mode=true; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
+# Validate mutually exclusive modes
+mode_count=0
+[[ "$mock_mode" == "true" ]] && mode_count=$((mode_count + 1))
+[[ "$emit_mode" == "true" ]] && mode_count=$((mode_count + 1))
+[[ "$score_mode" == "true" ]] && mode_count=$((mode_count + 1))
+
+if [[ "$mode_count" -eq 0 ]]; then
+  echo "Error: one of --mock, --emit, or --score is required" >&2
+  exit 1
+fi
+if [[ "$mode_count" -gt 1 ]]; then
+  echo "Error: --mock, --emit, and --score are mutually exclusive" >&2
+  exit 1
+fi
+
+# --- Shared: compute_percentile ---
+# p25 = 25th percentile (conservative — achievable by 75% of runs)
+# For false-positive-rate: higher_is_worse, so use p75 instead (75th percentile = the worst 25%)
+compute_percentile() {
+  local percentile="$1"
+  shift
+  local -a values=("$@")
+  python3 -c "
+import sys
+percentile = float(sys.argv[1])
+values = sorted([float(v) for v in sys.argv[2:]])
+n = len(values)
+if n == 0:
+    print(0.0)
+elif n == 1:
+    print(values[0])
+else:
+    p = percentile / 100.0
+    idx = p * (n - 1)
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    result = values[lo] + frac * (values[hi] - values[lo])
+    print(round(result, 4))
+" "$percentile" "${values[@]}"
+}
+
+# --- Shared: resolve agent_type from agent-roles.yaml ---
+# Builds a lookup of agent_name -> role from agent-roles.yaml
+_resolve_agent_type() {
+  local agent_type="$1"
+  local roles_file="${CONFIG_DIR}/agent-roles.yaml"
+  if [[ -f "$roles_file" ]] && command -v yq >/dev/null 2>&1; then
+    # Check if the agent_type matches a known role name
+    local found
+    found=$(yq -r ".roles.\"${agent_type}\" // empty" "$roles_file" 2>/dev/null || true)
+    if [[ -n "$found" && "$found" != "null" ]]; then
+      echo "$agent_type"
+      return
+    fi
+  fi
+  # Fall back to the agent_type from ground-truth.json as-is
+  echo "$agent_type"
+}
+
+# ============================================================
+# --emit mode: output JSON descriptors for orchestrator
+# ============================================================
+if [[ "$emit_mode" == "true" ]]; then
+  [[ -n "$fixtures_dir" ]] || { echo "Error: --fixtures-dir required for --emit" >&2; exit 1; }
+  [[ -n "$output_file" ]]  || { echo "Error: --output required for --emit" >&2; exit 1; }
+  [[ -d "$fixtures_dir" ]] || { echo "Error: fixtures directory not found: $fixtures_dir" >&2; exit 1; }
+
+  work_dir="$(mktemp -d /tmp/fluxbench-cal-XXXX)"
+  manifest_entries=()
+
+  for fixture_dir in "$fixtures_dir"/fixture-*/; do
+    [[ -d "$fixture_dir" ]] || continue
+    gt_file="${fixture_dir}/ground-truth.json"
+    [[ -f "$gt_file" ]] || { echo "Warning: no ground-truth.json in $fixture_dir, skipping" >&2; continue; }
+
+    fixture_id="$(basename "$fixture_dir")"
+    abs_fixture_dir="$(cd "$fixture_dir" && pwd)"
+
+    # Read agent_type from ground-truth
+    agent_type=$(jq -r '.agent_type // "unknown"' "$gt_file")
+    agent_type=$(_resolve_agent_type "$agent_type")
+
+    # Document path
+    doc_path="${abs_fixture_dir}/document.md"
+    if [[ ! -f "$doc_path" ]]; then
+      doc_path=""
+    fi
+
+    # Create response directory
+    response_dir="${work_dir}/${fixture_id}"
+    mkdir -p "$response_dir"
+    response_path="${response_dir}/response.json"
+    gt_abs_path="$(cd "$(dirname "$gt_file")" && pwd)/$(basename "$gt_file")"
+
+    # Build descriptor JSON via env vars (P0 injection safety)
+    export _FB_FIXTURE_ID="$fixture_id"
+    export _FB_DOC_PATH="$doc_path"
+    export _FB_AGENT_TYPE="$agent_type"
+    export _FB_RESPONSE_PATH="$response_path"
+    export _FB_GT_PATH="$gt_abs_path"
+    descriptor=$(python3 -c "
+import json, os
+d = {
+    'action': 'calibrate',
+    'fixture_id': os.environ['_FB_FIXTURE_ID'],
+    'document_path': os.environ['_FB_DOC_PATH'],
+    'agent_type': os.environ['_FB_AGENT_TYPE'],
+    'response_path': os.environ['_FB_RESPONSE_PATH'],
+    'ground_truth_path': os.environ['_FB_GT_PATH']
+}
+print(json.dumps(d, separators=(',', ':')))
+")
+    unset _FB_FIXTURE_ID _FB_DOC_PATH _FB_AGENT_TYPE _FB_RESPONSE_PATH _FB_GT_PATH
+
+    # Output descriptor to stdout
+    echo "$descriptor"
+    manifest_entries+=("$descriptor")
+  done
+
+  if [[ ${#manifest_entries[@]} -eq 0 ]]; then
+    echo "Error: no fixtures found in $fixtures_dir" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  # Write manifest
+  export _FB_MANIFEST_ENTRIES="$(printf '%s\n' "${manifest_entries[@]}")"
+  export _FB_WORK_DIR="$work_dir"
+  python3 -c "
+import json, os
+lines = os.environ['_FB_MANIFEST_ENTRIES'].strip().split('\n')
+entries = [json.loads(line) for line in lines if line.strip()]
+with open(os.path.join(os.environ['_FB_WORK_DIR'], 'manifest.json'), 'w') as f:
+    json.dump(entries, f, indent=2)
+"
+  unset _FB_MANIFEST_ENTRIES _FB_WORK_DIR
+
+  echo "Work directory: ${work_dir}" >&2
+  echo "Score with: fluxbench-calibrate.sh --score --work-dir ${work_dir} --output ${output_file}" >&2
+  exit 0
+fi
+
+# ============================================================
+# --score mode: read completed responses, compute thresholds
+# ============================================================
+if [[ "$score_mode" == "true" ]]; then
+  [[ -n "$work_dir" ]]    || { echo "Error: --work-dir required for --score" >&2; exit 1; }
+  [[ -n "$output_file" ]] || { echo "Error: --output required for --score" >&2; exit 1; }
+  [[ -d "$work_dir" ]]    || { echo "Error: work directory not found: $work_dir" >&2; exit 1; }
+
+  manifest_file="${work_dir}/manifest.json"
+  [[ -f "$manifest_file" ]] || { echo "Error: manifest.json not found in $work_dir" >&2; exit 1; }
+
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' EXIT
+
+  declare -a scores_format scores_recall scores_fp scores_severity scores_persona
+  fixture_count=0
+
+  # Read manifest entries
+  entry_count=$(jq 'length' "$manifest_file")
+
+  for ((i=0; i<entry_count; i++)); do
+    fixture_id=$(jq -r ".[$i].fixture_id" "$manifest_file")
+    response_path=$(jq -r ".[$i].response_path" "$manifest_file")
+    gt_path=$(jq -r ".[$i].ground_truth_path" "$manifest_file")
+
+    # Check response file exists
+    if [[ ! -f "$response_path" ]]; then
+      echo "Warning: response not found for $fixture_id at $response_path, skipping" >&2
+      continue
+    fi
+
+    run_id="calibrate-${fixture_id}-$(date -u +%s)"
+
+    # Build qual-output from response file (response has findings array)
+    qual_output="${tmpdir}/${fixture_id}-qual-output.json"
+
+    export _FB_RESPONSE_FILE="$response_path"
+    export _FB_RUN_ID="$run_id"
+    export _FB_FIXTURE_ID="$fixture_id"
+    python3 -c "
+import json, os, sys
+
+response = json.load(open(os.environ['_FB_RESPONSE_FILE']))
+run_id = os.environ['_FB_RUN_ID']
+fixture_id = os.environ['_FB_FIXTURE_ID']
+
+# Response may already be in qual-output format or just have findings
+findings = response.get('findings', [])
+format_compliance = response.get('format_compliance_rate', 1.0)
+model_slug = response.get('model_slug', 'calibration-score')
+
+qual = {
+    'metadata': {
+        'qualification_run_id': run_id,
+        'fixture_id': fixture_id,
+        'source': 'calibration-score'
+    },
+    'model_slug': model_slug,
+    'format_compliance_rate': format_compliance,
+    'findings': findings
+}
+
+json.dump(qual, sys.stdout, indent=2)
+" > "$qual_output"
+    unset _FB_RESPONSE_FILE _FB_RUN_ID _FB_FIXTURE_ID
+
+    # Score against ground-truth
+    result_file="${tmpdir}/${fixture_id}-result.json"
+
+    bash "${SCRIPT_DIR}/fluxbench-score.sh" "$qual_output" "$gt_path" "$result_file" 2>/dev/null || {
+      echo "Warning: scoring failed for $fixture_id, skipping" >&2
+      continue
+    }
+
+    # Extract metric values
+    fmt=$(jq -r '.metrics."fluxbench-format-compliance"' "$result_file")
+    rec=$(jq -r '.metrics."fluxbench-finding-recall"' "$result_file")
+    fp=$(jq -r '.metrics."fluxbench-false-positive-rate"' "$result_file")
+    sev=$(jq -r '.metrics."fluxbench-severity-accuracy"' "$result_file")
+    per=$(jq -r '.metrics."fluxbench-persona-adherence" // 1.0' "$result_file")
+    [[ "$per" == "null" ]] && per="1.0"
+
+    scores_format+=("$fmt")
+    scores_recall+=("$rec")
+    scores_fp+=("$fp")
+    scores_severity+=("$sev")
+    scores_persona+=("$per")
+
+    fixture_count=$((fixture_count + 1))
+    echo "Scored: $fixture_id (recall=$rec fp=$fp severity=$sev format=$fmt)" >&2
+  done
+
+  if [[ "$fixture_count" -eq 0 ]]; then
+    echo "Error: no fixtures scored (check that response files exist in $work_dir)" >&2
+    exit 1
+  fi
+
+  echo "Scored $fixture_count fixtures" >&2
+
+  # Compute p25 thresholds
+  t_format=$(compute_percentile 25 "${scores_format[@]}")
+  t_recall=$(compute_percentile 25 "${scores_recall[@]}")
+  t_fp=$(compute_percentile 75 "${scores_fp[@]}")
+  t_severity=$(compute_percentile 25 "${scores_severity[@]}")
+  t_persona=$(compute_percentile 25 "${scores_persona[@]}")
+
+  # Threshold guard: warn if overwriting claude-baseline with claude-baseline
+  if [[ -f "$output_file" ]] && command -v yq >/dev/null 2>&1; then
+    existing_source=$(yq -r '.source' "$output_file" 2>/dev/null || true)
+    if [[ "$existing_source" == "claude-baseline" ]]; then
+      echo "Warning: overwriting existing claude-baseline thresholds — check for regression" >&2
+    fi
+  fi
+
+  calibrated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  # Write output thresholds YAML
+  mkdir -p "$(dirname "$output_file")"
+
+  cat > "$output_file" <<YAML
+# FluxBench Thresholds — scored from ${fixture_count} fixtures
+# Generated by: fluxbench-calibrate.sh --score
+# Calibration date: ${calibrated_at}
+version: 1
+source: claude-baseline
+calibrated_at: "${calibrated_at}"
+fixture_count: ${fixture_count}
+
+thresholds:
+  fluxbench-format-compliance: ${t_format}
+  fluxbench-finding-recall: ${t_recall}
+  fluxbench-false-positive-rate: ${t_fp}
+  fluxbench-severity-accuracy: ${t_severity}
+  fluxbench-persona-adherence: ${t_persona}
+YAML
+
+  echo "Thresholds written to $output_file (source: claude-baseline, fixtures: $fixture_count)" >&2
+  exit 0
+fi
+
+# ============================================================
+# --mock mode: single-pass calibration from ground-truth
+# ============================================================
 [[ -n "$fixtures_dir" ]] || { echo "Error: --fixtures-dir required" >&2; exit 1; }
 [[ -n "$output_file" ]]  || { echo "Error: --output required" >&2; exit 1; }
 [[ -d "$fixtures_dir" ]] || { echo "Error: fixtures directory not found: $fixtures_dir" >&2; exit 1; }
-
-if [[ "$mock_mode" != "true" ]]; then
-  echo "Error: Real model invocation not yet supported. Use --mock for testing." >&2
-  exit 1
-fi
 
 # --- Collect scores across all fixtures ---
 tmpdir="$(mktemp -d)"
@@ -49,16 +340,19 @@ for fixture_dir in "$fixtures_dir"/fixture-*/; do
   # The ground-truth IS the model output, so all scores should be perfect
   qual_output="${tmpdir}/${fixture_id}-qual-output.json"
 
-  # Convert ground-truth to qualification output format
+  # Convert ground-truth to qualification output format (env vars for P0 injection safety)
+  export _FB_GT_FILE="$gt_file"
+  export _FB_RUN_ID="$run_id"
+  export _FB_FIXTURE_ID="$fixture_id"
   python3 -c "
-import json, sys
+import json, sys, os
 
-gt = json.load(open('${gt_file}'))
+gt = json.load(open(os.environ['_FB_GT_FILE']))
 
 qual = {
     'metadata': {
-        'qualification_run_id': '${run_id}',
-        'fixture_id': gt.get('fixture_id', '${fixture_id}'),
+        'qualification_run_id': os.environ['_FB_RUN_ID'],
+        'fixture_id': gt.get('fixture_id', os.environ['_FB_FIXTURE_ID']),
         'source': 'calibration-mock'
     },
     'model_slug': 'calibration-mock',
@@ -68,6 +362,7 @@ qual = {
 
 json.dump(qual, sys.stdout, indent=2)
 " > "$qual_output"
+  unset _FB_GT_FILE _FB_RUN_ID _FB_FIXTURE_ID
 
   # Use the ground-truth as the baseline (bootstrapping: GT vs GT = perfect scores)
   result_file="${tmpdir}/${fixture_id}-result.json"
@@ -103,33 +398,6 @@ if [[ "$fixture_count" -eq 0 ]]; then
 fi
 
 echo "Processed $fixture_count fixtures" >&2
-
-# --- Compute p25 thresholds ---
-# p25 = 25th percentile (conservative — achievable by 75% of runs)
-# For false-positive-rate: higher_is_worse, so use p75 instead (75th percentile = the worst 25%)
-compute_percentile() {
-  local percentile="$1"
-  shift
-  local -a values=("$@")
-  python3 -c "
-import sys
-percentile = float(sys.argv[1])
-values = sorted([float(v) for v in sys.argv[2:]])
-n = len(values)
-if n == 0:
-    print(0.0)
-elif n == 1:
-    print(values[0])
-else:
-    p = percentile / 100.0
-    idx = p * (n - 1)
-    lo = int(idx)
-    hi = min(lo + 1, n - 1)
-    frac = idx - lo
-    result = values[lo] + frac * (values[hi] - values[lo])
-    print(round(result, 4))
-" "$percentile" "${values[@]}"
-}
 
 t_format=$(compute_percentile 25 "${scores_format[@]}")
 t_recall=$(compute_percentile 25 "${scores_recall[@]}")

@@ -26,8 +26,8 @@ teardown() {
     [ "$source_val" = "calibrated" ]
 }
 
-@test "calibrate.sh without --mock errors with message" {
+@test "calibrate.sh without mode flag errors with message" {
     run bash "${SCRIPT_DIR}/fluxbench-calibrate.sh" --fixtures-dir "$FIXTURES_DIR" --output "$TMPDIR_CAL/thresholds.yaml"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not yet supported"* ]]
+    [[ "$output" == *"--mock"* ]] || [[ "$output" == *"--emit"* ]] || [[ "$output" == *"--score"* ]]
 }

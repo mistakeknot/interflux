@@ -111,4 +111,4 @@ jq -n '{
     tier: "pareto_agentic"
 }'
 
-echo "discover-models: 5 queries generated. Orchestrator should execute and merge results." >&2
+echo "discover-models: 5 queries generated. Orchestrator should execute and pass results to discover-merge.sh." >&2

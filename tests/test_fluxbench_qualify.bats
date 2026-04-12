@@ -62,10 +62,10 @@ with open('$MODEL_REGISTRY', 'w') as f: yaml.dump(d, f, default_flow_style=False
     [ "$recall" = "0.99" ]
 }
 
-@test "qualify.sh without --mock errors" {
+@test "qualify.sh without mode flag errors" {
     run bash "${SCRIPT_DIR}/fluxbench-qualify.sh" "test-model" --fixtures-dir "$FIXTURES_DIR"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not yet supported"* ]] || [[ "$output" == *"--mock"* ]]
+    [[ "$output" == *"--mock"* ]] || [[ "$output" == *"--emit"* ]] || [[ "$output" == *"--score"* ]]
 }
 
 @test "qualify.sh writes results to JSONL" {

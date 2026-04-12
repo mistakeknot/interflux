@@ -16,3 +16,12 @@ docs/research/flux-drive/
 # Local workspace artifacts
 .claude/
 .clavain/
+
+# FluxBench results (accumulates real scoring data — do not commit)
+/data/
+
+# MCP server build artifacts
+/mcp-servers/*/dist/
+/mcp-servers/*/node_modules/
+# Keep lockfiles for supply chain safety
+!/mcp-servers/*/package-lock.json
