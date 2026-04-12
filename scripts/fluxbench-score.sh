@@ -35,10 +35,10 @@ _get_threshold() {
   local metric="$1" default="$2"
   local val=""
   if [[ -f "$thresholds_file" ]] && command -v yq >/dev/null 2>&1; then
-    val=$(yq -r ".thresholds.\"${metric}\" // empty" "$thresholds_file" 2>/dev/null || true)
+    val=$(yq ".thresholds.\"${metric}\"" "$thresholds_file" 2>/dev/null || true)
   fi
   if [[ -z "$val" || "$val" == "null" ]] && [[ -f "$metrics_file" ]] && command -v yq >/dev/null 2>&1; then
-    val=$(yq -r ".core_gates.\"${metric}\".threshold_default // .extended.\"${metric}\".threshold_default // empty" "$metrics_file" 2>/dev/null || true)
+    val=$(yq ".core_gates.\"${metric}\".threshold_default // .extended.\"${metric}\".threshold_default" "$metrics_file" 2>/dev/null || true)
   fi
   echo "${val:-$default}"
 }
@@ -56,6 +56,11 @@ baseline_findings=$(jq -c '.findings // []' "$baseline")
 # Compute metrics via Python — finding matching with bipartite constraint
 export _FB_MODEL_FINDINGS="$model_findings"
 export _FB_BASELINE_FINDINGS="$baseline_findings"
+export _FB_FORMAT_COMPLIANCE="$format_compliance"
+export _FB_T_FORMAT="$t_format"
+export _FB_T_RECALL="$t_recall"
+export _FB_T_FP="$t_fp"
+export _FB_T_SEVERITY="$t_severity"
 result_json=$(python3 -c "
 import json, sys, os
 from difflib import SequenceMatcher
@@ -112,25 +117,93 @@ def match_score(m, b):
         return 0.4 * desc_ratio
     return 0.0
 
-# Greedy bipartite matching: best match first, no credit-stacking
-matches = []  # (model_idx, baseline_idx, score)
-for mi, mf in enumerate(model_findings):
-    for bi, bf in enumerate(baseline_findings):
-        s = match_score(mf, bf)
-        if s >= 0.20:
-            matches.append((mi, bi, s))
+# Optimal bipartite matching via Hungarian algorithm (pure Python)
+def hungarian_maximize(score_matrix):
+    \"\"\"Optimal assignment for small matrices. Returns list of (row, col) pairs.\"\"\"
+    n = len(score_matrix)
+    if n == 0:
+        return []
+    m = len(score_matrix[0]) if n > 0 else 0
+    if m == 0:
+        return []
 
-# Sort by score descending, greedily assign
-matches.sort(key=lambda x: -x[2])
-used_model = set()
-used_baseline = set()
-matched_pairs = []  # (model_idx, baseline_idx)
+    # Pad to square matrix with zeros
+    size = max(n, m)
+    max_val = max(max(row) for row in score_matrix) if score_matrix else 0
+    cost = [[0.0] * size for _ in range(size)]
+    # Convert to minimization (negate scores)
+    for i in range(n):
+        for j in range(m):
+            cost[i][j] = max_val - score_matrix[i][j]
 
-for mi, bi, s in matches:
-    if mi not in used_model and bi not in used_baseline:
-        used_model.add(mi)
-        used_baseline.add(bi)
-        matched_pairs.append((mi, bi))
+    # Hungarian algorithm
+    u = [0.0] * (size + 1)
+    v = [0.0] * (size + 1)
+    p = [0] * (size + 1)
+    way = [0] * (size + 1)
+
+    for i in range(1, size + 1):
+        p[0] = i
+        j0 = 0
+        minv = [float('inf')] * (size + 1)
+        used = [False] * (size + 1)
+
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = float('inf')
+            j1 = -1
+
+            for j in range(1, size + 1):
+                if not used[j]:
+                    cur = cost[i0-1][j-1] - u[i0] - v[j]
+                    if cur < minv[j]:
+                        minv[j] = cur
+                        way[j] = j0
+                    if minv[j] < delta:
+                        delta = minv[j]
+                        j1 = j
+
+            for j in range(size + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+
+            j0 = j1
+            if p[j0] == 0:
+                break
+
+        while j0:
+            p[j0] = p[way[j0]]
+            j0 = way[j0]
+
+    result = []
+    for j in range(1, size + 1):
+        if p[j] != 0 and p[j] <= n and j <= m:
+            if score_matrix[p[j]-1][j-1] >= 0.20:  # minimum threshold
+                result.append((p[j]-1, j-1))
+    return result
+
+# Build score matrix
+n_model = len(model_findings)
+n_baseline = len(baseline_findings)
+if n_model > 0 and n_baseline > 0:
+    score_matrix = []
+    for mi in range(n_model):
+        row = []
+        for bi in range(n_baseline):
+            s = match_score(model_findings[mi], baseline_findings[bi])
+            row.append(s)
+        score_matrix.append(row)
+    matched_pairs = hungarian_maximize(score_matrix)
+    used_model = set(mi for mi, bi in matched_pairs)
+    used_baseline = set(bi for mi, bi in matched_pairs)
+else:
+    matched_pairs = []
+    used_model = set()
+    used_baseline = set()
 
 # Model-only and baseline-only
 model_only_idxs = [i for i in range(len(model_findings)) if i not in used_model]
@@ -148,6 +221,8 @@ def clean_num(v):
 
 if total_weight == 0:
     recall = 1.0  # empty baseline
+    # Note: if total_weight == 0 and len(model_findings) > 0, all model findings
+    # are false positives — fp_rate will be 1.0 via model_only_idxs computation below.
 elif found_weight == 0 and total_weight > 0:
     recall = 0.0
 else:
@@ -161,6 +236,14 @@ for bi in range(len(baseline_findings)):
     elif baseline_findings[bi].get('severity') == 'P0':
         p0_auto_fail = True
         break
+
+# P0 severity downgrade check: matched P0 findings must be reported as P0
+if not p0_auto_fail:
+    for mi, bi in matched_pairs:
+        if baseline_findings[bi].get('severity') == 'P0':
+            if model_findings[mi].get('severity') != 'P0':
+                p0_auto_fail = True
+                break
 
 # False positive rate
 if len(model_findings) == 0:
@@ -187,6 +270,18 @@ if len(model_findings) == 0:
 else:
     disagreement_rate = round(len(model_only_idxs) / len(model_findings), 4)
 
+# Gate evaluation — env-var-safe, no shell interpolation
+format_compliance = float(os.environ['_FB_FORMAT_COMPLIANCE'])
+t_format = float(os.environ.get('_FB_T_FORMAT', '0.95'))
+t_recall = float(os.environ.get('_FB_T_RECALL', '0.60'))
+t_fp = float(os.environ.get('_FB_T_FP', '0.20'))
+t_severity = float(os.environ.get('_FB_T_SEVERITY', '0.70'))
+
+gate_format = format_compliance >= t_format
+gate_recall = recall >= t_recall and not p0_auto_fail
+gate_fp = fp_rate <= t_fp
+gate_severity = severity_accuracy >= t_severity
+
 result = {
     'recall': clean_num(recall),
     'fp_rate': clean_num(fp_rate),
@@ -195,7 +290,11 @@ result = {
     'disagreement_rate': clean_num(disagreement_rate),
     'matched': len(matched_pairs),
     'model_only': len(model_only_idxs),
-    'baseline_only': len(baseline_only_idxs)
+    'baseline_only': len(baseline_only_idxs),
+    'gate_format': gate_format,
+    'gate_recall': gate_recall,
+    'gate_fp': gate_fp,
+    'gate_severity': gate_severity
 }
 print(json.dumps(result))
 ")
@@ -212,20 +311,11 @@ baseline_only=$(echo "$result_json" | jq -r '.baseline_only')
 
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Evaluate gates
-_gate_pass() {
-  local value="$1" threshold="$2" higher_is_better="${3:-true}"
-  if [[ "$higher_is_better" == "true" ]]; then
-    python3 -c "print('true' if float('$value') >= float('$threshold') else 'false')"
-  else
-    python3 -c "print('true' if float('$value') <= float('$threshold') else 'false')"
-  fi
-}
-
-gate_format=$(_gate_pass "$format_compliance" "$t_format" "true")
-gate_recall=$(_gate_pass "$recall" "$t_recall" "true")
-gate_fp=$(_gate_pass "$fp_rate" "$t_fp" "false")
-gate_severity=$(_gate_pass "$severity_accuracy" "$t_severity" "true")
+# Read gate results from Python evaluation (no shell float comparison needed)
+gate_format=$(echo "$result_json" | jq -r '.gate_format')
+gate_recall=$(echo "$result_json" | jq -r '.gate_recall')
+gate_fp=$(echo "$result_json" | jq -r '.gate_fp')
+gate_severity=$(echo "$result_json" | jq -r '.gate_severity')
 
 # Overall pass: all computable gates must pass AND no P0 auto-fail
 overall_pass="true"
