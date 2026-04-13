@@ -1,6 +1,6 @@
 # Extension: Cross-Model Dispatch
 
-**Status:** Implemented (interflux v0.2.56+), shadow mode
+**Status:** Implemented (interflux v0.2.56+), enforce mode (activated 2026-04-13)
 **Reference:** `phases/expansion.md § 2.2c`, `config/flux-drive/budget.yaml → cross_model_dispatch`, `config/flux-drive/agent-roles.yaml`
 
 ## Summary
@@ -29,9 +29,9 @@ Defined in `agent-roles.yaml`:
 | Role | Tier | Agents |
 |------|------|--------|
 | planner | opus | fd-architecture, fd-systems |
-| reviewer | sonnet | fd-safety, fd-correctness, fd-decisions, fd-people |
-| editor | sonnet | fd-quality, fd-user-product, fd-resilience, fd-perception |
-| checker | haiku | fd-performance, fd-game-design |
+| reviewer | sonnet | fd-correctness, fd-quality, fd-safety |
+| editor | sonnet | fd-performance, fd-user-product, fd-game-design |
+| checker | haiku | fd-perception, fd-resilience, fd-decisions, fd-people |
 
 ## Model Discovery (interrank/AgMoDB Integration)
 
