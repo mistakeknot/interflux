@@ -17,14 +17,13 @@
   - M conflicts (Oracle contradicts Claude agents)
   [Top 3 findings briefly listed]
   ```
-- If there are conflicts or notable blind spots (P0/P1 severity), use `AskUserQuestion`:
+- **Auto-proceed (default):** Display the classification summary. Do not invoke `/clavain:interpeer` automatically — the user can run it manually if interested. Phase 4 ends after display.
+- **Interactive mode** (`INTERACTIVE = true`): If there are conflicts or notable blind spots (P0/P1 severity), use `AskUserQuestion`:
   - question: `Cross-AI found M conflicts and N blind spots. Investigate?`
   - options:
     - label: `Investigate`
       description: `Run /clavain:interpeer to analyze disagreements (~2 min)`
     - label: `Skip`
       description: `End review with current findings`
-- If user approves, invoke `/clavain:interpeer` with conflicts and blind spots as input context.
-- If user skips or there are no actionable findings, Phase 4 ends.
+  - If user approves, invoke `/clavain:interpeer` with conflicts and blind spots as input context.
 - The synthesis from Phase 3 is the final output; do not produce a separate summary.
-- Never auto-invoke `/clavain:interpeer`; run it only after explicit `Investigate` consent.

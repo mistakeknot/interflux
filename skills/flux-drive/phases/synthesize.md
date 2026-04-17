@@ -141,7 +141,9 @@ Reviewed by N agents on YYYY-MM-DD.
 - ...
 ```
 
-After writing the summary file, ask:
+**Auto-proceed (default):** Do not add inline annotations. The summary file is the primary output. Display: `Summary written to {OUTPUT_DIR}/summary.md`.
+
+**Interactive mode** (`INTERACTIVE = true`): Use AskUserQuestion to offer inline annotations:
 
 ```yaml
 AskUserQuestion:
@@ -153,7 +155,7 @@ AskUserQuestion:
       description: "Add findings as blockquotes in the original document"
 ```
 
-If the user opts in to inline annotations, then apply the existing inline logic: add the Enhancement Summary header at the top of `INPUT_FILE` and add per-section blockquotes:
+If the user opts in to inline annotations (interactive mode only), apply the existing inline logic: add the Enhancement Summary header at the top of `INPUT_FILE` and add per-section blockquotes:
 
 ```markdown
 > **Flux Drive** ({agent-name}): [Concise finding or suggestion]

@@ -185,11 +185,11 @@ expansion_score = min(sum(deduplicated.values()), 3)
 
 | max(expansion_scores) | Decision |
 |---|---|
-| >= 3 | **RECOMMEND expansion** — present specific agents with reasoning |
-| 2 | **OFFER expansion** — user's choice, no default |
-| <= 1 | **RECOMMEND stop** — "Stop here" is the default |
+| >= 3 | **AUTO-EXPAND** — launch recommended agents with reasoning |
+| 2 | **AUTO-EXPAND** — launch recommended agents (evidence supports expansion) |
+| <= 1 | **AUTO-STOP** — "Stop here" is the default |
 
-**Auto-proceed (default):** If max score >= 3, auto-expand with recommended agents. If <= 1, auto-stop. If score == 2, use AskUserQuestion (this is the one gate worth pausing for — Stage 1 findings provide real evidence).
+**Auto-proceed (default):** If max score >= 2, auto-expand with recommended agents. If <= 1, auto-stop. Log the expansion decision and reasoning for the user's inspection.
 
 **Interactive mode** (`INTERACTIVE = true`): Always present via AskUserQuestion with reasoning about why each agent should be added. If user chooses expansion, launch only the recommended agents unless they select "Launch all."
 

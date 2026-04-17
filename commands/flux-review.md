@@ -3,7 +3,7 @@ name: flux-review
 description: "Multi-track deep review — generates agents across a spectrum of semantic distance (adjacent → orthogonal → esoteric), runs parallel flux-drive reviews, then synthesizes across all tracks with cross-track convergence analysis"
 user-invocable: true
 codex-aliases: [flux-review]
-argument-hint: "<path, topic, or inline text> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max]"
+argument-hint: "<path, topic, or inline text> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max] [--interactive]"
 ---
 
 # Flux-Review — Multi-Track Deep Review
@@ -82,8 +82,11 @@ Parse `$ARGUMENTS`:
 - Extract `--tracks=auto|2|3|4` (overrides config `tracks`)
 - Extract `--quality=balanced|economy|max` (overrides config `quality`)
 - Extract `--creative` flag (shorthand for `--tracks=4 --quality=max`)
+- Extract `--interactive` flag (restores confirmation gates; default: auto-proceed)
 - If argument is empty, use AskUserQuestion to get it
 - If argument is not a valid path on disk, treat as inline text (`INPUT_TYPE = text`)
+
+Set `INTERACTIVE = true` if `--interactive` is present, `false` otherwise.
 
 Set `QUALITY_MODE`, `TRACK_COUNT` (or `auto`), and `ROUTING` table from the merged config + flags.
 
@@ -147,9 +150,9 @@ Note: Track C (Distant) is always included (it's the second track for 2-track mo
 
 ---
 
-## Step 1: Confirm
+## Step 1: Display Plan and Proceed
 
-Use **AskUserQuestion** showing the triaged plan:
+Display the triaged plan:
 
 ```
 Multi-track deep review of: {INPUT_PATH}
@@ -164,13 +167,13 @@ Synthesis: {synthesis_model}
 
 Total: up to {total_agents} agents, {TRACK_COUNT} parallel reviews
 Estimated context: ~{estimated_tokens}k tokens
-
-Proceed?
 ```
 
 For estimated tokens, use: economy ≈ TRACK_COUNT × 80k, balanced ≈ TRACK_COUNT × 100k, max ≈ TRACK_COUNT × 120k.
 
-Options:
+**Auto-proceed (default):** Proceed directly to Step 2. The triage is deterministic and the plan is displayed for inspection.
+
+**Interactive mode** (`INTERACTIVE = true`): Use AskUserQuestion to get approval:
 - "Proceed with {TRACK_COUNT} tracks (Recommended)"
 - "More tracks (add creative exploration)" — increases by 1 track
 - "Fewer tracks (just adjacent + distant)" — reduces to 2

@@ -45,10 +45,14 @@ Designed {N} task-specific agents:
 
 ## Step 3: Confirm
 
-Use **AskUserQuestion** to confirm:
+**Auto-proceed (default):** Proceed directly to Step 4. The agent specs are displayed in Step 2 for inspection.
+
+**Interactive mode** (when invoked with `--interactive`, or when the user invoked `/flux-gen` directly from the command line — i.e., not called programmatically by another skill): Use AskUserQuestion to confirm:
 - Option 1: "Generate {N} agents (Recommended)" → proceed
 - Option 2: "Regenerate specs (different agents)" → go back to Step 1
 - Option 3: "Cancel"
+
+**Detection:** If the calling context is flux-drive Phase 1.0.4 or flux-review Step 2 (programmatic invocation), always auto-proceed. If the user typed `/flux-gen` themselves, use interactive mode.
 
 ## Step 4: Generate
 

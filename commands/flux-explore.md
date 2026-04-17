@@ -25,9 +25,9 @@ Derive `{slug}` from target (e.g., `interflux-architecture`, `garden-salon-desig
 
 ---
 
-## Step 1: Confirm
+## Step 1: Display Plan and Proceed
 
-Use **AskUserQuestion** to confirm the exploration plan:
+Display the exploration plan:
 
 ```
 Semantic space exploration for: {target}
@@ -40,11 +40,11 @@ Plan: {rounds} rounds × {agents_per_round} agents = up to {rounds × agents_per
 
 Specs saved per round to .claude/flux-gen-specs/{slug}-round-N.json
 Agents written to .claude/agents/fd-*.md
-
-Proceed?
 ```
 
-Options:
+**Auto-proceed (default):** Proceed directly to Step 2.
+
+**Interactive mode** (`--interactive` flag): Use AskUserQuestion to confirm:
 - "Proceed with {rounds} rounds (Recommended)"
 - "Adjust rounds/agents"
 - "Cancel"

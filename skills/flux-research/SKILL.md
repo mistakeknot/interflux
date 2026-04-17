@@ -85,9 +85,13 @@ Score each research agent on a 3-point scale using the query-type → agent affi
 
 **Selection**: Launch all agents with score >= 2. Agents with score 0 are skipped entirely.
 
-### Step 1.3: User confirmation
+### Step 1.3: Display Triage and Proceed
 
-Present the triage result via **AskUserQuestion**:
+Display: `Research: {N} agents ({agent_names}), depth: {estimated_depth}, query type: {type}`.
+
+**Auto-proceed (default):** Proceed directly to Phase 2. The triage is deterministic.
+
+**Interactive mode** (`--interactive` flag): Use AskUserQuestion to get approval:
 
 ```yaml
 AskUserQuestion:
@@ -103,7 +107,6 @@ AskUserQuestion:
 ```
 
 If user selects "Edit agents", present a multi-select AskUserQuestion with all 5 agents and let them toggle.
-
 If user selects "Cancel", stop immediately.
 
 ---
