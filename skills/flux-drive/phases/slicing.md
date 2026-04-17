@@ -69,9 +69,7 @@ Activates when `INPUT_TYPE = diff` AND total lines >= 1000.
 
 Activates when `INPUT_TYPE = file` AND document exceeds 200 lines.
 
-**Method 1 (Semantic, preferred):** Invoke interserve `extract_sections` then `classify_sections` — returns per-agent priority/context with confidence. Fall back to Method 2 if `status: no_classification` or average confidence < 0.6.
-
-**Method 2 (Keyword fallback):** Split by `## ` headings. Classify per agent using section heading keywords + body keyword sampling (first 50 + last 20 lines).
+**Method (Keyword, primary):** Split by `## ` headings. Classify per agent using section heading keywords + body keyword sampling (first 50 + last 20 lines). (Historical note: v1 had a semantic `Method 1` via an `interserve MCP classify_sections` tool that returned priority/context with confidence, but the interserve plugin was retired and the MCP tool no longer exists. The keyword method below is now primary.)
 
 **Section heading keywords:**
 | Agent | Keywords |

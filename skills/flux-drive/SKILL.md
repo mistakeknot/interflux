@@ -242,11 +242,11 @@ If user selects "Edit selection", adjust and re-present. If "Cancel", stop here.
 
 | Agent | subagent_type |
 |-------|--------------|
-| best-practices-researcher | interflux:best-practices-researcher |
-| framework-docs-researcher | interflux:framework-docs-researcher |
-| git-history-analyzer | interflux:git-history-analyzer |
-| learnings-researcher | interflux:learnings-researcher |
-| repo-research-analyst | interflux:repo-research-analyst |
+| best-practices-researcher | interflux:research:best-practices-researcher |
+| framework-docs-researcher | interflux:research:framework-docs-researcher |
+| git-history-analyzer | interflux:research:git-history-analyzer |
+| learnings-researcher | interflux:research:learnings-researcher |
+| repo-research-analyst | interflux:research:repo-research-analyst |
 
 ---
 
@@ -276,7 +276,7 @@ Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/flux-agent.py {PROJECT_ROOT} record <
 
 **[review mode only]** — skip entirely in research mode.
 
-**Skip this phase if Oracle was not in the review roster.** For cross-AI options without Oracle, mention `/clavain:interpeer` in the Phase 3 report.
+**Skip this phase if Oracle was not in the review roster.** For cross-AI options without Oracle, mention `/interpeer:interpeer` in the Phase 3 report.
 
 If Oracle participated, read `phases/cross-ai.md` now.
 

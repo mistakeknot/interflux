@@ -263,11 +263,11 @@ Never use `> file` redirect or external `timeout` with Oracle.
 
 | Agent | subagent_type |
 |-------|--------------|
-| best-practices-researcher | interflux:best-practices-researcher |
-| framework-docs-researcher | interflux:framework-docs-researcher |
-| git-history-analyzer | interflux:git-history-analyzer |
-| learnings-researcher | interflux:learnings-researcher |
-| repo-research-analyst | interflux:repo-research-analyst |
+| best-practices-researcher | interflux:research:best-practices-researcher |
+| framework-docs-researcher | interflux:research:framework-docs-researcher |
+| git-history-analyzer | interflux:research:git-history-analyzer |
+| learnings-researcher | interflux:research:learnings-researcher |
+| repo-research-analyst | interflux:research:repo-research-analyst |
 
 ## Phase 2: Launch
 

@@ -22,7 +22,7 @@ If the Composer is available (`_COMPOSE_LIB_SOURCED=1`), query `compose_dispatch
 
 **Skip if `COMPOSER_ACTIVE=1`** — Composer plan includes model assignments.
 
-Source Clavain's `lib-routing.sh` (find in `~/.claude/plugins/cache/*/clavain/*/scripts/`). Measure complexity signals: `REVIEW_TOKENS` (file chars / 4), `REVIEW_FILE_COUNT` (git diff --name-only), `REVIEW_DEPTH=1`. Call `routing_resolve_agents --phase "$PHASE" --agents "agent1,agent2" --prompt-tokens --file-count --reasoning-depth` → returns JSON model map. Pass `model:` to each Agent tool call. Fallback: if lib-routing.sh unavailable, agents use frontmatter defaults. Progressive enhancement, never a gate.
+Source Clavain's `lib-routing.sh` (find in `~/.claude/plugins/cache/*/clavain/*/scripts/`). Measure complexity signals: `REVIEW_TOKENS` (file chars / 4), `REVIEW_FILE_COUNT` (git diff --name-only | wc -l), `REVIEW_DEPTH=1`. Call `routing_resolve_agents --phase "$PHASE" --agents "agent1,agent2" --prompt-tokens "$REVIEW_TOKENS" --file-count "$REVIEW_FILE_COUNT" --reasoning-depth "$REVIEW_DEPTH"` → returns JSON model map. Pass `model:` to each Agent tool call. Fallback: if lib-routing.sh unavailable, agents use frontmatter defaults. Progressive enhancement, never a gate.
 
 ### Step 2.1: Retrieve knowledge context
 
@@ -63,8 +63,8 @@ Write the full document content. All agents reference this single file.
 
 #### Case 2: File/directory inputs — document slicing active (>= 200 lines)
 
-1. **Classify sections:** Invoke interserve MCP `classify_sections` tool with `file_path` set to the document path.
-2. **Check result:** If `status` is `"no_classification"`, fall back to Case 1 (all agents get the original file via shared path).
+1. **Classify sections:** Use the regex-based Method 2 classifier described in `phases/slicing.md` → Document Slicing. (Historical note: v1 used an `interserve MCP classify_sections` tool; that plugin was retired and the MCP tool no longer exists. The regex method is now primary, not a fallback.)
+2. **Check result:** If section classification returns zero priority sections for all agents, fall back to Case 1 (all agents get the original file via shared path).
 3. **Generate per-agent files:** For each agent in `slicing_map`:
    - If agent is cross-cutting (fd-architecture, fd-quality): use the shared `REVIEW_FILE` from Case 1.
    - If agent has zero priority sections: skip dispatching this agent entirely.

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Multi-agent review and research engine — 17 agents (12 review + 5 research), 7 commands, 1 skill (unified flux-drive with review/research modes), 1 MCP server. Companion plugin for Clavain. Provides scored triage, LLM-based domain classification, content slicing, knowledge injection, parallel multi-agent research, and quality-tiered agent lifecycle management.
+Multi-agent review and research engine — 17 agents (12 review + 5 research), 7 commands, 1 skill (unified flux-drive with review/research modes), 2 MCP servers (exa, openrouter-dispatch). Companion plugin for Clavain. Provides scored triage, LLM-based domain classification, content slicing, knowledge injection, parallel multi-agent research, and quality-tiered agent lifecycle management.
 
 ## Protocol Specification
 
@@ -17,7 +17,7 @@ The flux-drive review protocol is documented in `docs/spec/` (flux-drive-spec 1.
 claude --plugin-dir /root/projects/Interverse/plugins/interflux
 
 # Validate structure
-ls skills/*/SKILL.md | wc -l          # Should be 2
+ls skills/*/SKILL.md | wc -l          # Should be 2 (flux-drive + deprecated flux-research kept for test-dependency)
 ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
 ls commands/*.md | wc -l              # Should be 7

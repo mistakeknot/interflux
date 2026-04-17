@@ -7,11 +7,11 @@
 
 ```bash
 DISPATCH=$(find ~/.claude/plugins/cache -path '*/clavain/*/scripts/dispatch.sh' 2>/dev/null | head -1)
-[[ -z "$DISPATCH" ]] && DISPATCH=$(find ~/projects/Clavain -name dispatch.sh -path '*/scripts/*' 2>/dev/null | head -1)
+[[ -z "$DISPATCH" ]] && DISPATCH=$(find ~/projects/Sylveste/os/Clavain -name dispatch.sh -path '*/scripts/*' 2>/dev/null | head -1)
 [[ -z "$DISPATCH" ]] && { echo "FATAL: dispatch.sh not found"; exit 1; }
 
 REVIEW_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/interserve/templates/review-agent.md' 2>/dev/null | head -1)
-[[ -z "$REVIEW_TEMPLATE" ]] && REVIEW_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/interserve/templates/review-agent.md' 2>/dev/null | head -1)
+[[ -z "$REVIEW_TEMPLATE" ]] && REVIEW_TEMPLATE=$(find ~/projects/Sylveste/os/Clavain -path '*/skills/interserve/templates/review-agent.md' 2>/dev/null | head -1)
 [[ -z "$REVIEW_TEMPLATE" ]] && { echo "FATAL: review-agent.md template not found"; exit 1; }
 ```
 
@@ -42,7 +42,7 @@ When `BOOTSTRAP=true`, dispatch a **blocking** Codex agent to create Project Age
 
 ```bash
 BOOTSTRAP_TEMPLATE=$(find ~/.claude/plugins/cache -path '*/clavain/*/skills/interserve/templates/create-review-agent.md' 2>/dev/null | head -1)
-[[ -z "$BOOTSTRAP_TEMPLATE" ]] && BOOTSTRAP_TEMPLATE=$(find ~/projects/Clavain -path '*/skills/interserve/templates/create-review-agent.md' 2>/dev/null | head -1)
+[[ -z "$BOOTSTRAP_TEMPLATE" ]] && BOOTSTRAP_TEMPLATE=$(find ~/projects/Sylveste/os/Clavain -path '*/skills/interserve/templates/create-review-agent.md' 2>/dev/null | head -1)
 [[ -z "$BOOTSTRAP_TEMPLATE" ]] && { echo "WARNING: create-review-agent.md not found — skipping Project Agent bootstrap"; BOOTSTRAP=false; }
 ```
 

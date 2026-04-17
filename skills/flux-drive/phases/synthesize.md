@@ -422,7 +422,7 @@ Budget: {budget_type} ({BUDGET_TOTAL/1000}K). Used: {actual_total/1000}K ({pct}%
 
 See `phases/slicing.md` → Slicing Report Template for the full table format and fields.
 
-[If this is the first flux-drive run on this project (interknow config/knowledge/ was empty):]
+[If this is the first flux-drive run on this project (interknow's `config/knowledge/` was empty):]
 *First review on this project — building knowledge base for future reviews.*
 
 ### Beads Created
@@ -517,7 +517,7 @@ After presenting the review to the user (Step 3.5), run a compounding step in th
 
 ### Purpose
 
-Extract durable patterns from agent findings and save them as knowledge entries via the interknow plugin. This is how flux-drive "gets smarter" over time. Knowledge entries are stored in interknow's `config/knowledge/` directory (was `interknow config/knowledge/`).
+Extract durable patterns from agent findings and save them as knowledge entries via the interknow plugin. This is how flux-drive "gets smarter" over time. Knowledge entries are stored at `{PROJECT_ROOT}/interverse/interknow/config/knowledge/`.
 
 ### Implementation
 
@@ -549,7 +549,7 @@ For each finding, decide: **compound or skip?**
 
 ## Knowledge Entry Format
 
-For each finding worth compounding, write a markdown file to `interknow config/knowledge/`:
+For each finding worth compounding, write a markdown file to `{PROJECT_ROOT}/interverse/interknow/config/knowledge/`:
 
 Filename: `{short-kebab-case-description}.md` (e.g., `auth-middleware-swallows-cancellation.md`)
 
@@ -582,14 +582,14 @@ Before writing ANY knowledge entry, sanitize it:
 
 ## Decay Check
 
-After compounding new entries, scan existing entries in `interknow config/knowledge/`:
+After compounding new entries, scan existing entries in `{PROJECT_ROOT}/interverse/interknow/config/knowledge/`:
 - Read each entry's `lastConfirmed` date
-- If an entry has not been independently confirmed in the last 10 reviews (approximate by date: >60 days), move it to `interknow config/knowledge/archive/`
+- If an entry has not been independently confirmed in the last 10 reviews (approximate by date: >60 days), move it to `{PROJECT_ROOT}/interverse/interknow/config/knowledge/archive/`
 - Log archived entries (for your own tracking, not user-visible)
 
 ## Output
 
-This agent produces no user-visible output. It only writes/updates files in `interknow config/knowledge/`.
+This agent produces no user-visible output. It only writes/updates files in `{PROJECT_ROOT}/interverse/interknow/config/knowledge/`.
 If compounding fails for any reason, the review is still complete — this is best-effort infrastructure.
 ````
 
@@ -601,7 +601,7 @@ On the first flux-drive v2 run on a project, the knowledge directory will be emp
 
 Add a note in the Step 3.5 report template: after the Files section, add:
 ```markdown
-[If this is the first flux-drive run on this project (interknow config/knowledge/ was empty):]
+[If this is the first flux-drive run on this project (interknow's `config/knowledge/` was empty):]
 *First review on this project — building knowledge base for future reviews.*
 ```
 
