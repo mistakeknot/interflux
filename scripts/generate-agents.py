@@ -88,6 +88,23 @@ def _short_title(bullet: str) -> str:
     return short
 
 
+def _normalize_bullet_list(value) -> list[str]:
+    """Normalize a bullet-list field to a list of non-empty strings.
+
+    LLMs sometimes return list-shaped fields as strings (paragraph, semicolon-
+    joined, or newline-joined). Iterating a string yields characters, which
+    produces character-exploded bullet output. This helper handles both shapes.
+    """
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        parts = value.replace(";", "\n").split("\n")
+        return [p.strip() for p in parts if p.strip()]
+    return [str(value).strip()]
+
+
 def _render_severity_calibration(
     severity_examples: list[dict[str, str]] | None,
     focus: str,
@@ -203,7 +220,7 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
     domains = _infer_domains_from_spec(spec)
 
     review_sections = ""
-    for idx, area in enumerate(spec.get("review_areas", []), start=1):
+    for idx, area in enumerate(_normalize_bullet_list(spec.get("review_areas")), start=1):
         title = _short_title(area)
         review_sections += f"\n### {idx}. {title}\n\n"
         review_sections += f"- {area}\n"
@@ -214,15 +231,15 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
         "- Recommends the smallest viable fix, not an architecture overhaul — one diff hunk, not a rewrite\n"
         "- Frames uncertain findings as questions: \"Does this handle X?\" not \"This doesn't handle X\"\n"
     )
-    for hint in spec.get("success_hints", []):
+    for hint in _normalize_bullet_list(spec.get("success_hints")):
         success_bullets += f"- {hint}\n"
 
     # Build anti-overlap list from other agents in the same prompt batch
-    anti_overlap = spec.get("anti_overlap", [])
+    anti_overlap_items = _normalize_bullet_list(spec.get("anti_overlap"))
     anti_overlap_section = ""
-    if anti_overlap:
+    if anti_overlap_items:
         anti_overlap_section = "## What NOT to Flag\n\n"
-        for item in anti_overlap:
+        for item in anti_overlap_items:
             anti_overlap_section += f"- {item}\n"
         anti_overlap_section += "- Only flag the above if they are deeply entangled with your specialist focus and another agent would miss the nuance\n\n"
 

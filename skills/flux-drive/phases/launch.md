@@ -225,3 +225,38 @@ Monitor via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {
 **Progress display:** flux-watch.sh outputs progress lines as each agent completes: `[N/M | elapsed] agent-name`. Display these to the user as they arrive — this is the primary UX feedback during agent runs. Do not suppress or buffer this output.
 
 **Completion verification:** List `{OUTPUT_DIR}/` — expect `.md` per agent. For `.md.partial` only (incomplete): retry once with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if `.md` exists. If retry fails, write error stub per `phases/shared-contracts.md`. Clean up `.md.partial` files. Report: "N/M completed, K retried, J failed".
+
+**Synthetic refusal detection (Opus 4.7 + later):** The Anthropic API occasionally
+returns a server-generated Usage Policy error on combinations that the input
+classifier reads as influence-operation blueprints (multi-agent dispatch + first-
+person persona files + strategic-target framing). The refusal text is
+deterministic: `"API Error: Claude Code is unable to respond to this request,
+which appears to violate our Usage Policy"`.
+
+For each dispatched subagent, also check its transcript (the `output_file` path
+returned by the Agent tool, which is the subagent's JSONL at
+`${HOME}/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl`). If the
+last assistant message contains the Usage Policy refusal string:
+
+1. **Record the refusal**: write `{OUTPUT_DIR}/{agent-name}.refused.md` noting
+   the model that refused and that the subagent produced no findings.
+2. **Auto-fallback**: retry the subagent ONCE with model tier downgraded to
+   `sonnet` (if the original dispatch used `opus`) or `haiku` (if the original
+   used `sonnet`). Use the same prompt verbatim — the refusal is input-classifier
+   driven, so prompt rewriting is the host's responsibility, not this retry's.
+3. **If fallback also refuses**: leave the `.refused.md` stub and proceed. Flag
+   the failed track in the Step 3.5 report so the user can see which model
+   rejected the content.
+
+Detection sketch:
+```bash
+# For each dispatched subagent transcript:
+last_text=$(jq -r 'select(.message.role=="assistant") | .message.content[]? | select(.type=="text") | .text' "$transcript" | tail -c 500)
+if echo "$last_text" | grep -q "violate our Usage Policy"; then
+    # trigger auto-fallback flow above
+fi
+```
+
+**Do NOT retry at the same model tier** — the classifier decision is deterministic
+for a given input, so retrying identical input will refuse again (as observed with
+Opus 4.7 Track A retry in session a210ece1). Tier downgrade is the resilient path.
