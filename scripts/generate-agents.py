@@ -21,6 +21,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sanitize_untrusted import sanitize, sanitize_list  # noqa: E402
+
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
 # Set by --verbose flag in main()
@@ -192,19 +195,23 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
     """Render an LLM-generated agent spec into the full agent markdown file.
 
     Returns the complete file content including YAML frontmatter.
+
+    Untrusted LLM-authored fields (persona, decision_lens, review_areas,
+    task_context, anti_overlap, success_hints) are sanitized before embedding.
+    See scripts/sanitize_untrusted.py and blueprint §3 B3.
     """
     name = spec["name"]
     focus = spec.get("focus", "")
-    task_context = spec.get("task_context", "")
+    task_context = sanitize(spec.get("task_context", ""), max_len=1000)
 
-    persona = spec.get("persona")
+    persona = sanitize(spec.get("persona"), max_len=500)
     if not persona:
         persona = (
             f"You are a specialist reviewer focused on {focus.lower().rstrip('.')} "
             f"— methodical, specific, and grounded in project reality."
         )
 
-    decision_lens = spec.get("decision_lens")
+    decision_lens = sanitize(spec.get("decision_lens"), max_len=500)
     if not decision_lens:
         decision_lens = (
             f"Prioritize findings by real-world impact. "
@@ -220,7 +227,8 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
     domains = _infer_domains_from_spec(spec)
 
     review_sections = ""
-    for idx, area in enumerate(_normalize_bullet_list(spec.get("review_areas")), start=1):
+    review_areas = sanitize_list(_normalize_bullet_list(spec.get("review_areas")), max_item_len=200)
+    for idx, area in enumerate(review_areas, start=1):
         title = _short_title(area)
         review_sections += f"\n### {idx}. {title}\n\n"
         review_sections += f"- {area}\n"
@@ -231,11 +239,11 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
         "- Recommends the smallest viable fix, not an architecture overhaul — one diff hunk, not a rewrite\n"
         "- Frames uncertain findings as questions: \"Does this handle X?\" not \"This doesn't handle X\"\n"
     )
-    for hint in _normalize_bullet_list(spec.get("success_hints")):
+    for hint in sanitize_list(_normalize_bullet_list(spec.get("success_hints")), max_item_len=200):
         success_bullets += f"- {hint}\n"
 
     # Build anti-overlap list from other agents in the same prompt batch
-    anti_overlap_items = _normalize_bullet_list(spec.get("anti_overlap"))
+    anti_overlap_items = sanitize_list(_normalize_bullet_list(spec.get("anti_overlap")), max_item_len=200)
     if anti_overlap_items:
         bullets = "\n".join(f"- {item}" for item in anti_overlap_items)
         anti_overlap_section = (
