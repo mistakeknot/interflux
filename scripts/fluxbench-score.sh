@@ -34,11 +34,31 @@ metrics_file="${CONFIG_DIR}/fluxbench-metrics.yaml"
 _get_threshold() {
   local metric="$1" default="$2"
   local val=""
+  local yq_err
+  # If the thresholds file exists but yq fails on it, that's a calibration problem — surface
+  # it (not hide behind the hardcoded default). The hardcoded default is the correct fallback
+  # only when the file is absent.
   if [[ -f "$thresholds_file" ]] && command -v yq >/dev/null 2>&1; then
-    val=$(yq ".thresholds.\"${metric}\"" "$thresholds_file" 2>/dev/null || true)
+    yq_err=$(mktemp)
+    if val=$(yq ".thresholds.\"${metric}\"" "$thresholds_file" 2>"$yq_err"); then
+      :
+    else
+      echo "fluxbench-score: failed to read threshold '$metric' from $thresholds_file (using default $default)" >&2
+      cat "$yq_err" >&2
+      val=""
+    fi
+    rm -f "$yq_err"
   fi
   if [[ -z "$val" || "$val" == "null" ]] && [[ -f "$metrics_file" ]] && command -v yq >/dev/null 2>&1; then
-    val=$(yq ".core_gates.\"${metric}\".threshold_default // .extended.\"${metric}\".threshold_default" "$metrics_file" 2>/dev/null || true)
+    yq_err=$(mktemp)
+    if val=$(yq ".core_gates.\"${metric}\".threshold_default // .extended.\"${metric}\".threshold_default" "$metrics_file" 2>"$yq_err"); then
+      :
+    else
+      echo "fluxbench-score: failed to read default threshold '$metric' from $metrics_file" >&2
+      cat "$yq_err" >&2
+      val=""
+    fi
+    rm -f "$yq_err"
   fi
   echo "${val:-$default}"
 }
@@ -67,6 +87,11 @@ from difflib import SequenceMatcher
 
 model_findings = json.loads(os.environ['_FB_MODEL_FINDINGS'])
 baseline_findings = json.loads(os.environ['_FB_BASELINE_FINDINGS'])
+
+# Normalize severity values: LLM output often has trailing whitespace / lowercase variants.
+# Without this, 'P0 ' (trailing space) fails equality against 'P0' and auto-fail rules skip.
+def _sev(finding):
+    return (finding.get('severity') or '').strip().upper()
 
 # Severity weights
 WEIGHTS = {'P0': 4, 'P1': 2, 'P2': 1, 'P3': 0.5}
@@ -228,20 +253,20 @@ elif found_weight == 0 and total_weight > 0:
 else:
     recall = round(found_weight / total_weight, 4)
 
-# P0 auto-fail
+# P0 auto-fail — use _sev() to tolerate trailing whitespace / case drift in LLM output
 p0_auto_fail = False
 for bi in range(len(baseline_findings)):
-    if baseline_findings[bi].get('severity') == 'P0' and bi in [b for _, b in matched_pairs]:
+    if _sev(baseline_findings[bi]) == 'P0' and bi in [b for _, b in matched_pairs]:
         continue
-    elif baseline_findings[bi].get('severity') == 'P0':
+    elif _sev(baseline_findings[bi]) == 'P0':
         p0_auto_fail = True
         break
 
 # P0 severity downgrade check: matched P0 findings must be reported as P0
 if not p0_auto_fail:
     for mi, bi in matched_pairs:
-        if baseline_findings[bi].get('severity') == 'P0':
-            if model_findings[mi].get('severity') != 'P0':
+        if _sev(baseline_findings[bi]) == 'P0':
+            if _sev(model_findings[mi]) != 'P0':
                 p0_auto_fail = True
                 break
 

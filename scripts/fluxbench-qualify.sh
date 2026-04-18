@@ -142,7 +142,10 @@ _write_summary_jsonl() {
 _update_registry() {
   local tmp_reg
   tmp_reg=$(mktemp)
-  trap 'rm -f "$tmp_reg"' RETURN
+  # trap RETURN does not fire on SIGINT; use EXIT so Ctrl-C still cleans tmp files up.
+  # Scoping to RETURN+EXIT is sufficient because subshells are not used inside this function
+  # for the tmp_reg lifecycle; the outer script's EXIT trap will also fire on SIGINT.
+  trap 'rm -f "$tmp_reg"' RETURN EXIT
   export _FB_TMP_REG="$tmp_reg"
 
   cp "$MODEL_REGISTRY" "$tmp_reg"

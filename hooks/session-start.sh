@@ -70,14 +70,18 @@ if [[ -n "$_if_session_id" && -z "${FLUX_BUDGET_REMAINING:-}" ]]; then
     fi
 
     if [[ -n "$_if_pct" ]]; then
-      _if_pct_int="${_if_pct%.*}"
-      [[ "$_if_pct_int" =~ ^[0-9]+$ ]] || _if_pct_int=0
-      # Convert percentage consumed to remaining tokens estimate
-      _if_budget="${INTERSTAT_TOKEN_BUDGET:-500000}"
-      [[ "$_if_budget" =~ ^[0-9]+$ ]] || _if_budget=500000
-      _if_remaining=$(awk "BEGIN{printf \"%d\", $_if_budget * (100 - $_if_pct) / 100}" 2>/dev/null || echo "")
-      if [[ -n "$_if_remaining" && "$_if_remaining" -gt 0 && -n "${CLAUDE_ENV_FILE:-}" ]]; then
-        echo "export FLUX_BUDGET_REMAINING=${_if_remaining}" >> "$CLAUDE_ENV_FILE"
+      # Validate _if_pct strictly: must be a non-negative numeric (integer or decimal <= 100).
+      # A malformed payload coercing to 0 produces awk computing full_budget as "remaining"
+      # — phantom headroom in flux-drive dispatch. On invalid pct, skip the export entirely.
+      if [[ "$_if_pct" =~ ^[0-9]+(\.[0-9]+)?$ ]] && (( $(awk "BEGIN{print ($_if_pct >= 0 && $_if_pct <= 100)}") )); then
+        _if_budget="${INTERSTAT_TOKEN_BUDGET:-500000}"
+        [[ "$_if_budget" =~ ^[0-9]+$ ]] || _if_budget=500000
+        _if_remaining=$(awk "BEGIN{printf \"%d\", $_if_budget * (100 - $_if_pct) / 100}" 2>/dev/null || echo "")
+        if [[ -n "$_if_remaining" && "$_if_remaining" -gt 0 && -n "${CLAUDE_ENV_FILE:-}" ]]; then
+          echo "export FLUX_BUDGET_REMAINING=${_if_remaining}" >> "$CLAUDE_ENV_FILE"
+        fi
+      else
+        echo "session-start: ignoring malformed context_pct '$_if_pct' (expected 0-100)" >&2
       fi
     fi
   fi

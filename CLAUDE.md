@@ -17,7 +17,7 @@ The flux-drive review protocol is documented in `docs/spec/` (flux-drive-spec 1.
 claude --plugin-dir /root/projects/Interverse/plugins/interflux
 
 # Validate structure
-ls skills/*/SKILL.md | wc -l          # Should be 2 (flux-drive + deprecated flux-research kept for test-dependency)
+ls skills/*/SKILL.md | wc -l          # Should be 1 (flux-drive; flux-research skill removed in v0.2.61)
 ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
 ls commands/*.md | wc -l              # Should be 7

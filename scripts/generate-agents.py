@@ -473,10 +473,18 @@ def generate_from_specs(
 
     specs_file_name = specs_path.name
 
+    # Strict name pattern: fd- prefix followed by lowercase alphanumerics joined by hyphens.
+    # startswith("fd-") alone allows path-traversal (fd-../../etc/cron.d/evil) because the
+    # name is used as a filesystem path downstream.
+    _NAME_PATTERN = re.compile(r"^fd-[a-z0-9]+(?:-[a-z0-9]+)*$")
+
     for spec in specs:
         name = spec.get("name", "")
-        if not name.startswith("fd-"):
-            report["errors"].append(f"Skipping '{name}': name must start with 'fd-'")
+        if not isinstance(name, str) or not _NAME_PATTERN.fullmatch(name):
+            report["errors"].append(
+                f"Skipping '{name}': name must match fd-[a-z0-9]+(-[a-z0-9]+)* "
+                f"(prevents path traversal and keeps names filesystem-safe)"
+            )
             continue
 
         if name in CORE_AGENTS:

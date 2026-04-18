@@ -36,15 +36,25 @@ drift_threshold=$(yq -r '.fluxbench.drift_threshold // 0.15' "$registry")
 hysteresis_band=$(yq -r '.fluxbench.hysteresis_band // 0.05' "$registry")
 correlated_drift_threshold=$(yq -r '.fluxbench.correlated_drift_threshold // 0.50' "$registry")
 
-# Build higher_is_better map from metrics config
+# Build higher_is_better map from metrics config.
+# Do NOT swallow yq errors here: if the metrics file is present but malformed, an empty map
+# silently flips regression-direction interpretation (false_positive_rate would read as
+# "higher is better", so a regression scores as an improvement). Fail loudly instead.
 declare -A higher_is_better_map
 if [[ -f "$metrics_file" ]]; then
-  while IFS='=' read -r metric val; do
+  _fd_yq_err=$(mktemp)
+  if ! while IFS='=' read -r metric val; do
     higher_is_better_map["$metric"]="$val"
   done < <(yq -r '
     (.core_gates // {}) as $c | ($c | keys[] | . + "=" + ($c[.].higher_is_better | tostring)),
     (.extended // {}) as $e | ($e | keys[] | . + "=" + ($e[.].higher_is_better | tostring))
-  ' "$metrics_file" 2>/dev/null || true)
+  ' "$metrics_file" 2>"$_fd_yq_err"); then
+    echo "fluxbench-drift: failed to parse $metrics_file — drift direction cannot be trusted" >&2
+    cat "$_fd_yq_err" >&2
+    rm -f "$_fd_yq_err"
+    exit 1
+  fi
+  rm -f "$_fd_yq_err"
 fi
 
 # Extract current scores from shadow result

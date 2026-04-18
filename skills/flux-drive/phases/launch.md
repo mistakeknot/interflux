@@ -252,7 +252,9 @@ Detection sketch:
 ```bash
 # For each dispatched subagent transcript:
 last_text=$(jq -r 'select(.message.role=="assistant") | .message.content[]? | select(.type=="text") | .text' "$transcript" | tail -c 500)
-if echo "$last_text" | grep -q "violate our Usage Policy"; then
+# Anchor the match to the deterministic prefix so an adversarial subagent cannot embed the
+# string in its output to trigger a spurious tier-downgrade retry. Use -E for ^ anchor.
+if echo "$last_text" | grep -qE '^API Error: Claude Code is unable to respond.*violate our Usage Policy'; then
     # trigger auto-fallback flow above
 fi
 ```

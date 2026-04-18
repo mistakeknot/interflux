@@ -20,8 +20,8 @@ def test_skill_count(skills_dir):
         d for d in skills_dir.iterdir()
         if d.is_dir() and (d / "SKILL.md").exists()
     )
-    assert len(dirs) == 2, (
-        f"Expected 2 skills, found {len(dirs)}: {[d.name for d in dirs]}"
+    assert len(dirs) == 1, (
+        f"Expected 1 skill, found {len(dirs)}: {[d.name for d in dirs]}"
     )
 
 
@@ -56,6 +56,11 @@ def test_flux_drive_references_exist(skills_dir):
         assert (refs_dir / name).exists(), f"Missing reference: {name}"
 
 
-def test_flux_research_skill_exists(skills_dir):
-    """flux-research skill exists with SKILL.md."""
-    assert (skills_dir / "flux-research" / "SKILL.md").exists(), "Missing flux-research/SKILL.md"
+def test_flux_research_skill_removed(skills_dir):
+    """flux-research skill directory was removed in v0.2.61.
+    The command commands/flux-research.md now routes to flux-drive with mode=research."""
+    assert not (skills_dir / "flux-research").exists(), (
+        "flux-research/ skill directory should be removed — it was deprecated in v0.2.56 "
+        "and scheduled for deletion in v0.2.61. Routing is now handled by commands/"
+        "flux-research.md forwarding to /interflux:flux-drive with mode=research."
+    )

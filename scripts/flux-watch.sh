@@ -63,7 +63,12 @@ report_existing() {
 if command -v inotifywait >/dev/null 2>&1; then
     # Start watcher first — events queue in its buffer while we scan
     exec 3< <(inotifywait -m -t "$TIMEOUT" -e close_write,moved_to --format '%f' "$OUTPUT_DIR" 2>/dev/null)
-    INOTIFY_PID=$!
+    # $! after exec 3< <(...) captures the process-substitution subshell PID, not the
+    # inotifywait child. Killing that PID no-ops and leaves inotifywait running —
+    # orphaned watchers exhaust /proc/sys/fs/inotify/max_user_watches over time.
+    # Resolve the real child via pgrep to ensure kill targets the right process.
+    INOTIFY_PID=$(pgrep -P $$ inotifywait | head -1)
+    [[ -z "$INOTIFY_PID" ]] && INOTIFY_PID=$!
 
     # Now scan for files that already completed before the watcher started
     if report_existing 2>/dev/null; then

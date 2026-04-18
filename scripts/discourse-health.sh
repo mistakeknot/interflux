@@ -34,12 +34,30 @@ degraded_gini=0.5
 degraded_novelty=0.05
 degraded_relevance=0.5
 
-# Override from config if provided
+# Override from config if provided. Pass config_path via environment and key paths via
+# argv — never interpolate into the python source (that's a shell-injection vector if
+# config_path comes from an untrusted source).
 if [[ -n "$config_path" && -f "$config_path" ]]; then
-  _read_yaml() { python3 -c "import yaml,sys; d=yaml.safe_load(open('$config_path')); print(d$1)" 2>/dev/null || echo "$2"; }
-  gini_max=$(_read_yaml "['flow_envelope']['participation_gini_max']" "$gini_max")
-  novelty_min=$(_read_yaml "['flow_envelope']['novelty_rate_min']" "$novelty_min")
-  relevance_min=$(_read_yaml "['flow_envelope']['response_relevance_min']" "$relevance_min")
+  export _DH_CONFIG="$config_path"
+  _read_yaml() {
+    # $1 is a dotted key path like 'flow_envelope.participation_gini_max'
+    # $2 is the default value
+    python3 -c "
+import yaml, os, sys
+d = yaml.safe_load(open(os.environ['_DH_CONFIG']))
+for key in sys.argv[1].split('.'):
+    if isinstance(d, dict) and key in d:
+        d = d[key]
+    else:
+        print(sys.argv[2])
+        sys.exit(0)
+print(d)
+" "$1" "$2" 2>/dev/null || echo "$2"
+  }
+  gini_max=$(_read_yaml "flow_envelope.participation_gini_max" "$gini_max")
+  novelty_min=$(_read_yaml "flow_envelope.novelty_rate_min" "$novelty_min")
+  relevance_min=$(_read_yaml "flow_envelope.response_relevance_min" "$relevance_min")
+  unset _DH_CONFIG
 fi
 
 # Compute metrics from findings.json using jq

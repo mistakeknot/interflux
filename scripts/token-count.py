@@ -19,21 +19,32 @@ def sum_usage(path: str) -> dict:
         "cache_creation": 0,
         "cache_read": 0,
     }
+    valid_lines = 0
     with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            obj = json.loads(line)
+            # Per-line try/except: one malformed JSONL line (partial write, truncation) must
+            # not discard accumulated valid counts. The prior single-try pattern fell back
+            # to a chars/4 estimate for the whole file on any parse failure.
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             msg = obj.get("message", {})
             if msg.get("role") != "assistant":
                 continue
             usage = msg.get("usage", {})
-            totals["input_tokens"] += usage.get("input_tokens", 0)
-            totals["output_tokens"] += usage.get("output_tokens", 0)
-            totals["cache_creation"] += usage.get("cache_creation_input_tokens", 0)
-            totals["cache_read"] += usage.get("cache_read_input_tokens", 0)
+            totals["input_tokens"] += int(usage.get("input_tokens") or 0)
+            totals["output_tokens"] += int(usage.get("output_tokens") or 0)
+            totals["cache_creation"] += int(usage.get("cache_creation_input_tokens") or 0)
+            totals["cache_read"] += int(usage.get("cache_read_input_tokens") or 0)
+            valid_lines += 1
     totals["total"] = totals["input_tokens"] + totals["output_tokens"]
+    # Only treat as "successful parse" if at least one line was valid. A file of all-
+    # malformed lines returns zeroes; caller can detect via total == 0 and input_tokens == 0.
+    totals["_valid_lines"] = valid_lines
     return totals
 
 

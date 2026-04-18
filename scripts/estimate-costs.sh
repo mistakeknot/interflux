@@ -48,7 +48,11 @@ get_default() {
   local agent_type="$1"
   local default_val="40000"
   local line
-  line=$(grep "^  ${agent_type}:" "$BUDGET_FILE" 2>/dev/null || echo "")
+  # Escape regex metacharacters in agent_type to avoid accidental pattern semantics
+  # (e.g. if a role name ever contained a dot or bracket).
+  local agent_type_esc
+  agent_type_esc=$(printf '%s' "$agent_type" | sed 's/[][\\.*+?(){}|^$]/\\&/g')
+  line=$(grep "^  ${agent_type_esc}:" "$BUDGET_FILE" 2>/dev/null || echo "")
   if [[ -n "$line" ]]; then
     default_val=$(echo "$line" | sed 's/.*: *//' | sed 's/ *#.*//' | tr -d '[:space:]')
   fi
@@ -82,7 +86,10 @@ ESTIMATES="{}"
 if [[ -f "$DB_PATH" ]]; then
   # Query agents with >= 3 runs for reliable estimates
   # Return both billing tokens (input+output, for budget) and total tokens (for context/reporting)
-  INTERSTAT_DATA=$(sqlite3 -json "$DB_PATH" "
+  # Capture stderr separately so schema-drift (e.g. renamed columns) surfaces instead of
+  # being swallowed into an empty result set that reads as "no data, use defaults".
+  _ic_sql_err=$(mktemp)
+  if INTERSTAT_DATA=$(sqlite3 -json "$DB_PATH" "
     SELECT REPLACE(agent_name, 'interflux:', '') as agent_name,
            CAST(ROUND(AVG(COALESCE(input_tokens,0) + COALESCE(output_tokens,0))) AS INTEGER) as est_billing,
            CAST(ROUND(AVG(total_tokens)) AS INTEGER) as est_tokens,
@@ -93,7 +100,15 @@ if [[ -f "$DB_PATH" ]]; then
     GROUP BY REPLACE(agent_name, 'interflux:', '')
     HAVING COUNT(*) >= 3
     ORDER BY agent_name;
-  " 2>/dev/null || echo "[]")
+  " 2>"$_ic_sql_err"); then
+    : # query succeeded
+  else
+    echo "estimate-costs: sqlite query failed against $DB_PATH:" >&2
+    cat "$_ic_sql_err" >&2
+    INTERSTAT_DATA="[]"
+  fi
+  rm -f "$_ic_sql_err"
+  [[ -z "$INTERSTAT_DATA" ]] && INTERSTAT_DATA="[]"
 
   if [[ "$INTERSTAT_DATA" != "[]" && -n "$INTERSTAT_DATA" ]]; then
     ESTIMATES=$(echo "$INTERSTAT_DATA" | jq -c '

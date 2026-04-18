@@ -5,7 +5,11 @@ import { z } from "zod";
 const API_KEY = process.env.OPENROUTER_API_KEY;
 if (!API_KEY) {
   console.error("OPENROUTER_API_KEY not set — openrouter-dispatch MCP disabled.");
-  process.exit(0);
+  console.error("Set OPENROUTER_API_KEY to enable cross-model review dispatch.");
+  // Exit 78 (EX_CONFIG) signals a config problem to Claude Code rather than clean shutdown.
+  // With exit 0 the MCP appears to "run successfully" in the plugin surface, masking the
+  // missing-config state; with 78 it surfaces as a config error in logs.
+  process.exit(78);
 }
 
 const RATE_LIMIT = parseInt(process.env.OPENROUTER_RATE_LIMIT || "20", 10);

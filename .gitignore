@@ -23,5 +23,9 @@ docs/research/flux-drive/
 # MCP server build artifacts
 /mcp-servers/*/dist/
 /mcp-servers/*/node_modules/
-# Keep lockfiles for supply chain safety
+
+# Stray .lock sidecars (e.g. config/flux-drive/model-registry.yaml.lock).
+# These are zero-byte flock fd markers that should never be committed.
+*.lock
+# Keep lockfiles for supply chain safety — this negation MUST come after *.lock above.
 !/mcp-servers/*/package-lock.json

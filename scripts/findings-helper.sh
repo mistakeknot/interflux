@@ -45,8 +45,13 @@ case "$cmd" in
       echo "[]"
       exit 0
     fi
-    # Safe read: filter out incomplete trailing lines before parsing
-    safe_content=$(grep -a '^{' "$findings_file" || true)
+    # Safe read: validate each line as JSON before aggregation. Using grep '^{' drops valid
+    # JSON that doesn't start with '{' (e.g. unicode BOM'd lines) and keeps malformed lines
+    # that happen to start with '{' — one partial-write line can poison the whole parse.
+    safe_content=$(while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      echo "$line" | jq -e . >/dev/null 2>&1 && echo "$line"
+    done < "$findings_file")
     if [[ -z "$safe_content" ]]; then
       echo "[]"
       exit 0
