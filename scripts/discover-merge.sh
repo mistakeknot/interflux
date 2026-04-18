@@ -21,8 +21,12 @@ export _DM_RESULTS="$RESULTS_FILE"
 export _DM_MIN_CONF="$MIN_CONFIDENCE"
 export _DM_TODAY="$TODAY"
 
+# flock -w 30 bounds the wait if a concurrent fluxbench-{qualify,challenger,drift}
+# holds the registry lock. Without timeout, discover-merge deadlocks indefinitely.
+# Exit 3 inside the subshell signals timeout; otherwise non-zero is a real failure.
+_dm_flock_rc=0
 (
-flock -x 201
+flock -w 30 -x 201 || exit 3
 
 python3 -c "
 import yaml, json, os, sys, re
@@ -93,6 +97,14 @@ with open(reg_path, 'w') as f:
 print(f'Discovery complete: {added} added, {skipped} skipped', file=sys.stderr)
 "
 
-) 201>"${REGISTRY_FILE}.lock"
+) 201>"${REGISTRY_FILE}.lock" || _dm_flock_rc=$?
+
+if [[ $_dm_flock_rc -eq 3 ]]; then
+  echo "discover-merge: lock timeout after 30s on ${REGISTRY_FILE}.lock" >&2
+  exit 1
+elif [[ $_dm_flock_rc -ne 0 ]]; then
+  echo "discover-merge: registry write failed (rc=$_dm_flock_rc)" >&2
+  exit 1
+fi
 
 echo "Registry updated: $REGISTRY_FILE" >&2

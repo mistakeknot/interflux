@@ -70,8 +70,14 @@ for k in "${!higher_is_better_map[@]}"; do _hib_lines+="${k}=${higher_is_better_
 _drift_output_file=$(mktemp)
 trap 'rm -f "$_drift_output_file"' EXIT
 
+# flock -w 30 bounds the wait when a concurrent writer (qualify.sh, challenger.sh)
+# holds the registry lock. Without the timeout, drift-sample.sh deadlocks, cascading
+# into the session-start hook chain. Drift is advisory: on timeout emit a skip
+# verdict at exit 0 so callers continue. Exit 3 is the in-subshell signal for
+# timeout; anything else non-zero is a real registry-operation failure.
+_flock_rc=0
 (
-  flock -x 201
+  flock -w 30 -x 201 || exit 3
 
   # Read model's qualified baseline
   baseline_json=$(yq -o=json ".models.\"${_safe_slug}\".qualified_baseline // null" "$registry")
@@ -177,7 +183,16 @@ print(json.dumps(result))
   fi
 
   echo "$_result" > "$_drift_output_file"
-) 201>"${registry}.lock"
+) 201>"${registry}.lock" || _flock_rc=$?
+
+if [[ $_flock_rc -eq 3 ]]; then
+  echo "fluxbench-drift: lock timeout after 30s on ${registry}.lock — emitting skip verdict" >&2
+  printf '{"model":"%s","verdict":"skipped_timeout","drifted_metrics":[],"max_drift":0}\n' "$_safe_slug"
+  exit 0
+elif [[ $_flock_rc -ne 0 ]]; then
+  echo "fluxbench-drift: registry operation failed (rc=$_flock_rc)" >&2
+  exit 1
+fi
 
 result=$(cat "$_drift_output_file")
 verdict=$(echo "$result" | jq -r '.verdict')

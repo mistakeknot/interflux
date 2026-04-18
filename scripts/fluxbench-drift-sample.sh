@@ -138,11 +138,19 @@ latest = model_runs[-1]
 json.dump({'metrics': latest.get('metrics', {})}, sys.stdout)
 " > "$shadow_file" 2>/dev/null || { rm -f "$shadow_file"; continue; }
 
-  # Run drift check (without --fleet-check first)
-  drift_result=$(bash "${SCRIPT_DIR}/fluxbench-drift.sh" "$slug" "$shadow_file" 2>/dev/null) || { rm -f "$shadow_file"; continue; }
+  # Run drift check (without --fleet-check first). Let drift.sh stderr through
+  # so its lock-timeout warnings surface in the sampler's log.
+  drift_result=$(bash "${SCRIPT_DIR}/fluxbench-drift.sh" "$slug" "$shadow_file") || { rm -f "$shadow_file"; continue; }
   rm -f "$shadow_file"
 
   verdict=$(echo "$drift_result" | jq -r '.verdict // "error"')
+
+  # drift.sh returns "skipped_timeout" when it cannot acquire the registry lock
+  # within its own flock -w 30 budget. Log and continue (advisory operation).
+  if [[ "$verdict" == "skipped_timeout" ]]; then
+    echo "[fluxbench-drift-sample] drift check skipped for $slug (registry lock contention)" >&2
+    continue
+  fi
 
   if [[ "$verdict" == "drift_detected" ]]; then
     drift_detected_models+=("$slug")

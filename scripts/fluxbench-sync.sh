@@ -31,8 +31,11 @@ if [[ ! -s "$results_jsonl" ]]; then
 fi
 
 # --- All sync logic under exclusive flock ---
+# flock -w 30 bounds the wait if a concurrent sync.sh holds the lock. Exit 3
+# inside the subshell signals timeout; otherwise non-zero is a real failure.
+_fs_flock_rc=0
 (
-  flock -x 202
+  flock -w 30 -x 202 || exit 3
 
   # --- Load or init sync state (with crash recovery) ---
   if [[ -f "$sync_state_file" ]]; then
@@ -146,4 +149,12 @@ fi
 
   echo "Sync complete: ${#pending_lines[@]} entry/entries written."
 
-) 202>"$(dirname "$results_jsonl")/.sync.lock"
+) 202>"$(dirname "$results_jsonl")/.sync.lock" || _fs_flock_rc=$?
+
+if [[ $_fs_flock_rc -eq 3 ]]; then
+  echo "fluxbench-sync: lock timeout after 30s on .sync.lock" >&2
+  exit 1
+elif [[ $_fs_flock_rc -ne 0 ]]; then
+  echo "fluxbench-sync: sync operation failed (rc=$_fs_flock_rc)" >&2
+  exit 1
+fi

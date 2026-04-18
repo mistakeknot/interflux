@@ -41,8 +41,11 @@ _count_runs() {
 # Args: $1 = model slug, $2 = new status
 _set_model_status() {
   local slug="$1" new_status="$2"
+  # flock -w 30 prevents indefinite waits under concurrent writers. Exit 3 inside the
+  # subshell signals lock timeout; the parent translates that to a loud failure.
+  local _flock_rc=0
   (
-    flock -x 201
+    flock -w 30 -x 201 || exit 3
     _tmp_reg=$(mktemp)
     trap 'rm -f "$_tmp_reg"' EXIT
     cp "$MODEL_REGISTRY" "$_tmp_reg"
@@ -79,15 +82,23 @@ with open(reg_path, 'w') as f:
     # Validate before swap
     python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
     mv "$_tmp_reg" "$MODEL_REGISTRY"
-  ) 201>"${MODEL_REGISTRY}.lock"
+  ) 201>"${MODEL_REGISTRY}.lock" || _flock_rc=$?
+  if [[ $_flock_rc -eq 3 ]]; then
+    echo "fluxbench-challenger: lock timeout after 30s setting status for '$slug'" >&2
+    return 1
+  elif [[ $_flock_rc -ne 0 ]]; then
+    echo "fluxbench-challenger: status write failed for '$slug' (rc=$_flock_rc)" >&2
+    return 1
+  fi
 }
 
 # Atomic registry write: promote a model (set qualified + preserve qualified_via)
 # Args: $1 = model slug
 _promote_model() {
   local slug="$1"
+  local _flock_rc=0
   (
-    flock -x 201
+    flock -w 30 -x 201 || exit 3
     _tmp_reg=$(mktemp)
     trap 'rm -f "$_tmp_reg"' EXIT
     cp "$MODEL_REGISTRY" "$_tmp_reg"
@@ -126,7 +137,14 @@ with open(reg_path, 'w') as f:
     # Validate before swap
     python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
     mv "$_tmp_reg" "$MODEL_REGISTRY"
-  ) 201>"${MODEL_REGISTRY}.lock"
+  ) 201>"${MODEL_REGISTRY}.lock" || _flock_rc=$?
+  if [[ $_flock_rc -eq 3 ]]; then
+    echo "fluxbench-challenger: lock timeout after 30s promoting '$slug'" >&2
+    return 1
+  elif [[ $_flock_rc -ne 0 ]]; then
+    echo "fluxbench-challenger: promotion write failed for '$slug' (rc=$_flock_rc)" >&2
+    return 1
+  fi
 }
 
 # --- Action: select ---

@@ -493,13 +493,24 @@ for fid in m.get('fixtures_detail', []):
   export _FB_QUAL_MODE="real"
 
   if [[ -f "$MODEL_REGISTRY" ]]; then
+    # flock -w 30 prevents hangs when another qualify/challenger/drift run holds
+    # the same lock. Subshell exit 3 = timeout; anything else non-zero is a real
+    # write failure.
+    _fq_flock_rc=0
     (
-      flock -x 201
+      flock -w 30 -x 201 || exit 3
       export _FB_SLUG="$model_slug"
       export _FB_STATUS="$new_status"
       export _FB_AVG_METRICS="${avg_metrics:-"{}"}"
       _update_registry || exit 1
-    ) 201>"${MODEL_REGISTRY}.lock" || { echo "  Error: registry write failed" >&2; exit 1; }
+    ) 201>"${MODEL_REGISTRY}.lock" || _fq_flock_rc=$?
+    if [[ $_fq_flock_rc -eq 3 ]]; then
+      echo "  Error: registry lock timeout after 30s" >&2
+      exit 1
+    elif [[ $_fq_flock_rc -ne 0 ]]; then
+      echo "  Error: registry write failed (rc=$_fq_flock_rc)" >&2
+      exit 1
+    fi
     echo "  Registry updated: $MODEL_REGISTRY" >&2
   else
     echo "  Warning: could not update registry (registry file missing)" >&2
@@ -631,13 +642,22 @@ fi
 export _FB_QUAL_MODE="mock"
 
 if [[ -f "$MODEL_REGISTRY" ]]; then
+  # flock -w 30 prevents silent hangs when a concurrent writer holds the lock.
+  _fq_flock_rc=0
   (
-    flock -x 201
+    flock -w 30 -x 201 || exit 3
     export _FB_SLUG="$model_slug"
     export _FB_STATUS="$new_status"
     export _FB_AVG_METRICS="${avg_metrics:-"{}"}"
     _update_registry
-  ) 201>"${MODEL_REGISTRY}.lock"
+  ) 201>"${MODEL_REGISTRY}.lock" || _fq_flock_rc=$?
+  if [[ $_fq_flock_rc -eq 3 ]]; then
+    echo "  Error: registry lock timeout after 30s (mock mode)" >&2
+    exit 1
+  elif [[ $_fq_flock_rc -ne 0 ]]; then
+    echo "  Error: registry write failed in mock mode (rc=$_fq_flock_rc)" >&2
+    exit 1
+  fi
   echo "  Registry updated: $MODEL_REGISTRY" >&2
 else
   echo "  Warning: could not update registry (registry file missing)" >&2
