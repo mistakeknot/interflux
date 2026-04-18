@@ -5,7 +5,36 @@ description: Use when reviewing documents or codebases with multi-agent analysis
 
 # Flux Drive — Intelligent Multi-Agent Review & Research
 
-<!-- compact: SKILL-compact.md — if it exists in this directory, load it instead of following the multi-file instructions below. The compact version contains the same triage algorithm, scoring formula, and agent roster in a single file. For launch protocol and synthesis details, read phases/launch.md and phases/synthesize.md as directed by the compact file. -->
+## Quick Reference
+
+**Modes:**
+
+| Invocation | Mode |
+|---|---|
+| `/interflux:flux-drive` | `review` (default) |
+| `/interflux:flux-research` | `research` |
+| `--mode=review\|research` | explicit override |
+
+**Triage in 5 steps (review mode):** (1) classify project domains (Step 1.0.1);
+(2) profile the input — type, languages, domains, complexity (Step 1.1);
+(3) pre-filter + score agents on a 0-8 scale
+`base + domain_boost + project_bonus + domain_agent + tier_bonus` (Steps 1.2a-b);
+(4) apply the budget cap via `scripts/estimate-costs.sh` — Stage 1 is protected,
+Stage 2 is cut first (Step 1.2c, full algorithm in `references/budget.md`);
+(5) dispatch Stage 1 in parallel (Phase 2).
+
+**Phase list:**
+
+1. **Phase 1** — Analyze + static triage.
+2. **Phase 2** — Launch (Stage 1 dispatch + incremental Stage 2 expansion).
+3. **Phase 2.5** — Reaction round. `[review only]`, fires when
+   `reaction_round.enabled: true` in `config/flux-drive/*.yaml`. Read
+   `phases/reaction.md`.
+4. **Phase 3** — Synthesize + record agent usage.
+5. **Phase 4** — Cross-AI comparison. `[review only]`, fires only when Oracle
+   was in the roster.
+
+---
 
 You are executing the flux-drive skill. This skill operates in two modes:
 
@@ -202,7 +231,11 @@ Read `references/scoring-examples.md` for worked examples and thin-section thres
 
 ### Step 1.2c: Budget-Aware Selection
 
-Apply budget constraints from `config/flux-drive/budget.yaml`. See SKILL-compact.md Step 1.2c for the complete algorithm. Key: budget by INPUT_TYPE, per-agent costs from interstat (>= 3 runs) or defaults, slicing multiplier 0.5x, min 2 agents always selected, exempt agents (fd-safety, fd-correctness) never deferred.
+Apply budget constraints from `config/flux-drive/budget.yaml`. See
+`references/budget.md` for the complete algorithm (Steps 1.2c.1–1.2c.3). Key:
+budget by INPUT_TYPE, per-agent costs from interstat (>= 3 runs) or defaults,
+slicing multiplier 0.5x, min 2 agents always selected, exempt agents
+(fd-safety, fd-correctness) never deferred.
 
 ### Step 1.2d: Document Section Mapping
 

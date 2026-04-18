@@ -106,14 +106,10 @@ interflux/
 │   ├── validate-gitleaks-waivers.sh
 │   └── validate-roster.sh    # Validate agent roster integrity
 ├── skills/
-│   ├── flux-drive/           # Primary skill (review + research modes)
-│   │   ├── SKILL.md          # Full orchestration protocol (30K)
-│   │   ├── SKILL-compact.md  # Compact variant (15K)
-│   │   ├── phases/           # launch.md, synthesize.md, slicing.md, shared-contracts.md, cross-ai.md, launch-codex.md
-│   │   └── references/       # agent-roster.md, scoring-examples.md
-│   └── flux-research/        # DEPRECATED — merged into flux-drive mode=research
-│       ├── SKILL.md
-│       └── SKILL-compact.md
+│   └── flux-drive/           # Primary skill (review + research modes)
+│       ├── SKILL.md          # Full orchestration protocol with Quick Reference at top
+│       ├── phases/           # launch.md, synthesize.md, slicing.md, shared-contracts.md, cross-ai.md, launch-codex.md, reaction.md, expansion.md
+│       └── references/       # agent-roster.md, scoring-examples.md, budget.md, progressive-enhancements.md, prompt-template.md
 ├── tests/
 │   ├── structural/           # pytest suite (agents, commands, skills, namespace, slicing, generate-agents)
 │   ├── test-budget.sh        # Budget estimation tests
@@ -209,11 +205,13 @@ Single unified skill registered in plugin.json. Two modes selected by invocation
 - `/interflux:flux-drive` -> `MODE = review`
 - `/interflux:flux-research` -> `MODE = research`
 
-### Three-Phase Protocol
+### Phase Protocol
 
-1. **Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 + tier_bonus -1 to +1 = max 8), present roster for user approval. Dynamic slot ceiling (4-10 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines. Tier bonus read from `.claude/agents/.index.yaml` (cached registry).
-2. **Launch** — Dispatch Stage 1 agents in parallel, monitor completion, optionally expand to Stage 2 based on findings severity + adjacency scoring. Incremental expansion launches speculative Stage 2 agents as Stage 1 results arrive. AgentDropout prunes redundant agents (threshold 0.6). Safety-critical agents (fd-safety, fd-correctness) exempt from budget cuts and dropout.
-3. **Synthesize** — Validate outputs, deduplicate findings, track convergence, compute verdict (safe/needs-changes/risky), generate findings.json + summary.md. Research mode delegates to `intersynth:synthesize-research`.
+1. **Phase 1 — Triage** — Detect project domains, profile input, score agents (base_score 0-3 + domain_boost 0-2 + project_bonus 0-1 + domain_agent 0-1 + tier_bonus -1 to +1 = max 8), present roster for user approval. Dynamic slot ceiling (4-10 agents). Budget-aware selection via `scripts/estimate-costs.sh`. Document slicing for inputs > 200 lines. Tier bonus read from `.claude/agents/.index.yaml` (cached registry).
+2. **Phase 2 — Launch** — Dispatch Stage 1 agents in parallel, monitor completion, optionally expand to Stage 2 based on findings severity + adjacency scoring. Incremental expansion launches speculative Stage 2 agents as Stage 1 results arrive. AgentDropout prunes redundant agents (threshold 0.6). Safety-critical agents (fd-safety, fd-correctness) exempt from budget cuts and dropout.
+3. **Phase 2.5 — Reaction Round** `[review only]` — Fires when `reaction_round.enabled: true` in `config/flux-drive/*.yaml`. Agents read peer findings, post reactions, and can escalate severity. Skipped entirely in research mode.
+4. **Phase 3 — Synthesize** — Validate outputs, deduplicate findings, track convergence, compute verdict (safe/needs-changes/risky), generate findings.json + summary.md. Research mode delegates to `intersynth:synthesize-research`. Records agent usage via `scripts/flux-agent.py ... record`.
+5. **Phase 4 — Cross-AI Comparison** `[review only]` — Optional. Fires only when Oracle was in the roster. Compares Oracle's independent verdict against the synthesized Claude output.
 
 Phase files in `skills/flux-drive/phases/`:
 
@@ -221,10 +219,12 @@ Phase files in `skills/flux-drive/phases/`:
 |------|---------|
 | `shared-contracts.md` | Output format, completion signals, content routing |
 | `slicing.md` | Document and diff slicing algorithm, section mapping, routing patterns |
-| `launch.md` | Stage dispatch, expansion scoring, interserve/Codex mode, AgentDropout |
+| `launch.md` | Phase 2 stage dispatch, expansion scoring, AgentDropout |
 | `launch-codex.md` | Codex CLI dispatch for interserve mode |
-| `synthesize.md` | Deduplication, convergence, verdict, knowledge compounding |
-| `cross-ai.md` | Optional cross-AI comparison via Oracle CLI |
+| `expansion.md` | AgentDropout + staged Stage 2 expansion detail |
+| `reaction.md` | Phase 2.5 reaction round orchestration |
+| `synthesize.md` | Phase 3 deduplication, convergence, verdict, knowledge compounding |
+| `cross-ai.md` | Phase 4 cross-AI comparison via Oracle CLI |
 
 Reference files in `skills/flux-drive/references/`:
 
@@ -232,10 +232,9 @@ Reference files in `skills/flux-drive/references/`:
 |------|---------|
 | `agent-roster.md` | Full roster: Project Agents, Plugin Agents, Cognitive Agents, Cross-AI |
 | `scoring-examples.md` | 4 worked scoring examples across document types |
-
-### Compact Variant
-
-`SKILL-compact.md` (15K) is a single-file version of the same triage algorithm. When a `.skill-compact-manifest.json` exists, the compact version loads instead of the multi-file instructions.
+| `budget.md` | Full Step 1.2c budget-cut algorithm, cost estimator contract, exempt-agent policy |
+| `progressive-enhancements.md` | Optional capability detection and degradation paths |
+| `prompt-template.md` | Canonical agent prompt template |
 
 ## MCP Servers (1)
 

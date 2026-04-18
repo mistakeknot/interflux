@@ -74,15 +74,15 @@ else
   fail "estimate-costs.sh --slicing failed"
 fi
 
-# Test 8: SKILL-compact.md references Step 1.2c
-if grep -q "Step 1.2c" "${PLUGIN_DIR}/skills/flux-drive/SKILL-compact.md"; then
-  pass "SKILL-compact.md references Step 1.2c (budget cut)"
+# Test 8: references/budget.md documents the full Step 1.2c algorithm
+if grep -q "Step 1.2c" "${PLUGIN_DIR}/skills/flux-drive/references/budget.md"; then
+  pass "references/budget.md documents Step 1.2c (budget cut)"
 else
-  fail "SKILL-compact.md missing Step 1.2c reference"
+  fail "references/budget.md missing Step 1.2c documentation"
 fi
 
-# Test 9: SKILL-compact.md mentions Est. Tokens in triage table
-if grep -q "Est. Tokens" "${PLUGIN_DIR}/skills/flux-drive/SKILL-compact.md"; then
+# Test 9: references/budget.md specifies the Est. Tokens triage column
+if grep -q "Est. Tokens" "${PLUGIN_DIR}/skills/flux-drive/references/budget.md"; then
   pass "Triage table includes Est. Tokens column"
 else
   fail "Triage table missing Est. Tokens column"

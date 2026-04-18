@@ -1,7 +1,7 @@
 # Extension: Budget System
 
 **Status:** Implemented (interflux v0.2.45+)
-**Reference:** `config/flux-drive/budget.yaml`, `scripts/estimate-costs.sh`, `SKILL-compact.md § 1.2c`
+**Reference:** `config/flux-drive/budget.yaml`, `scripts/estimate-costs.sh`, `skills/flux-drive/references/budget.md`
 
 ## Summary
 
