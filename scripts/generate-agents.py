@@ -23,6 +23,11 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sanitize_untrusted import sanitize, sanitize_list  # noqa: E402
+from spec_types import (  # noqa: E402
+    _normalize_bullet_list,
+    _unwrap_spec_list,
+    validate_agent_spec,
+)
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -89,23 +94,6 @@ def _short_title(bullet: str) -> str:
         else:
             short = truncated
     return short
-
-
-def _normalize_bullet_list(value) -> list[str]:
-    """Normalize a bullet-list field to a list of non-empty strings.
-
-    LLMs sometimes return list-shaped fields as strings (paragraph, semicolon-
-    joined, or newline-joined). Iterating a string yields characters, which
-    produces character-exploded bullet output. This helper handles both shapes.
-    """
-    if not value:
-        return []
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        parts = value.replace(";", "\n").split("\n")
-        return [p.strip() for p in parts if p.strip()]
-    return [str(value).strip()]
 
 
 def _render_severity_calibration(
@@ -449,15 +437,12 @@ def generate_from_specs(
         return report
 
     # Unwrap common LLM wrapper patterns: {"agents": [...]} or {"specs": [...]}
-    if isinstance(specs, dict) and not isinstance(specs, list):
-        candidates = [v for v in specs.values() if isinstance(v, list)]
-        if len(candidates) == 1:
-            _log(f"unwrapped JSON object with key(s) {list(specs.keys())} → {len(candidates[0])} specs")
-            specs = candidates[0]
-        else:
-            _log(f"specs is dict with keys {list(specs.keys())}, not a list — will error")
+    # Shared helper with flux-agent.py — see scripts/spec_types.py.
+    specs, unwrap_note = _unwrap_spec_list(specs)
+    if unwrap_note:
+        _log(unwrap_note)
 
-    if not isinstance(specs, list):
+    if not specs:
         report["status"] = "error"
         report["errors"].append(
             "Specs file must contain a JSON array (or an object with a single array value)"
@@ -487,13 +472,17 @@ def generate_from_specs(
     _NAME_PATTERN = re.compile(r"^fd-[a-z0-9]+(?:-[a-z0-9]+)*$")
 
     for spec in specs:
-        name = spec.get("name", "")
-        if not isinstance(name, str) or not _NAME_PATTERN.fullmatch(name):
-            report["errors"].append(
-                f"Skipping '{name}': name must match fd-[a-z0-9]+(-[a-z0-9]+)* "
-                f"(prevents path traversal and keeps names filesystem-safe)"
-            )
+        # Structural validation before rendering. anti_overlap v0.2.58 incident
+        # (116 corrupted files) was an LLM-JSON → render_agent boundary gap;
+        # validate_agent_spec is the single enforcement point.
+        is_valid, validation_errors, spec = validate_agent_spec(spec, name_pattern=_NAME_PATTERN.pattern)
+        if not is_valid:
+            bad_name = spec.get("name") or "<unnamed>"
+            for err in validation_errors:
+                report["errors"].append(f"Skipping '{bad_name}': {err}")
             continue
+
+        name = spec["name"]
 
         if name in CORE_AGENTS:
             report["errors"].append(f"Skipping '{name}': conflicts with core agent")
@@ -504,8 +493,14 @@ def generate_from_specs(
                 report["skipped"].append(name)
                 continue
             elif mode == "regenerate-stale":
-                existing_version = existing[name].get("flux_gen_version", 0)
-                if isinstance(existing_version, int) and existing_version >= FLUX_GEN_VERSION:
+                # YAML loads numeric frontmatter as int, but hand-edited files
+                # may have quoted strings. Coerce to int before comparing.
+                raw_version = existing[name].get("flux_gen_version", 0)
+                try:
+                    existing_version = int(raw_version)
+                except (TypeError, ValueError):
+                    existing_version = 0
+                if existing_version >= FLUX_GEN_VERSION:
                     report["skipped"].append(name)
                     continue
 

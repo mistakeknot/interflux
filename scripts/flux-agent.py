@@ -31,6 +31,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from spec_types import _normalize_domains, _unwrap_spec_list  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -262,7 +265,11 @@ def _scan_agents(agents_dir: Path) -> list[dict[str, Any]]:
             fm = {}
 
         name = f.stem
-        use_count = fm.get("use_count", 0) or 0
+        # YAML may load numeric counts as str (e.g. quoted "5"); coerce.
+        try:
+            use_count = int(fm.get("use_count") or 0)
+        except (TypeError, ValueError):
+            use_count = 0
         tier = fm.get("tier")
         domains = fm.get("domains")
 
@@ -274,12 +281,19 @@ def _scan_agents(agents_dir: Path) -> list[dict[str, Any]]:
         if not domains:
             domains = _infer_domains(name, text)
 
+        # LLMs sometimes emit "security, auth" as a single comma-joined string;
+        # wrapping as [domains] produced a single "security, auth" bucket.
+        # _normalize_domains splits on [,;] whether input is list or string.
+        domains = _normalize_domains(domains) if not isinstance(domains, list) or any(
+            isinstance(d, str) and ("," in d or ";" in d) for d in domains
+        ) else domains
+
         agents.append({
             "name": name,
             "file": str(f),
             "lines": line_count,
             "tier": tier,
-            "domains": domains if isinstance(domains, list) else [domains],
+            "domains": domains,
             "use_count": use_count,
             "last_used": fm.get("last_used"),
             "last_scored": fm.get("last_scored"),
@@ -600,7 +614,11 @@ def cmd_record(args: argparse.Namespace) -> int:
             print(f"  skip (no frontmatter): {name}", file=sys.stderr)
             continue
 
-        use_count = (fm.get("use_count") or 0) + 1
+        # Quoted-numeric frontmatter ("5") is common after hand edits; coerce.
+        try:
+            use_count = int(fm.get("use_count") or 0) + 1
+        except (TypeError, ValueError):
+            use_count = 1
         line_count = path.read_text(encoding="utf-8").count("\n")
 
         # Auto-promote tier
@@ -663,14 +681,12 @@ def _find_source_spec(agent_name: str, project: Path) -> str | None:
 
     for spec_file in specs_dir.glob("*.json"):
         try:
-            specs = json.loads(spec_file.read_text(encoding="utf-8"))
-            if isinstance(specs, dict):
-                candidates = [v for v in specs.values() if isinstance(v, list)]
-                specs = candidates[0] if len(candidates) == 1 else []
-            if isinstance(specs, list):
-                for s in specs:
-                    if isinstance(s, dict) and s.get("name") == agent_name:
-                        return spec_file.name
+            raw = json.loads(spec_file.read_text(encoding="utf-8"))
+            # Shared unwrap: handles {"agents": [...]} and {"specs": [...]}.
+            specs, _note = _unwrap_spec_list(raw)
+            for s in specs:
+                if isinstance(s, dict) and s.get("name") == agent_name:
+                    return spec_file.name
         except Exception:
             continue
 
