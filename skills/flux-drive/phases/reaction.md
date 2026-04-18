@@ -83,10 +83,10 @@ from scripts.sanitize_untrusted import sanitize
 safe_block = sanitize(peer_findings_block, max_len=2000)
 ```
 
-**What it strips** (see module for the authoritative list):
+**What it strips** (see module source for the authoritative pattern set):
 - NFKC-normalized XML/HTML system-boundary tags (`<system>`, `<system-reminder>`, `<human>`, `<assistant>`, etc.) — fullwidth/compatibility forms collapse to ASCII before matching
-- Instruction-override lines (`ignore/override/forget/disregard…` combined with `instructions/rules/prompt/system`)
-- `NEW INSTRUCTIONS:`-style prefixes
+- Override-directive lines — combinations of reset-verbs (ignore, override, forget, disregard) with scope-nouns (rules, prompt, system, prior guidance); see `_OVERRIDE_LINE_PATTERN`
+- Override-header prefixes (e.g. lines starting with `Real task:`, `Updated mandate:`) captured by `_NEW_INSTRUCTIONS_PATTERN`
 - Fenced code blocks of any language — replaced with `[code block stripped]`
 - Long base64-looking runs (60+ chars) — heuristic payload detector
 - Control and format characters (zero-width joiners, RLO) that can hide override text
