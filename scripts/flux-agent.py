@@ -162,6 +162,22 @@ def _update_frontmatter(path: Path, updates: dict[str, Any]) -> bool:
     return True
 
 
+def _classify_initial_tier(use_count: int, line_count: int) -> str:
+    """Classify tier for an agent that has none set in frontmatter.
+
+    Used by _scan_agents (auto-classify during read) and cmd_backfill
+    (one-time migration). Note: cmd_record uses a promote-only variant
+    that never demotes to "stub", so it does not call this helper.
+    """
+    if use_count >= PROVEN_MIN_USES and line_count >= PROVEN_MIN_LINES:
+        return "proven"
+    if use_count >= 1:
+        return "used"
+    if line_count <= STUB_LINE_THRESHOLD:
+        return "stub"
+    return "generated"
+
+
 def _atomic_write(path: Path, content: str) -> None:
     """Write content atomically using tempfile + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -252,14 +268,7 @@ def _scan_agents(agents_dir: Path) -> list[dict[str, Any]]:
 
         # Auto-classify tier if not set
         if tier is None:
-            if use_count >= PROVEN_MIN_USES and line_count >= PROVEN_MIN_LINES:
-                tier = "proven"
-            elif use_count >= 1:
-                tier = "used"
-            elif line_count <= STUB_LINE_THRESHOLD:
-                tier = "stub"
-            else:
-                tier = "generated"
+            tier = _classify_initial_tier(use_count, line_count)
 
         # Infer domains if not set
         if not domains:
@@ -389,16 +398,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         # Determine usage from synthesis docs
         use_count = usage_counts.get(a["name"], 0)
         line_count = a["lines"]
-
-        # Classify tier
-        if use_count >= PROVEN_MIN_USES and line_count >= PROVEN_MIN_LINES:
-            tier = "proven"
-        elif use_count >= 1:
-            tier = "used"
-        elif line_count <= STUB_LINE_THRESHOLD:
-            tier = "stub"
-        else:
-            tier = "generated"
+        tier = _classify_initial_tier(use_count, line_count)
 
         # Infer domains
         try:
@@ -632,23 +632,16 @@ def cmd_record(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _count_usage_from_synthesis(project: Path) -> dict[str, int]:
-    """Count how many times each agent is referenced in synthesis docs."""
+    """Count unique synthesis dirs each agent is referenced in.
+
+    A single review mentioning an agent 5 times counts as 1 use —
+    we count unique parent directory names, not raw mentions.
+    """
     flux_dir = project / "docs" / "research" / "flux-drive"
-    counts: dict[str, int] = Counter()
-
     if not flux_dir.is_dir():
-        return counts
+        return {}
 
-    for md in flux_dir.rglob("*.md"):
-        try:
-            text = md.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        for match in re.findall(r"\bfd-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\b", text):
-            counts[match] += 1
-
-    # Normalize: count unique synthesis dirs, not raw mention count
-    # A single review mentioning an agent 5 times = 1 use
+    _agent_ref = re.compile(r"\bfd-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\b")
     dir_counts: dict[str, set[str]] = defaultdict(set)
     for md in flux_dir.rglob("*.md"):
         try:
@@ -656,7 +649,7 @@ def _count_usage_from_synthesis(project: Path) -> dict[str, int]:
         except OSError:
             continue
         parent = md.parent.name
-        for match in re.findall(r"\bfd-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\b", text):
+        for match in _agent_ref.findall(text):
             dir_counts[match].add(parent)
 
     return {name: len(dirs) for name, dirs in dir_counts.items()}

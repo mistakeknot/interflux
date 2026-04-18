@@ -236,23 +236,21 @@ def render_agent(spec: dict[str, Any], source_spec_file: str | None = None) -> s
 
     # Build anti-overlap list from other agents in the same prompt batch
     anti_overlap_items = _normalize_bullet_list(spec.get("anti_overlap"))
-    anti_overlap_section = ""
     if anti_overlap_items:
-        anti_overlap_section = "## What NOT to Flag\n\n"
-        for item in anti_overlap_items:
-            anti_overlap_section += f"- {item}\n"
-        anti_overlap_section += "- Only flag the above if they are deeply entangled with your specialist focus and another agent would miss the nuance\n\n"
+        bullets = "\n".join(f"- {item}" for item in anti_overlap_items)
+        anti_overlap_section = (
+            "## What NOT to Flag\n\n"
+            f"{bullets}\n"
+            "- Only flag the above if they are deeply entangled with your specialist focus "
+            "and another agent would miss the nuance\n\n"
+        )
+    else:
+        anti_overlap_section = ""
 
     # Build severity calibration section
     severity_section = _render_severity_calibration(severity_examples, focus)
 
-    task_section = ""
-    if task_context:
-        task_section = f"""## Task Context
-
-{task_context}
-
-"""
+    task_section = f"## Task Context\n\n{task_context}\n\n" if task_context else ""
 
     # Escalation instruction appended to decision lens
     escalation = (
