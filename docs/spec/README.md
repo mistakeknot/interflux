@@ -49,6 +49,13 @@ This spec serves two audiences:
 | [extensions/cross-model-dispatch.md](extensions/cross-model-dispatch.md) | ~55 | Evidence-proportional model tier routing: expansion score → tier, safety floors, downgrade caps, shadow/enforce modes. |
 | [extensions/agent-dropout.md](extensions/agent-dropout.md) | ~45 | Redundancy filter: domain convergence + adjacency saturation scoring, exempt agents, advisory-only pruning. |
 
+### Host / adapter doctrine (Informational)
+
+| Document | Description |
+|----------|-------------|
+| [athenverse-adapters.md](athenverse-adapters.md) | Boundary doctrine for Hermes-specialized Athenverse adapters over canonical Interverse capabilities. |
+| [athenflux-adapter-spec.md](athenflux-adapter-spec.md) | Draft companion spec for the Hermes-native `Athenflux` adapter over canonical `interflux`. |
+
 ## Conformance levels
 
 An implementation can claim conformance at three levels:

@@ -61,6 +61,8 @@ Practical threshold:
 
 `Athenflux` is the first Athenverse plugin.
 
+Companion spec: [athenflux-adapter-spec.md](athenflux-adapter-spec.md)
+
 Relationship to `interflux`:
 - `interflux` remains the canonical review framework/spec in Interverse
 - `Athenflux` is the Hermes-native operational layer over `interflux`
