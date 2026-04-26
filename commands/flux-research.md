@@ -6,4 +6,4 @@ codex-aliases: [flux-research]
 argument-hint: "[research question]"
 ---
 
-Use the `interflux:flux-drive` skill with `mode=research` to research the question specified by the user. Pass the research question as context.
+Use the `interflux:flux-engine` skill with `mode=research` to research the question specified by the user. Pass the research question as context.

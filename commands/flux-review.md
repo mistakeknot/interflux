@@ -387,7 +387,7 @@ classifiers and produce synthetic Usage Policy refusals.
 ```
 Run a flux-drive review of {INPUT_PATH}.
 
-Use the `/interflux:flux-drive {INPUT_PATH}` skill. This will auto-discover
+Use the `interflux:flux-engine` skill on {INPUT_PATH}. This will auto-discover
 the project agents (including the newly generated {track_name}-domain agents)
 and run the full triage → launch → synthesize pipeline.
 

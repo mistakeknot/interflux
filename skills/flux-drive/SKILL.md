@@ -1,6 +1,6 @@
 ---
-name: flux-drive
-description: Use when reviewing documents or codebases with multi-agent analysis, or researching topics with multi-agent research — triages relevant agents from roster, launches only what matters in background mode
+name: flux-engine
+description: Use when invoked from /flux-drive or /flux-research commands — runs the multi-agent triage, dispatch, and synthesis pipeline. Internal engine; users invoke via the slash commands, not directly.
 ---
 
 # Flux Drive — Intelligent Multi-Agent Review & Research
