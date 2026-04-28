@@ -1,6 +1,6 @@
 ---
 name: flux-review
-description: "Multi-track deep review — generates agents across a spectrum of semantic distance (adjacent → orthogonal → esoteric), runs parallel flux-drive reviews, then synthesizes across all tracks with cross-track convergence analysis"
+description: "Multi-track deep review — agents across semantic distance (adjacent→orthogonal→esoteric), parallel flux-drive + cross-track convergence."
 user-invocable: true
 codex-aliases: [flux-review]
 argument-hint: "<path, topic, or inline text> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max] [--interactive]"

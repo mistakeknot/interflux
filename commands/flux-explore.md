@@ -1,6 +1,6 @@
 ---
 name: flux-explore
-description: Autonomous multi-round semantic space exploration — generates agents from progressively more distant knowledge domains and synthesizes cross-domain structural isomorphisms
+description: Autonomous multi-round semantic exploration — agents from progressively distant knowledge domains, synthesize cross-domain isomorphisms.
 user-invocable: true
 codex-aliases: [flux-explore]
 argument-hint: "<target description> [--rounds=3] [--agents-per-round=5]"

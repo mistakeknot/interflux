@@ -1,6 +1,6 @@
 ---
 name: flux-engine
-description: Use when invoked from /flux-drive or /flux-research commands — runs the multi-agent triage, dispatch, and synthesis pipeline. Internal engine; users invoke via the slash commands, not directly.
+description: Invoked from /flux-drive or /flux-research — runs multi-agent triage, dispatch, synthesis. Internal engine; users invoke via slash commands.
 ---
 
 # Flux Drive — Intelligent Multi-Agent Review & Research

@@ -1,6 +1,6 @@
 ---
 name: flux-agent
-description: "Manage the flux agent registry — index, backfill, stats, prune, promote, record. Provides lifecycle management for generated review agents with quality tiers (stub/generated/used/proven), domain indexing, and usage tracking."
+description: "Manage flux agent registry — index/backfill/stats/prune/promote/record. Lifecycle for review agents with quality tiers + domain indexing."
 user-invocable: true
 argument-hint: "<index|backfill|stats|prune|promote|record> [options]"
 ---

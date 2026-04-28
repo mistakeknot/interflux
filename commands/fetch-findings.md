@@ -1,6 +1,6 @@
 ---
 name: fetch-findings
-description: Fetch peer findings from a flux-drive review session. Use to inspect what findings agents have shared during a parallel review.
+description: Fetch peer findings from a flux-drive review — inspect what agents have shared during a parallel review.
 allowed-tools: Bash, Read
 ---
 
