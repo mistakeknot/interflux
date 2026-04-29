@@ -130,5 +130,12 @@ except Exception:
     pass
 " 2>/dev/null) || _if_awareness=""
   unset _FB_REGISTRY_PATH
-  [[ -n "$_if_awareness" ]] && echo "$_if_awareness" >&2
+  # Write to log file rather than stderr — stderr in SessionStart hooks becomes
+  # a session-prefix attachment (~734b/session of envelope overhead). Curious
+  # users can `tail ~/.interflux/fluxbench-awareness.log`.
+  if [[ -n "$_if_awareness" ]]; then
+    _fb_log_dir="${HOME}/.interflux"
+    mkdir -p "$_fb_log_dir" 2>/dev/null
+    printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$_if_awareness" >> "$_fb_log_dir/fluxbench-awareness.log" 2>/dev/null || true
+  fi
 fi
