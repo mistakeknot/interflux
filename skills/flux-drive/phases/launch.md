@@ -16,7 +16,19 @@ find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o
 
 ### Step 2.0.4: Composer dispatch plan (optional)
 
-If the Composer is available (`_COMPOSE_LIB_SOURCED=1`), query `compose_dispatch` for a pre-computed agent plan. If it returns agents (`compose_has_agents`), the plan is **authoritative** — skip Steps 2.0.5–2.1e, write document to temp files (Step 2.1c), dispatch agents from the plan with their assigned models, and skip to Step 2.3. If Composer is unavailable or returns no agents, fall through to Steps 2.0.5–2.2.
+If the Composer is available (`_COMPOSE_LIB_SOURCED=1`), query `compose_dispatch` for a pre-computed agent plan. First export raw review signals for Clavain B2 shadow routing:
+
+```bash
+REVIEW_TOKENS=${REVIEW_TOKENS:-$(( ${INPUT_CHARS:-0} / 4 ))}
+REVIEW_FILE_COUNT=${REVIEW_FILE_COUNT:-${INPUT_FILE_COUNT:-1}}
+REVIEW_DEPTH=${REVIEW_DEPTH:-1}
+export CLAVAIN_REVIEW_TOKENS="$REVIEW_TOKENS"
+export CLAVAIN_REVIEW_FILE_COUNT="$REVIEW_FILE_COUNT"
+export CLAVAIN_REVIEW_DEPTH="$REVIEW_DEPTH"
+CLAVAIN_COMPOSE_PLAN=$(compose_dispatch "${CLAVAIN_BEAD_ID:-}" "${PHASE:-review}") || CLAVAIN_COMPOSE_PLAN=""
+```
+
+If `CLAVAIN_COMPOSE_PLAN` returns agents (`compose_has_agents`), the plan is **authoritative** — skip Steps 2.0.5–2.1e, write document to temp files (Step 2.1c), dispatch agents from the plan with their assigned `model:` values, and skip to Step 2.3. If Composer is unavailable or returns no agents, fall through to Steps 2.0.5–2.2.
 
 ### Step 2.0.5: Resolve agent models
 

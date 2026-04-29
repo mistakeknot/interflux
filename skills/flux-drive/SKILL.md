@@ -65,6 +65,7 @@ The mode gates behavior throughout all phases. Look for **[review only]** and **
 
 - `--interactive`: Restore confirmation gates before agent dispatch. Without this flag, the orchestrator auto-proceeds after displaying the triage result. Use `--interactive` when you want to review and edit the agent selection before launch.
 - `--output-dir <path>`: Override the default timestamped OUTPUT_DIR with a fixed path (enables iterative reviews of the same document).
+- `--phase=<phase>`: Caller-provided Clavain phase for B2/B3 routing attribution (for example `--phase=quality-gates`). Preserve this as `PHASE`; default to `review` when absent.
 
 Set: `INTERACTIVE = true` if `--interactive` is present, `false` otherwise.
 

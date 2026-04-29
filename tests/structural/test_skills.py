@@ -64,3 +64,18 @@ def test_flux_research_skill_removed(skills_dir):
         "and scheduled for deletion in v0.2.61. Routing is now handled by commands/"
         "flux-research.md forwarding to /interflux:flux-drive with mode=research."
     )
+
+
+def test_flux_drive_launch_consumes_clavain_b2_routing_contract(skills_dir):
+    """Flux launch must activate Clavain B2 routing at dispatch time."""
+    launch = (skills_dir / "flux-drive" / "phases" / "launch.md").read_text()
+    skill = (skills_dir / "flux-drive" / "SKILL.md").read_text()
+
+    assert "--phase=<phase>" in skill
+    assert "CLAVAIN_COMPOSE_PLAN" in launch
+    assert "compose_dispatch" in launch
+    assert "CLAVAIN_REVIEW_TOKENS" in launch
+    assert "CLAVAIN_REVIEW_FILE_COUNT" in launch
+    assert "routing_resolve_agents" in launch
+    assert '--prompt-tokens "$REVIEW_TOKENS"' in launch
+    assert 'model:' in launch
