@@ -79,3 +79,18 @@ def test_flux_drive_launch_consumes_clavain_b2_routing_contract(skills_dir):
     assert "routing_resolve_agents" in launch
     assert '--prompt-tokens "$REVIEW_TOKENS"' in launch
     assert 'model:' in launch
+
+
+def test_flux_drive_codex_launch_records_fixed_tier_exception(skills_dir):
+    """Codex launch must make the passive-v1 fixed-tier exception explicit."""
+    launch = (skills_dir / "flux-drive" / "phases" / "launch-codex.md").read_text()
+
+    assert "CLAVAIN_DISPATCH_PROFILE=clavain" in launch
+    assert "--tier deep" in launch
+    assert "--phase=flux-review" in launch
+    assert "fixed-tier exception" in launch
+    assert "sylveste-8r5h.19.2" in launch
+    assert "passive-v1" in launch
+    assert "config/routing.yaml" in launch
+    assert "config/dispatch/tiers.yaml" not in launch
+    assert "future phase-aware dispatch hook" in launch

@@ -91,12 +91,15 @@ CLAVAIN_DISPATCH_PROFILE=clavain bash "$DISPATCH" \
   --prompt-file "$FLUX_TMPDIR/{agent-name}.md" \
   -C "$PROJECT_ROOT" \
   -s workspace-write \
-  --tier deep
+  --tier deep \
+  --phase=flux-review
 ```
 
-Note: in Clavain interserve mode (`.claude/clodex-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
+Passive-v1 fixed-tier exception (`sylveste-8r5h.19.2`): Codex review dispatch intentionally remains fixed on `--tier deep` instead of consuming the B2/Composer complexity tier per agent. The passive-v1 report treats this as a tested exception, not routed activation. The review lane optimizes for stable cross-agent depth, while `phases/launch.md` remains the B2 routed compose path for Claude/Task dispatch. `--phase=flux-review` is retained as audit context and a future phase-aware dispatch hook; it does not currently select the tier.
+
+In Clavain interserve mode (`.claude/clodex-toggle.flag`) with `CLAVAIN_DISPATCH_PROFILE=clavain`, `--tier deep` maps to
 `gpt-5.3-codex-xhigh` via Clavain dispatch policy. Fast/deep dispatches in Clavain continue to
-follow the same profile from `config/dispatch/tiers.yaml`.
+follow the same profile from `config/routing.yaml`.
 
 Notes:
 - Set `run_in_background: true` and `timeout: 600000` on each Bash call
