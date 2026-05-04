@@ -19,35 +19,36 @@
     "exa"
   ],
   "skills": [
-    "./skills/flux-drive"
+    "./skills/flux-drive",
+    "./skills/flux-review"
   ],
   "commands": [
-    "./commands/flux-drive.md",
-    "./commands/flux-research.md",
-    "./commands/flux-gen.md",
     "./commands/fetch-findings.md",
+    "./commands/flux-agent.md",
+    "./commands/flux-drive.md",
     "./commands/flux-explore.md",
-    "./commands/flux-review.md",
-    "./commands/flux-agent.md"
+    "./commands/flux-gen.md",
+    "./commands/flux-research.md",
+    "./commands/flux-review.md"
   ],
   "agents": [
-    "./agents/review/fd-architecture.md",
-    "./agents/review/fd-safety.md",
-    "./agents/review/fd-correctness.md",
-    "./agents/review/fd-user-product.md",
-    "./agents/review/fd-quality.md",
-    "./agents/review/fd-game-design.md",
-    "./agents/review/fd-performance.md",
-    "./agents/review/fd-systems.md",
-    "./agents/review/fd-decisions.md",
-    "./agents/review/fd-people.md",
-    "./agents/review/fd-resilience.md",
-    "./agents/review/fd-perception.md",
+    "./agents/research/best-practices-researcher.md",
     "./agents/research/framework-docs-researcher.md",
-    "./agents/research/repo-research-analyst.md",
     "./agents/research/git-history-analyzer.md",
     "./agents/research/learnings-researcher.md",
-    "./agents/research/best-practices-researcher.md"
+    "./agents/research/repo-research-analyst.md",
+    "./agents/review/fd-architecture.md",
+    "./agents/review/fd-correctness.md",
+    "./agents/review/fd-decisions.md",
+    "./agents/review/fd-game-design.md",
+    "./agents/review/fd-people.md",
+    "./agents/review/fd-perception.md",
+    "./agents/review/fd-performance.md",
+    "./agents/review/fd-quality.md",
+    "./agents/review/fd-resilience.md",
+    "./agents/review/fd-safety.md",
+    "./agents/review/fd-systems.md",
+    "./agents/review/fd-user-product.md"
   ],
   "mcpServers": {
     "exa": {

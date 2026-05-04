@@ -376,8 +376,8 @@ Key test suites in `tests/structural/`:
 # Component counts
 ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
-ls commands/*.md | wc -l              # Should be 4
-ls skills/*/SKILL.md | wc -l          # Should be 2 (1 active + 1 deprecated)
+ls commands/*.md | wc -l              # Should be 7
+ls skills/*/SKILL.md | wc -l          # Should be 2 (flux-drive engine + flux-review engine)
 
 # Domain profiles
 ls config/flux-drive/domains/*.md | wc -l  # Should be 11
