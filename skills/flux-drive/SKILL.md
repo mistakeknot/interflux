@@ -64,7 +64,7 @@ The mode gates behavior throughout all phases. Look for **[review only]** and **
 ## Flags
 
 - `--interactive`: Restore confirmation gates before agent dispatch. Without this flag, the orchestrator auto-proceeds after displaying the triage result. Use `--interactive` when you want to review and edit the agent selection before launch.
-- `--output-dir <path>`: Override the default timestamped OUTPUT_DIR with a fixed path (enables iterative reviews of the same document).
+- `--output-dir <path>`: Override the default hash-based OUTPUT_DIR with a fixed path. Use for genuinely concurrent runs on the same target (where the default content-addressed path would race) or for iterative reviews where a stable, human-readable directory is preferred.
 - `--phase=<phase>`: Caller-provided Clavain phase for B2/B3 routing attribution (for example `--phase=quality-gates`). Preserve this as `PHASE`; default to `review` when absent.
 
 Set: `INTERACTIVE = true` if `--interactive` is present, `false` otherwise.
@@ -109,15 +109,21 @@ OUTPUT_DIR        = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}
 INPUT_TYPE        = research
 ```
 
-**Run isolation:** Append a timestamp to OUTPUT_DIR to prevent cross-run contamination:
+**Run isolation:** Content-address OUTPUT_DIR with a stable hash of the input. This keeps the agent-prompt prefix identical across reruns of the same target, restoring Anthropic prompt cache hits (~21k tok/session per BSC-1, sylveste-a4oj.2):
 ```
-RUN_TS = $(date +%Y%m%dT%H%M)
-OUTPUT_DIR = {OUTPUT_DIR}-{RUN_TS}
+RUN_HASH = $(printf '%s' "{INPUT_PATH or RESEARCH_QUESTION}" | sha256sum | cut -c1-8)
+OUTPUT_DIR = {OUTPUT_DIR}-{RUN_HASH}
 ```
-This is the default because `find -delete` on a shared OUTPUT_DIR races with slow agents from previous runs (e.g., Oracle with a 10-minute timeout). A still-writing agent's `.partial` gets deleted, but when it renames to `.md`, the file reappears — contaminating the new run's synthesis with stale findings.
+A timestamp here would vary on every invocation and defeat the cache; a hash over agent names would invalidate when `/flux-gen` adds agents. Hashing only the input keeps the path stable across reruns of the same target.
 
-To reuse a fixed OUTPUT_DIR (e.g., for iterative reviews of the same document), pass `--output-dir <path>` explicitly. In that case, enforce run isolation with the clean approach:
-- Remove existing `.md`, `.md.partial`, and `peer-findings.jsonl` files before dispatch.
+Before dispatch, clean stale outputs (handles a slow agent from a previous identical run leaving an orphan `.partial` that would otherwise rename into the new run's findings):
+```
+find {OUTPUT_DIR} -maxdepth 1 \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete 2>/dev/null
+```
+
+**Concurrent-run caveat:** Two flux-drive invocations on the same target with overlapping execution share OUTPUT_DIR and can race. For genuinely parallel runs, pass `--output-dir <unique>` to force isolation. Sequential reruns are the common case and benefit from the cache win.
+
+To reuse a fixed OUTPUT_DIR explicitly (e.g., for iterative reviews of the same document), pass `--output-dir <path>`; the same pre-clean discipline applies.
 
 **Critical:** Resolve `OUTPUT_DIR` to an **absolute path** before using it in agent prompts. Agents inherit the main session's CWD, so relative paths write to the wrong project during cross-project reviews.
 
@@ -289,7 +295,7 @@ If user selects "Edit selection", adjust and re-present. If "Cancel", stop here.
 **Read the launch phase file now:**
 - Read `phases/launch.md` (in the flux-drive skill directory)
 - The launch phase respects the `MODE` parameter — research mode uses single-stage dispatch without AgentDropout, expansion, or peer findings
-- **[review mode only]**: If interserve mode is detected, also read `phases/launch-codex.md`
+- **[review mode only]**: If Codex mode is detected (`.claude/clodex-toggle.flag` present, formerly known as "interserve mode"), also read `phases/launch-codex.md`
 
 ## Phase 2.5: Reaction Round
 
@@ -332,4 +338,4 @@ If Oracle participated, read `phases/cross-ai.md` now.
 - `interpeer/references/oracle-reference.md` — Oracle CLI reference
 - `interpeer/references/oracle-troubleshooting.md` — Oracle troubleshooting
 - qmd MCP server (via interknow plugin) — semantic search for project documentation and knowledge entries (used in Steps 1.0 and 2.1)
-- When interserve mode is active, flux-drive dispatches review agents through Codex CLI instead of Claude subagents. See `clavain:interserve` for Codex dispatch details.
+- When Codex mode is active (formerly "interserve mode"), flux-drive dispatches review agents through Codex CLI instead of Claude subagents. See `clavain:interserve` for Codex dispatch details (the `interserve` skill name in Clavain remains, but the user-facing mode is now called "Codex mode").

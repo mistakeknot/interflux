@@ -220,7 +220,7 @@ Phase files in `skills/flux-drive/phases/`:
 | `shared-contracts.md` | Output format, completion signals, content routing |
 | `slicing.md` | Document and diff slicing algorithm, section mapping, routing patterns |
 | `launch.md` | Phase 2 stage dispatch, expansion scoring, AgentDropout |
-| `launch-codex.md` | Codex CLI dispatch for interserve mode |
+| `launch-codex.md` | Codex CLI dispatch for Codex mode (formerly "interserve mode") |
 | `expansion.md` | AgentDropout + staged Stage 2 expansion detail |
 | `reaction.md` | Phase 2.5 reaction round orchestration |
 | `synthesize.md` | Phase 3 deduplication, convergence, verdict, knowledge compounding |

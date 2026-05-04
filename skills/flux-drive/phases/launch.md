@@ -110,6 +110,40 @@ The orchestrator performs string substitution when building the Task prompt — 
 
 OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1e for the trust score loading and multiplication protocol. Multiply each agent's raw triage score by its trust score (1.0 if unavailable). Safety floors: fd-safety and fd-correctness never below sonnet.
 
+### Step 2.1b: Prepare sliced content for agent prompts [review only]
+
+**Skip this step in research mode** (research agents don't review documents). **Skip this step if no slicing is active** (diff < 1000 lines, or document < 200 lines — all agents receive full content).
+
+Read `phases/slicing.md` now. It contains the complete slicing algorithm for both diff and document inputs, including:
+- Routing patterns (which file/section patterns map to which agents)
+- Classification of files/sections as priority vs context per agent
+- Per-agent content construction (priority in full + context summaries)
+- Edge cases and thresholds (80% overlap, safety override)
+
+Apply the appropriate algorithm (Diff Slicing or Document Slicing) based on `INPUT_TYPE`.
+
+### Prompt template for each agent:
+
+Read `references/prompt-template.md` for the full agent prompt template. Key sections to construct per agent:
+
+1. **Output Format**: Write to `{OUTPUT_DIR}/{agent-name}.md.partial` → rename to `.md` with `<!-- flux-drive:complete -->` sentinel. Structure: Findings Index → Verdict → Summary → Issues Found → Improvements.
+2. **Review Task**: `You are reviewing a {document_type} for {review_goal}.`
+3. **Knowledge Context** (if Step 2.1 returned entries): Include entries with provenance note (independently confirmed vs primed confirmation).
+4. **Domain Context** (if Step 2.1a loaded criteria): Domain classification + per-domain bullet points for this agent, up to 3 domains.
+5. **Overlay Context** (if Step 2.1d loaded overlays): Review adjustments from previous sessions.
+6. **Project Context**: PROJECT_ROOT, INPUT_FILE, divergence warning if detected.
+7. **Document/Diff to Review**: File path to `{REVIEW_FILE}` (or per-agent sliced variant). Agent must Read this first.
+8. **Focus Area**: Selection reason, relevant sections, depth needed.
+9. **Research Escalation**: Max 1 research agent spawn per review if external context would change severity.
+10. **Peer Findings Protocol** (review only): Read/write `{OUTPUT_DIR}/peer-findings.jsonl` via `{FINDINGS_HELPER}` — share only blocking/notable findings.
+
+Omit empty sections (no knowledge → no Knowledge Context header, no domains → no Domain Context, etc.).
+
+After each stage launch, tell the user:
+- How many agents were launched in that stage
+- That they are running in background
+- Estimated wait time (~3-5 minutes)
+
 ### Step 2.2: Stage 1 — Launch top agents [review only]
 
 **Skip this step if `COMPOSER_ACTIVE=1`** — agents were already dispatched in Step 2.0.4.
@@ -195,40 +229,6 @@ OPTIONAL — read `references/progressive-enhancements.md` § Step 2.2a for trig
 **Prompt trimming**: See `phases/shared-contracts.md` for trimming rules.
 
 **Token counting**: After each Agent tool call returns, note the agent's internal ID from the response. Maintain a mapping of `agent_name → agent_id` for all dispatched agents. Pass this mapping to Phase 3 synthesis for actual token counting (see Token Counting Contract in `shared-contracts.md`).
-
-### Step 2.1b: Prepare sliced content for agent prompts [review only]
-
-**Skip this step in research mode** (research agents don't review documents). **Skip this step if no slicing is active** (diff < 1000 lines, or document < 200 lines — all agents receive full content).
-
-Read `phases/slicing.md` now. It contains the complete slicing algorithm for both diff and document inputs, including:
-- Routing patterns (which file/section patterns map to which agents)
-- Classification of files/sections as priority vs context per agent
-- Per-agent content construction (priority in full + context summaries)
-- Edge cases and thresholds (80% overlap, safety override)
-
-Apply the appropriate algorithm (Diff Slicing or Document Slicing) based on `INPUT_TYPE`.
-
-### Prompt template for each agent:
-
-Read `references/prompt-template.md` for the full agent prompt template. Key sections to construct per agent:
-
-1. **Output Format**: Write to `{OUTPUT_DIR}/{agent-name}.md.partial` → rename to `.md` with `<!-- flux-drive:complete -->` sentinel. Structure: Findings Index → Verdict → Summary → Issues Found → Improvements.
-2. **Review Task**: `You are reviewing a {document_type} for {review_goal}.`
-3. **Knowledge Context** (if Step 2.1 returned entries): Include entries with provenance note (independently confirmed vs primed confirmation).
-4. **Domain Context** (if Step 2.1a loaded criteria): Domain classification + per-domain bullet points for this agent, up to 3 domains.
-5. **Overlay Context** (if Step 2.1d loaded overlays): Review adjustments from previous sessions.
-6. **Project Context**: PROJECT_ROOT, INPUT_FILE, divergence warning if detected.
-7. **Document/Diff to Review**: File path to `{REVIEW_FILE}` (or per-agent sliced variant). Agent must Read this first.
-8. **Focus Area**: Selection reason, relevant sections, depth needed.
-9. **Research Escalation**: Max 1 research agent spawn per review if external context would change severity.
-10. **Peer Findings Protocol** (review only): Read/write `{OUTPUT_DIR}/peer-findings.jsonl` via `{FINDINGS_HELPER}` — share only blocking/notable findings.
-
-Omit empty sections (no knowledge → no Knowledge Context header, no domains → no Domain Context, etc.).
-
-After each stage launch, tell the user:
-- How many agents were launched in that stage
-- That they are running in background
-- Estimated wait time (~3-5 minutes)
 
 ### Step 2.3: Monitor and verify agent completion
 

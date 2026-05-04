@@ -25,9 +25,11 @@ Each agent writes to `{OUTPUT_DIR}/{agent-name}.md` with this structure:
 ## Completion Signal
 
 - Agents write to `{OUTPUT_DIR}/{agent-name}.md.partial` during work
-- Add `<!-- flux-drive:complete -->` as the last line
-- Rename `.md.partial` to `.md` as the final action
-- Orchestrator detects completion by checking for `.md` files (not `.partial`)
+- Add `<!-- flux-drive:complete -->` as the last line — **diagnostic metadata only**, used by post-mortem tooling to confirm the agent reached its terminal step
+- Rename `.md.partial` to `.md` as the final action — **this is the binding completion signal**
+- Orchestrator detects completion by file presence (`.md` exists, `.partial` does not), not by sentinel string
+
+Implication: an agent whose Write step succeeded but whose rename failed is treated as incomplete even if the sentinel is present. An agent whose rename succeeded is treated as complete even if the sentinel was omitted (sentinel absence triggers a downstream warning, not re-dispatch).
 
 ## Verdict Header (Universal)
 

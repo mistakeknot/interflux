@@ -76,7 +76,8 @@ Task(intersynth:synthesize-review):
 ```bash
 lorenzen_config_json=$(python3 -c "
 import yaml, json
-d = yaml.safe_load(open('interverse/interflux/config/flux-drive/discourse-lorenzen.yaml'))['dialogue_game']
+import os
+d = yaml.safe_load(open(os.path.join(os.environ['CLAUDE_PLUGIN_ROOT'], 'config/flux-drive/discourse-lorenzen.yaml')))['dialogue_game']
 # Flatten: merge validation sub-keys into root for synthesis agent consumption
 flat = {**d, **d.get('validation', {})}
 flat.pop('validation', None)
@@ -220,7 +221,7 @@ For each launched agent, query interstat for actual tokens. Report both billing 
 sqlite3 ~/.claude/interstat/metrics.db "
   SELECT agent_name,
          COALESCE(input_tokens,0) + COALESCE(output_tokens,0) as billing_tokens,
-         COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_creation_tokens,0) as total_tokens,
+         COALESCE(total_tokens, COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_creation_tokens,0)) as total_tokens,
          COALESCE(cache_read_tokens,0) as cache_read
   FROM agent_runs
   WHERE session_id = '{current_session_id}'
