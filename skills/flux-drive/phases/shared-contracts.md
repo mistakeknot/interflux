@@ -78,6 +78,7 @@ Every agent moves through these states during a flux-drive run. Transitions are 
 - **`flux-watch.sh` reports each agent at most once.** Late renames after flux-watch returns are observed in Step 2.3's post-flux-watch reconciliation, not by flux-watch itself.
 - **An agent in `timeout_original_running` is treated as incomplete** (its `.partial` still exists). Orchestrator must retry or write an error stub before synthesis.
 - **`failed` agents leave a `.refused.md` or error-stub `.md`.** Synthesis includes them in counts but treats their findings as zero.
+- **A stall-rescued agent leaves a `{agent}.md` stall stub** (verdict `error`, `kind:stall` peer-finding) when `STALL_RESCUE=1` and no `.partial` or `.md` appears within `STALL_TIMEOUT` (default 60s) of any progress event. Synthesis treats stall stubs as failed (zero findings) but reports the stall in the run summary. Caller must pass `EXPECTED_AGENTS=$(printf '%s\n' "${AGENT_NAMES[@]}")` so flux-watch knows which agents are missing.
 
 ### Retry Race Protocol (Step 2.3)
 
