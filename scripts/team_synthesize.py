@@ -336,14 +336,34 @@ def _read_team_config(team_name: str | None) -> dict[str, Any] | None:
 
 
 def _extract_member_session_ids(team_config: dict[str, Any]) -> list[str]:
-    members = team_config.get("members") or []
+    """Extract session IDs that interstat can attribute cost to.
+
+    Schema observed live (claude 2.1.122) at ~/.claude/teams/{name}/config.json:
+      - top-level `leadSessionId` is a real session UUID — use directly
+      - `members[].agentId` is a name token like `alice@teams-test-3b`, NOT a session UUID;
+        it cannot be used for interstat lookup
+      - per-teammate session UUIDs are NOT in config.json; they exist as separate JSONL
+        files under ~/.claude/projects/{cwd-slug}/{uuid}.jsonl, with no direct mapping
+        from agentId → session UUID exposed in team config
+
+    For now we extract only the lead's session ID. Teammate cost is not attributable from
+    config.json alone — see sylveste-3xl3.1.20 follow-up for the full resolution path.
+    Also accept `session_id`/`sessionId`/`agent_id`/`id` as legacy/forward-compat aliases.
+    """
     out: list[str] = []
+    # Lead session ID (top-level, UUID-shaped, billable)
+    lead_id = team_config.get("leadSessionId") or team_config.get("lead_session_id")
+    if isinstance(lead_id, str) and lead_id:
+        out.append(lead_id)
+    # Member entries (only useful if a real session_id field shows up — currently agentId
+    # is a name token, not a UUID, so it would fail interstat's session-id format check)
+    members = team_config.get("members") or []
     for m in members:
         if not isinstance(m, dict):
             continue
-        for key in ("session_id", "agent_id", "id"):
+        for key in ("sessionId", "session_id", "agent_id", "id"):
             v = m.get(key)
-            if isinstance(v, str) and v:
+            if isinstance(v, str) and v and v != lead_id:
                 out.append(v)
                 break
     return out

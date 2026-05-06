@@ -153,6 +153,49 @@ def test_extract_member_session_ids_no_members():
     assert _extract_member_session_ids({}) == []
 
 
+def test_extract_session_ids_observed_live_schema():
+    """Schema observed in claude 2.1.122 — leadSessionId at top, agentId per member as
+    name token (NOT a UUID). Lead UUID extracted; member name tokens skipped (the parser
+    only picks up keys that could plausibly be UUIDs)."""
+    cfg = {
+        "name": "teams-test-3b",
+        "leadSessionId": "bcc6a665-591e-4d5b-9879-f3fca477f74a",
+        "members": [
+            {
+                "agentId": "team-lead@teams-test-3b",
+                "name": "team-lead",
+                "model": "claude-sonnet-4-6",
+            },
+            {
+                "agentId": "alice@teams-test-3b",
+                "name": "alice",
+                "model": "sonnet",
+            },
+            {
+                "agentId": "bob@teams-test-3b",
+                "name": "bob",
+                "model": "sonnet",
+            },
+        ],
+    }
+    ids = _extract_member_session_ids(cfg)
+    # Only the lead UUID is extractable; agentId values are name tokens, not session ids
+    assert ids == ["bcc6a665-591e-4d5b-9879-f3fca477f74a"]
+
+
+def test_extract_session_ids_forward_compat_with_runtime_sessionId():
+    """If a future claude version adds runtime `sessionId` to each member, pick it up."""
+    cfg = {
+        "leadSessionId": "lead-uuid",
+        "members": [
+            {"agentId": "alice@team", "sessionId": "alice-uuid"},
+            {"agentId": "bob@team", "sessionId": "bob-uuid"},
+        ],
+    }
+    ids = _extract_member_session_ids(cfg)
+    assert ids == ["lead-uuid", "alice-uuid", "bob-uuid"]
+
+
 def test_orchestrator_prompt_contains_required_protocol_elements():
     cluster_result = {
         "k": 3,
