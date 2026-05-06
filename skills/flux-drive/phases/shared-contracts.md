@@ -31,6 +31,84 @@ Each agent writes to `{OUTPUT_DIR}/{agent-name}.md` with this structure:
 
 Implication: an agent whose Write step succeeded but whose rename failed is treated as incomplete even if the sentinel is present. An agent whose rename succeeded is treated as complete even if the sentinel was omitted (sentinel absence triggers a downstream warning, not re-dispatch).
 
+## Dispatch State Machine
+
+Every agent moves through these states during a flux-drive run. Transitions are recorded by filesystem state; the orchestrator and `flux-watch.sh` observe but do not own the transitions (the agent owns its `.partial → .md` rename).
+
+```
+                   ┌────────────────┐
+                   │   dispatched   │  Agent tool returned an internal ID;
+                   │  (no .partial) │  agent has not yet started writing.
+                   └───────┬────────┘
+                           │ agent calls Write tool
+                           ▼
+                   ┌────────────────┐
+                   │    writing     │  {agent}.md.partial exists.
+                   └───┬────────┬───┘
+                       │        │
+        agent renames  │        │  flux-watch timeout
+        partial → md   │        │  before partial → md
+                       ▼        ▼
+              ┌─────────────┐  ┌──────────────────────────┐
+              │  completed  │  │ timeout_original_running │
+              │ {agent}.md  │  │ (.partial still present, │
+              └──────┬──────┘  │  flux-watch returned)    │
+                     │         └────────┬─────────────────┘
+                     ▼                  │ Step 2.3 sync retry:
+              terminal (synthesis      │ rename .partial out
+              reads it)                 │ of the way + relaunch
+                                        ▼
+                                ┌─────────────┐
+                                │   retried   │ retry's .md exists; abort
+                                │             │ marker prevents original's
+                                │             │ late mv from clobbering.
+                                └──────┬──────┘
+                                       │
+                                       ▼
+                                terminal (synthesis reads retry's .md)
+
+      Any state can transition to `failed` if the agent emits a refused.md
+      stub, an error stub, or returns with no output after retry.
+```
+
+### Invariants
+
+- **At most one terminal `.md` per agent per run.** Once a `.md` exists for a given agent name, no other `.md` write may overwrite it. This is enforced by the retry protocol below — not by file locks (filesystem renames are atomic on the same fs but `mv` itself doesn't refuse to overwrite without `mv -n`).
+- **The original Task's late completion must not clobber a retry's output.** When Step 2.3 launches a synchronous retry, it first renames the original's `.md.partial` to `{agent}.md.partial.aborted-<epoch>` so the original's eventual `mv` finds no source and fails harmlessly.
+- **`flux-watch.sh` reports each agent at most once.** Late renames after flux-watch returns are observed in Step 2.3's post-flux-watch reconciliation, not by flux-watch itself.
+- **An agent in `timeout_original_running` is treated as incomplete** (its `.partial` still exists). Orchestrator must retry or write an error stub before synthesis.
+- **`failed` agents leave a `.refused.md` or error-stub `.md`.** Synthesis includes them in counts but treats their findings as zero.
+
+### Retry Race Protocol (Step 2.3)
+
+When flux-watch returns with `.md.partial` files but no corresponding `.md`:
+
+```bash
+for partial in "$OUTPUT_DIR"/*.md.partial; do
+  agent=$(basename "$partial" .md.partial)
+  # Pre-retry guard: if .md already arrived (race with flux-watch return), skip.
+  [[ -f "$OUTPUT_DIR/$agent.md" ]] && continue
+
+  # Mark abort + rename partial out of the way. The original Task's eventual
+  # `mv .partial → .md` will find no source and fail harmlessly. Without this,
+  # a slow original Task can clobber the retry's good output.
+  ts=$(date +%s)
+  touch "$OUTPUT_DIR/$agent.abort"
+  mv "$partial" "$OUTPUT_DIR/$agent.md.partial.aborted-$ts"
+
+  # Synchronous retry (run_in_background: false) — agent retry writes its
+  # own .partial → .md. The aborted-original is now orphaned; cleanup at
+  # Step 3.0.
+  ...launch retry via Agent tool...
+
+  # Cleanup abort marker after retry returns. Aborted partial is left for
+  # post-mortem; sweep at session end if desired.
+  rm -f "$OUTPUT_DIR/$agent.abort"
+done
+```
+
+`flux-watch.sh` recognizes `*.md.partial.aborted-*` files as terminal-but-not-success and does not count them toward `seen`.
+
 ## Verdict Header (Universal)
 
 All agents (flux-drive reviewers and Codex dispatches) append a verdict header as the **last block** of their output. This enables the orchestrator to read only the tail of the file for a structured summary.

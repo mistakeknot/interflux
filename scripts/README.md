@@ -84,10 +84,42 @@ Where the failure mode is well-known, prefer narrow exception types (e.g. `excep
 
 `fluxbench-challenger.sh` previously had two `2>&1` captures that silently broke challenger selection when `yaml.safe_load` emitted a deprecation warning. Fixed in BP-B5.
 
+## VerificationStep — audit primitive for state transitions
+
+`scripts/_verification.py` provides a single-purpose primitive for "we checked and were correct to skip" vs "we never checked" — the gap that erases audit trails on no-op short-circuit paths.
+
+```python
+from _verification import VerificationStep, append_to_log
+
+# Three factory constructors, three states:
+ok    = VerificationStep.verified("microrouter-passthrough",
+                                   "matched B3 calibration:sonnet",
+                                   decision_type="passthrough")
+bad   = VerificationStep.failed("safety-floor-check",
+                                 "fd-safety routed to haiku")
+fuzzy = VerificationStep.unverifiable("shadow-log-fetch",
+                                       "interspect endpoint unreachable",
+                                       decision_type="endpoint-unreachable")
+
+assert ok.is_success() is True
+assert bad.is_success() is False
+assert fuzzy.is_success() is False   # UNVERIFIABLE != success — fail-closed
+
+append_to_log(ok, "/path/to/decisions.jsonl")
+```
+
+**Critical invariant:** `UNVERIFIABLE` is **not** success. When a check can't be performed (missing data, broken tool, endpoint down), downstream code must fail-closed (e.g., privacy-routing must engage local fallback rather than passing through).
+
+`run_uuid` auto-populates from `FLUX_RUN_UUID` env when set (BP-C2.B will wire this through). Output is compact JSONL — no spaces in separators, None fields dropped.
+
+## Dispatch state machine + retry race
+
+Documented in `skills/flux-drive/phases/shared-contracts.md` § Dispatch State Machine. Six states (`dispatched`, `writing`, `completed`, `timeout_original_running`, `retried`, `failed`) and explicit invariants. The retry race protocol (BP-C2) renames the original Task's `.md.partial` to `.md.partial.aborted-<epoch>` before launching a synchronous retry — the original's eventual `mv .partial → .md` finds no source and fails harmlessly. `flux-watch.sh` filters `.aborted-*` and `.abort` files from completion counts.
+
 ## Test runner
 
 ```bash
 python3 -m pytest scripts/tests/ -v
 ```
 
-Currently 92 tests across `test_lib_registry.py` (53) and `test_fluxbench_score.py` (39). New extracted modules under `scripts/_*.py` should ship with a matching `scripts/tests/test_<module>.py`.
+Currently 118 tests across `test_lib_registry.py` (53), `test_fluxbench_score.py` (39), and `test_verification.py` (26). New extracted modules under `scripts/_*.py` should ship with a matching `scripts/tests/test_<module>.py`.

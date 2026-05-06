@@ -80,6 +80,9 @@ if command -v inotifywait >/dev/null 2>&1; then
     # Read events from the already-running watcher
     while IFS= read -r file <&3; do
         [[ "$file" == *.md && "$file" != *.md.partial ]] || continue
+        # Aborted-original partials (BP-C2 retry race protocol) are
+        # terminal-but-not-success; they don't count toward seen.
+        [[ "$file" == *.md.partial.aborted-* || "$file" == *.abort ]] && continue
         [[ "$file" == triage-table.md || "$file" == triage.md || "$file" == synthesis.md ]] && continue
         if [[ -z "${reported[$file]:-}" ]]; then
             reported[$file]=1

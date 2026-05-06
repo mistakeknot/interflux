@@ -256,7 +256,7 @@ Monitor via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {
 
 **Progress display:** flux-watch.sh outputs progress lines as each agent completes: `[N/M | elapsed] agent-name`. Display these to the user as they arrive — this is the primary UX feedback during agent runs. Do not suppress or buffer this output.
 
-**Completion verification:** List `{OUTPUT_DIR}/` — expect `.md` per agent. For `.md.partial` only (incomplete): retry once with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if `.md` exists. If retry fails, write error stub per `phases/shared-contracts.md`. Clean up `.md.partial` files. Report: "N/M completed, K retried, J failed".
+**Completion verification:** List `{OUTPUT_DIR}/` — expect `.md` per agent. For `.md.partial` only (incomplete): retry once via the **Retry Race Protocol** in `phases/shared-contracts.md` § Dispatch State Machine. Briefly: touch `{agent}.abort`, rename `.md.partial` to `.md.partial.aborted-<epoch>`, then sync retry with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if `.md` exists (race with flux-watch return). If retry fails, write error stub per `phases/shared-contracts.md`. Cleanup: remove `.abort` markers; leave `.aborted-*` partials for post-mortem. Report: "N/M completed, K retried, J failed".
 
 **Synthetic refusal detection (Opus 4.7 + later):** The Anthropic API occasionally
 returns a server-generated Usage Policy error on combinations that the input
