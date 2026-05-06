@@ -24,16 +24,23 @@ Then skip to **Step 3.2**.
 
 **[review mode]**: For each agent's output file, validate structure before reading content:
 
-1. Check the file starts with `### Findings Index` (first non-empty line)
-2. Verify index lines match `- SEVERITY | ID | "Section" | Title` pattern
-3. Check for a `Verdict:` line after the index entries
-4. Classification:
+1. **Quire-mark check (BP-C2.B):** the first non-empty line must be `<!-- run-uuid: $FLUX_RUN_UUID -->` matching the current run. If absent or mismatched, classify as **Foreign**: the file came from a prior run on this OUTPUT_DIR or another concurrent invocation. Foreign files are skipped — do not include their findings, do not count them toward convergence, and report "{N} foreign files skipped" in the validation summary. Recommended one-liner:
+   ```bash
+   expected_marker="<!-- run-uuid: ${FLUX_RUN_UUID} -->"
+   first_line=$(awk 'NF{print; exit}' "$f")
+   [[ "$first_line" == "$expected_marker" ]] || classify_foreign "$f"
+   ```
+2. Check that the next non-empty line starts with `### Findings Index`.
+3. Verify index lines match `- SEVERITY | ID | "Section" | Title` pattern.
+4. Check for a `Verdict:` line after the index entries.
+5. Classification:
    - **Valid**: Findings Index parsed successfully → proceed with index-first collection
+   - **Foreign**: run-uuid missing or mismatched → skip, log as warning
    - **Error**: File contains "verdict: error" or "Verdict: error" → note as "agent failed" in summary, don't count toward convergence
    - **Malformed**: File exists but Findings Index is missing/unrecognizable → fall back to prose-based reading (read Summary + Issues sections directly)
    - **Missing**: File doesn't exist or is empty → "no findings"
 
-Report validation results to user: "5/6 agents returned valid Findings Index, 1 failed"
+Report validation results to user: "5/6 agents returned valid Findings Index, 1 foreign skipped, 0 failed"
 
 ### Step 3.2: Delegate to Synthesis Subagent
 

@@ -12,7 +12,9 @@ Add `<!-- flux-drive:complete -->` as the last line before renaming.
 
 ALL findings go in that file — do NOT return findings in your response text.
 
-File structure:
+File structure (the run-uuid line MUST be the first non-empty line):
+
+<!-- run-uuid: {RUN_UUID} -->
 
 ### Findings Index
 - SEVERITY | ID | "Section" | Title
@@ -28,6 +30,11 @@ Verdict: safe|needs-changes|risky
 [ID. Title — 1 sentence with rationale]
 
 Zero findings: empty index + verdict: safe.
+
+The run-uuid is the orchestrator's quire-mark — synthesis rejects findings
+whose run-uuid does not match the current run (this prevents stale outputs
+from prior runs and foreign-agent files in the OUTPUT_DIR from contaminating
+synthesis). Copy `{RUN_UUID}` exactly as provided.
 
 ---
 

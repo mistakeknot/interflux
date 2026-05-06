@@ -11,8 +11,17 @@ mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research
 
 OUTPUT_DIR is content-addressed by default (see SKILL.md § Run isolation): suffix is `sha256(INPUT_PATH)[:8]`. The hash-stable path keeps the agent-prompt prefix cache-friendly across reruns of the same target, but it also means a previous run on this target may have left stale outputs. Always clean before dispatch:
 ```bash
-find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete
+find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" -o -name "decisions.log" \) -delete
 ```
+
+**Generate the run UUID (quire-mark).** Every artifact emitted by this run carries the same opaque identifier so synthesis can detect cross-run contamination (a stale `.md` from a prior run on this same OUTPUT_DIR, or a foreign agent file written by another concurrent invocation). Generate once, export for child processes:
+```bash
+FLUX_RUN_UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
+export FLUX_RUN_UUID
+export FLUX_OUTPUT_DIR="{OUTPUT_DIR}"
+```
+
+`FLUX_RUN_UUID` is auto-consumed by `scripts/_verification.py` (every VerificationStep records it) and by `scripts/_decisions_log.py` (every decision record). Pass it into agent prompts via the `RUN_UUID` template variable — agents emit it in their output preamble for synthesis-time validation.
 
 ### Step 2.0.4: Composer dispatch plan (optional)
 
