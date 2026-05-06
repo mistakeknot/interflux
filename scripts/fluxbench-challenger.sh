@@ -13,6 +13,9 @@ export MODEL_REGISTRY="${MODEL_REGISTRY:-${CONFIG_DIR}/model-registry.yaml}"
 export BUDGET_CONFIG="${BUDGET_CONFIG:-${CONFIG_DIR}/budget.yaml}"
 export RESULTS_JSONL="${FLUXBENCH_RESULTS_JSONL:-${SCRIPT_DIR}/../data/fluxbench-results.jsonl}"
 
+# shellcheck source=lib-registry.sh
+source "${SCRIPT_DIR}/lib-registry.sh"
+
 action="${1:-}"
 shift || true
 
@@ -41,110 +44,26 @@ _count_runs() {
 # Args: $1 = model slug, $2 = new status
 _set_model_status() {
   local slug="$1" new_status="$2"
-  # flock -w 30 prevents indefinite waits under concurrent writers. Exit 3 inside the
-  # subshell signals lock timeout; the parent translates that to a loud failure.
-  local _flock_rc=0
-  (
-    flock -w 30 -x 201 || exit 3
-    _tmp_reg=$(mktemp)
-    trap 'rm -f "$_tmp_reg"' EXIT
-    cp "$MODEL_REGISTRY" "$_tmp_reg"
-
-    export _FB_TMP_REG="$_tmp_reg"
-    export _FB_SLUG="$slug"
-    export _FB_NEW_STATUS="$new_status"
-    python3 -c "
-import yaml, json, sys, os
-
-reg_path = os.environ['_FB_TMP_REG']
-slug = os.environ['_FB_SLUG']
-new_status = os.environ['_FB_NEW_STATUS']
-
-with open(reg_path) as f:
-    reg = yaml.safe_load(f) or {}
-
-if 'models' not in reg or reg['models'] is None:
-    reg['models'] = {}
-
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-
-if model is not None:
-    model['status'] = new_status
-
-with open(reg_path, 'w') as f:
-    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
-"
-    # Validate before swap
-    python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
-    mv "$_tmp_reg" "$MODEL_REGISTRY"
-  ) 201>"${MODEL_REGISTRY}.lock" || _flock_rc=$?
-  if [[ $_flock_rc -eq 3 ]]; then
-    echo "fluxbench-challenger: lock timeout after 30s setting status for '$slug'" >&2
-    return 1
-  elif [[ $_flock_rc -ne 0 ]]; then
-    echo "fluxbench-challenger: status write failed for '$slug' (rc=$_flock_rc)" >&2
-    return 1
-  fi
+  local rc=0
+  registry_set_string_field "$MODEL_REGISTRY" "$slug" "status" "$new_status" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    3) echo "fluxbench-challenger: status write failed for '$slug' (slug missing or lock timeout)" >&2; return 1 ;;
+    *) echo "fluxbench-challenger: status write failed for '$slug' (rc=$rc)" >&2; return 1 ;;
+  esac
 }
 
 # Atomic registry write: promote a model (set qualified + preserve qualified_via)
 # Args: $1 = model slug
 _promote_model() {
   local slug="$1"
-  local _flock_rc=0
-  (
-    flock -w 30 -x 201 || exit 3
-    _tmp_reg=$(mktemp)
-    trap 'rm -f "$_tmp_reg"' EXIT
-    cp "$MODEL_REGISTRY" "$_tmp_reg"
-
-    export _FB_TMP_REG="$_tmp_reg"
-    export _FB_SLUG="$slug"
-    python3 -c "
-import yaml, json, sys, os
-
-reg_path = os.environ['_FB_TMP_REG']
-slug = os.environ['_FB_SLUG']
-
-with open(reg_path) as f:
-    reg = yaml.safe_load(f) or {}
-
-if 'models' not in reg or reg['models'] is None:
-    reg['models'] = {}
-
-model = reg['models'].get(slug) if isinstance(reg['models'], dict) else None
-if model is None and isinstance(reg['models'], list):
-    for m in reg['models']:
-        if isinstance(m, dict) and m.get('model_id', '') == slug:
-            model = m
-            break
-
-if model is not None:
-    model['status'] = 'qualified'
-    # Preserve qualified_via on promotion
-    model['qualified_via'] = model.get('qualified_via') or 'unknown'
-    if model['qualified_via'] == 'unknown':
-        print(f'  WARNING: {slug} promoted without qualified_via — was it qualified?', file=sys.stderr)
-
-with open(reg_path, 'w') as f:
-    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
-"
-    # Validate before swap
-    python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG']))"
-    mv "$_tmp_reg" "$MODEL_REGISTRY"
-  ) 201>"${MODEL_REGISTRY}.lock" || _flock_rc=$?
-  if [[ $_flock_rc -eq 3 ]]; then
-    echo "fluxbench-challenger: lock timeout after 30s promoting '$slug'" >&2
-    return 1
-  elif [[ $_flock_rc -ne 0 ]]; then
-    echo "fluxbench-challenger: promotion write failed for '$slug' (rc=$_flock_rc)" >&2
-    return 1
-  fi
+  local rc=0
+  registry_atomic_mutate "$MODEL_REGISTRY" promote "$slug" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    3) echo "fluxbench-challenger: promotion failed for '$slug' (slug missing or lock timeout)" >&2; return 1 ;;
+    *) echo "fluxbench-challenger: promotion failed for '$slug' (rc=$rc)" >&2; return 1 ;;
+  esac
 }
 
 # --- Action: select ---

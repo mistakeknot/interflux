@@ -148,6 +148,70 @@ def test_set_field_complex_value() -> None:
     assert reg["models"]["a"]["qualification"] == payload
 
 
+# --- set_model_field_if_absent --------------------------------------------
+
+
+def test_set_field_if_absent_creates() -> None:
+    reg = {"models": {"a": {}}}
+    assert lr.set_model_field_if_absent(reg, "a", "qualified_baseline", {"recall": 0.9}) is True
+    assert reg["models"]["a"]["qualified_baseline"] == {"recall": 0.9}
+
+
+def test_set_field_if_absent_preserves_existing() -> None:
+    reg = {"models": {"a": {"qualified_baseline": {"recall": 0.7}}}}
+    lr.set_model_field_if_absent(reg, "a", "qualified_baseline", {"recall": 0.99})
+    assert reg["models"]["a"]["qualified_baseline"] == {"recall": 0.7}
+
+
+def test_set_field_if_absent_treats_none_as_absent() -> None:
+    reg = {"models": {"a": {"qualified_baseline": None}}}
+    lr.set_model_field_if_absent(reg, "a", "qualified_baseline", {"new": 1})
+    assert reg["models"]["a"]["qualified_baseline"] == {"new": 1}
+
+
+def test_set_field_if_absent_missing_slug() -> None:
+    reg = {"models": {}}
+    assert lr.set_model_field_if_absent(reg, "missing", "x", 1) is False
+
+
+# --- merge_model_fields ----------------------------------------------------
+
+
+def test_merge_fields_existing_model() -> None:
+    reg = {"models": {"a": {"status": "candidate", "old_key": "kept"}}}
+    lr.merge_model_fields(reg, "a", {"status": "qualified", "new_key": 5})
+    assert reg["models"]["a"]["status"] == "qualified"
+    assert reg["models"]["a"]["old_key"] == "kept"
+    assert reg["models"]["a"]["new_key"] == 5
+
+
+def test_merge_fields_creates_model_if_absent() -> None:
+    reg: dict = {"models": {}}
+    lr.merge_model_fields(reg, "newslug", {"status": "candidate", "provider": "openrouter"})
+    assert reg["models"]["newslug"] == {"status": "candidate", "provider": "openrouter"}
+
+
+def test_merge_fields_normalizes_list_models() -> None:
+    reg = {"models": [{"model_id": "a", "status": "x"}]}
+    lr.merge_model_fields(reg, "a", {"status": "qualified"})
+    assert isinstance(reg["models"], dict)
+    assert reg["models"]["a"]["status"] == "qualified"
+
+
+def test_merge_fields_shallow_replaces_nested_dict() -> None:
+    """Shallow merge: a nested dict in fields replaces the existing nested dict entirely."""
+    reg = {"models": {"a": {"fluxbench": {"old_metric": 1, "preserved": 99}}}}
+    lr.merge_model_fields(reg, "a", {"fluxbench": {"new_metric": 2}})
+    # Shallow: 'preserved' is gone because the whole 'fluxbench' was replaced
+    assert reg["models"]["a"]["fluxbench"] == {"new_metric": 2}
+
+
+def test_merge_fields_rejects_non_dict() -> None:
+    reg: dict = {"models": {}}
+    with pytest.raises(ValueError, match="must be a dict"):
+        lr.merge_model_fields(reg, "a", "not-a-dict")  # type: ignore[arg-type]
+
+
 # --- promote_model ---------------------------------------------------------
 
 
@@ -256,6 +320,52 @@ def test_cli_set_field_complex_json(tmp_path: Path) -> None:
     assert rc == 0
     reg = yaml.safe_load(p.read_text())
     assert reg["models"]["a"]["qualification"] == {"recall": 0.9, "precision": 0.85}
+
+
+def test_cli_set_field_if_absent_creates(tmp_path: Path) -> None:
+    p = tmp_path / "reg.yaml"
+    p.write_text(yaml.dump({"models": {"a": {}}}))
+    rc = _run_cli("set-field-if-absent", str(p), "a", "qualified_baseline", '{"recall":0.9}').returncode
+    assert rc == 0
+    reg = yaml.safe_load(p.read_text())
+    assert reg["models"]["a"]["qualified_baseline"] == {"recall": 0.9}
+
+
+def test_cli_set_field_if_absent_preserves(tmp_path: Path) -> None:
+    p = tmp_path / "reg.yaml"
+    p.write_text(yaml.dump({"models": {"a": {"qualified_baseline": {"recall": 0.7}}}}))
+    rc = _run_cli("set-field-if-absent", str(p), "a", "qualified_baseline", '{"recall":0.99}').returncode
+    assert rc == 0
+    reg = yaml.safe_load(p.read_text())
+    assert reg["models"]["a"]["qualified_baseline"] == {"recall": 0.7}
+
+
+def test_cli_merge_fields_existing(tmp_path: Path) -> None:
+    p = tmp_path / "reg.yaml"
+    p.write_text(yaml.dump({"models": {"a": {"status": "candidate"}}}))
+    payload = json.dumps({"status": "qualified", "qualified_via": "v0.2.61"})
+    rc = _run_cli("merge-fields", str(p), "a", payload).returncode
+    assert rc == 0
+    reg = yaml.safe_load(p.read_text())
+    assert reg["models"]["a"]["status"] == "qualified"
+    assert reg["models"]["a"]["qualified_via"] == "v0.2.61"
+
+
+def test_cli_merge_fields_creates_model(tmp_path: Path) -> None:
+    p = tmp_path / "reg.yaml"
+    p.write_text(yaml.dump({"models": {}}))
+    rc = _run_cli("merge-fields", str(p), "new", '{"status":"candidate"}').returncode
+    assert rc == 0
+    reg = yaml.safe_load(p.read_text())
+    assert reg["models"]["new"]["status"] == "candidate"
+
+
+def test_cli_merge_fields_rejects_non_object(tmp_path: Path) -> None:
+    p = tmp_path / "reg.yaml"
+    p.write_text(yaml.dump({"models": {"a": {}}}))
+    result = _run_cli("merge-fields", str(p), "a", '"a string not an object"')
+    assert result.returncode == 4
+    assert "must be a JSON object" in result.stderr
 
 
 def test_cli_promote_success(tmp_path: Path) -> None:

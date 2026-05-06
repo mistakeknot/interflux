@@ -12,9 +12,11 @@ Public API:
     validate_and_dump(reg, path) -> None
 
 CLI (used by lib-registry.sh registry_atomic_mutate):
-    python3 -m lib_registry set-field   <path> <slug> <key> <value-json>
-    python3 -m lib_registry promote     <path> <slug>
-    python3 -m lib_registry validate    <path>
+    python3 -m lib_registry set-field           <path> <slug> <key> <value-json>
+    python3 -m lib_registry set-field-if-absent <path> <slug> <key> <value-json>
+    python3 -m lib_registry merge-fields        <path> <slug> <fields-json>  # shallow merge, creates slug if absent
+    python3 -m lib_registry promote             <path> <slug>
+    python3 -m lib_registry validate            <path>
 
 Exit codes:
     0  success
@@ -90,6 +92,42 @@ def set_model_field(reg: dict[str, Any], slug: str, key: str, value: Any) -> boo
     return True
 
 
+def set_model_field_if_absent(reg: dict[str, Any], slug: str, key: str, value: Any) -> bool:
+    """Set a field only if currently absent or None. Returns True if the model exists.
+
+    Encodes the "preserve existing" semantic used for qualified_baseline in
+    fluxbench-qualify — once set, the baseline must not be overwritten by later
+    qualification runs.
+    """
+    model = get_model(reg, slug)
+    if model is None:
+        return False
+    if model.get(key) is None:
+        model[key] = value
+    return True
+
+
+def merge_model_fields(reg: dict[str, Any], slug: str, fields: dict[str, Any]) -> bool:
+    """Shallow-merge a fields dict into a model (replaces top-level keys).
+
+    Creates the model entry if absent — matches the fluxbench-qualify behavior
+    where _update_registry creates a fresh model dict for a slug not yet in the
+    registry. Returns True always (caller can preflight with get_model if they
+    want to distinguish create-vs-update).
+    """
+    if not isinstance(fields, dict):
+        raise ValueError(f"fields must be a dict, got {type(fields).__name__}")
+    normalize_models(reg)
+    models = reg["models"]  # always dict after normalize
+    model = models.get(slug)
+    if model is None:
+        model = {}
+        models[slug] = model
+    for k, v in fields.items():
+        model[k] = v
+    return True
+
+
 def promote_model(reg: dict[str, Any], slug: str) -> bool:
     """Mark model as qualified, preserving qualified_via. Returns True if found.
 
@@ -133,6 +171,35 @@ def _cli_set_field(path: str, slug: str, key: str, value_json: str) -> int:
     return 0
 
 
+def _cli_set_field_if_absent(path: str, slug: str, key: str, value_json: str) -> int:
+    try:
+        value = json.loads(value_json)
+    except json.JSONDecodeError as exc:
+        print(f"lib_registry: invalid JSON for value: {exc}", file=sys.stderr)
+        return 4
+    reg = load_registry(path)
+    if not set_model_field_if_absent(reg, slug, key, value):
+        print(f"lib_registry: slug '{slug}' not found in {path}", file=sys.stderr)
+        return 3
+    validate_and_dump(reg, path)
+    return 0
+
+
+def _cli_merge_fields(path: str, slug: str, fields_json: str) -> int:
+    try:
+        fields = json.loads(fields_json)
+    except json.JSONDecodeError as exc:
+        print(f"lib_registry: invalid JSON for fields: {exc}", file=sys.stderr)
+        return 4
+    if not isinstance(fields, dict):
+        print(f"lib_registry: fields must be a JSON object", file=sys.stderr)
+        return 4
+    reg = load_registry(path)
+    merge_model_fields(reg, slug, fields)
+    validate_and_dump(reg, path)
+    return 0
+
+
 def _cli_promote(path: str, slug: str) -> int:
     reg = load_registry(path)
     if not promote_model(reg, slug):
@@ -155,6 +222,10 @@ def main(argv: list[str]) -> int:
     try:
         if op == "set-field" and len(argv) == 6:
             return _cli_set_field(argv[2], argv[3], argv[4], argv[5])
+        if op == "set-field-if-absent" and len(argv) == 6:
+            return _cli_set_field_if_absent(argv[2], argv[3], argv[4], argv[5])
+        if op == "merge-fields" and len(argv) == 5:
+            return _cli_merge_fields(argv[2], argv[3], argv[4])
         if op == "promote" and len(argv) == 4:
             return _cli_promote(argv[2], argv[3])
         if op == "validate" and len(argv) == 3:

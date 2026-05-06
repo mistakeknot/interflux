@@ -14,6 +14,9 @@ CONFIG_DIR="${SCRIPT_DIR}/../config/flux-drive"
 DEFAULT_FIXTURES_DIR="${SCRIPT_DIR}/../tests/fixtures/qualification"
 MODEL_REGISTRY="${MODEL_REGISTRY:-${CONFIG_DIR}/model-registry.yaml}"
 
+# shellcheck source=lib-registry.sh
+source "${SCRIPT_DIR}/lib-registry.sh"
+
 # --- Argument parsing ---
 model_slug=""
 mock_mode=false
@@ -140,74 +143,94 @@ _write_summary_jsonl() {
 
 # --- Shared: atomic registry update ---
 _update_registry() {
-  local tmp_reg
-  tmp_reg=$(mktemp)
-  # trap RETURN does not fire on SIGINT; use EXIT so Ctrl-C still cleans tmp files up.
-  # Scoping to RETURN+EXIT is sufficient because subshells are not used inside this function
-  # for the tmp_reg lifecycle; the outer script's EXIT trap will also fire on SIGINT.
-  trap 'rm -f "$tmp_reg"' RETURN EXIT
-  export _FB_TMP_REG="$tmp_reg"
+  # Build the merge payload (status + qualified_via + optional fluxbench metrics)
+  # via a single python invocation, then apply it through registry_atomic_mutate.
+  # The mutate helper acquires its own flock, so this function MUST NOT be
+  # called from inside an existing flock on ${MODEL_REGISTRY}.lock.
+  local slug="$_FB_SLUG"
+  local new_status="$_FB_STATUS"
+  local qual_mode="${_FB_QUAL_MODE:-}"
+  local avg_json="${_FB_AVG_METRICS:-{\}}"
 
-  cp "$MODEL_REGISTRY" "$tmp_reg"
+  if [[ "$qual_mode" != "real" && "$qual_mode" != "mock" ]]; then
+    echo "Error: _FB_QUAL_MODE must be real or mock, got: ${qual_mode!r}" >&2
+    return 1
+  fi
 
-  python3 -c "
-import yaml, json, sys, os
+  # Compute the fields-merge payload + the if-absent baseline payload.
+  # Output is line-delimited (3 lines) so JSON whitespace doesn't break IFS splitting.
+  local payload_json baseline_json should_baseline
+  {
+    read -r payload_json
+    read -r baseline_json
+    read -r should_baseline
+  } < <(
+    _FB_STATUS="$new_status" \
+    _FB_QUAL_MODE="$qual_mode" \
+    _FB_AVG_METRICS="$avg_json" \
+    python3 -c "
+import json, os
+status = os.environ['_FB_STATUS']
+qual_mode = os.environ['_FB_QUAL_MODE']
+metrics = json.loads(os.environ.get('_FB_AVG_METRICS') or '{}')
 
-reg_path = os.environ['_FB_TMP_REG']
-slug = os.environ['_FB_SLUG']
-new_status = os.environ['_FB_STATUS']
-avg_json = os.environ.get('_FB_AVG_METRICS') or '{}'
-qual_mode = os.environ.get('_FB_QUAL_MODE')
-if not qual_mode or qual_mode not in ('real', 'mock'):
-    raise ValueError(f'_FB_QUAL_MODE must be real or mock, got: {qual_mode!r}')
-
-with open(reg_path) as f:
-    reg = yaml.safe_load(f)
-
-if reg is None:
-    reg = {}
-if 'models' not in reg or reg['models'] is None:
-    reg['models'] = {}
-if isinstance(reg['models'], list):
-    reg['models'] = {}
-
-model = reg['models'].get(slug)
-if model is None:
-    model = {}
-    reg['models'][slug] = model
-
-model['status'] = new_status
-model['qualified_via'] = qual_mode
-
-metrics = json.loads(avg_json) if avg_json else {}
+merge = {'status': status, 'qualified_via': qual_mode}
 if metrics:
-    if 'fluxbench' not in model or model['fluxbench'] is None:
-        model['fluxbench'] = {}
-    fb = model['fluxbench']
-    fb['format_compliance'] = metrics.get('fluxbench-format-compliance')
-    fb['finding_recall'] = metrics.get('fluxbench-finding-recall')
-    fb['false_positive_rate'] = metrics.get('fluxbench-false-positive-rate')
-    fb['severity_accuracy'] = metrics.get('fluxbench-severity-accuracy')
+    merge['fluxbench'] = {
+        'format_compliance':  metrics.get('fluxbench-format-compliance'),
+        'finding_recall':     metrics.get('fluxbench-finding-recall'),
+        'false_positive_rate': metrics.get('fluxbench-false-positive-rate'),
+        'severity_accuracy':  metrics.get('fluxbench-severity-accuracy'),
+    }
 
-if new_status in ('auto-qualified', 'qualified') and metrics:
-    current_baseline = model.get('qualified_baseline')
-    if current_baseline is None:
-        model['qualified_baseline'] = {
-            'fluxbench-format-compliance': metrics.get('fluxbench-format-compliance'),
-            'fluxbench-finding-recall': metrics.get('fluxbench-finding-recall'),
-            'fluxbench-false-positive-rate': metrics.get('fluxbench-false-positive-rate'),
-            'fluxbench-severity-accuracy': metrics.get('fluxbench-severity-accuracy'),
-        }
-    else:
-        print('  qualified_baseline already set — preserving existing baseline', file=sys.stderr)
+baseline = ''
+should = '0'
+if status in ('auto-qualified', 'qualified') and metrics:
+    baseline_obj = {
+        'fluxbench-format-compliance':  metrics.get('fluxbench-format-compliance'),
+        'fluxbench-finding-recall':     metrics.get('fluxbench-finding-recall'),
+        'fluxbench-false-positive-rate': metrics.get('fluxbench-false-positive-rate'),
+        'fluxbench-severity-accuracy':  metrics.get('fluxbench-severity-accuracy'),
+    }
+    baseline = json.dumps(baseline_obj)
+    should = '1'
 
-with open(reg_path, 'w') as f:
-    yaml.dump(reg, f, default_flow_style=False, sort_keys=False)
-" 2>&1
+print(json.dumps(merge))
+print(baseline if baseline else 'NONE')
+print(should)
+"
+  )
 
-  export _FB_TMP_REG_VAL="$tmp_reg"
-  python3 -c "import yaml, os; yaml.safe_load(open(os.environ['_FB_TMP_REG_VAL']))" || { echo "Error: registry validation failed" >&2; return 1; }
-  mv "$tmp_reg" "$MODEL_REGISTRY"
+  local rc=0
+  registry_atomic_mutate "$MODEL_REGISTRY" merge-fields "$slug" "$payload_json" || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "Error: registry merge-fields failed (rc=$rc)" >&2
+    return 1
+  fi
+
+  if [[ "$should_baseline" == "1" && "$baseline_json" != "NONE" ]]; then
+    rc=0
+    registry_atomic_mutate "$MODEL_REGISTRY" set-field-if-absent "$slug" "qualified_baseline" "$baseline_json" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      echo "Error: registry set-field-if-absent for qualified_baseline failed (rc=$rc)" >&2
+      return 1
+    fi
+    # If the baseline was already set, lib_registry preserves it silently. Print a
+    # post-write check so the legacy "preserving existing baseline" message still
+    # appears when relevant.
+    local current
+    current=$(python3 -c "
+import yaml, json, sys, os
+reg = yaml.safe_load(open('$MODEL_REGISTRY')) or {}
+m = (reg.get('models') or {}).get('$slug') or {}
+b = m.get('qualified_baseline') or {}
+new = json.loads('''$baseline_json''')
+print('preserved' if b != new else 'set')
+" 2>/dev/null)
+    if [[ "$current" == "preserved" ]]; then
+      echo "  qualified_baseline already set — preserving existing baseline" >&2
+    fi
+  fi
 }
 
 # --- Validate fixtures directory (needed for --mock and --emit) ---
@@ -493,22 +516,14 @@ for fid in m.get('fixtures_detail', []):
   export _FB_QUAL_MODE="real"
 
   if [[ -f "$MODEL_REGISTRY" ]]; then
-    # flock -w 30 prevents hangs when another qualify/challenger/drift run holds
-    # the same lock. Subshell exit 3 = timeout; anything else non-zero is a real
-    # write failure.
-    _fq_flock_rc=0
-    (
-      flock -w 30 -x 201 || exit 3
-      export _FB_SLUG="$model_slug"
-      export _FB_STATUS="$new_status"
-      export _FB_AVG_METRICS="${avg_metrics:-"{}"}"
-      _update_registry || exit 1
-    ) 201>"${MODEL_REGISTRY}.lock" || _fq_flock_rc=$?
-    if [[ $_fq_flock_rc -eq 3 ]]; then
-      echo "  Error: registry lock timeout after 30s" >&2
-      exit 1
-    elif [[ $_fq_flock_rc -ne 0 ]]; then
-      echo "  Error: registry write failed (rc=$_fq_flock_rc)" >&2
+    # _update_registry uses lib-registry.sh's registry_atomic_mutate which
+    # acquires its own flock with a 30s timeout per atomic mutation. No outer
+    # flock here — that would self-deadlock the inner one (flock(2) is per-FD).
+    export _FB_SLUG="$model_slug"
+    export _FB_STATUS="$new_status"
+    export _FB_AVG_METRICS="${avg_metrics:-"{}"}"
+    if ! _update_registry; then
+      echo "  Error: registry write failed" >&2
       exit 1
     fi
     echo "  Registry updated: $MODEL_REGISTRY" >&2
