@@ -184,6 +184,19 @@ If any track fails, report which failed and proceed with the surviving tracks.
 
 ## Step 3: Fan-Out — Run Flux-Drive Reviews in Parallel
 
+### Concurrency
+
+The Anthropic API rate limit is shared across all in-flight subagents. Each track is itself a flux-drive run that internally fans out to N agents (subject to that flux-drive's own `MAX_CONCURRENT_AGENTS` cap, default 6). To prevent the multiplicative blow-up (4 tracks × 6 agents = 24 concurrent agents on a single API key), pass a lower per-track cap when dispatching tracks:
+
+```
+MAX_CONCURRENT_TRACKS = ${MAX_CONCURRENT_TRACKS:-4}     # outer cap (track count is already small)
+PER_TRACK_AGENT_CAP   = ${PER_TRACK_AGENT_CAP:-3}       # passed to each inner flux-drive as MAX_CONCURRENT_AGENTS
+```
+
+When dispatching each track's flux-drive subagent, include `MAX_CONCURRENT_AGENTS=${PER_TRACK_AGENT_CAP}` in the env or instruction so the inner flux-drive respects the lower cap. Total concurrent agents = `min(TRACK_COUNT, MAX_CONCURRENT_TRACKS) × PER_TRACK_AGENT_CAP` (default 4 × 3 = 12 — comfortably inside default API tier limits while still parallelising the bulk of work). For high-tier API keys raise the caps; for shared/low-tier keys lower `PER_TRACK_AGENT_CAP` to 2.
+
+### Launch
+
 Launch one flux-drive review per active track using the Agent tool, all in parallel with `run_in_background: true`. Model per track depends on `QUALITY_MODE`:
 
 | Track | economy | balanced | max |

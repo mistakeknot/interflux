@@ -9,7 +9,7 @@ Create the output directory before launching agents. Resolve to an absolute path
 mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research/flux-drive/my-doc-name-20260404T1930
 ```
 
-OUTPUT_DIR is timestamped by default (see SKILL.md § Run isolation) to prevent cross-run contamination. If the caller passed `--output-dir` explicitly (reusing a fixed path), enforce run isolation by cleaning stale files:
+OUTPUT_DIR is content-addressed by default (see SKILL.md § Run isolation): suffix is `sha256(INPUT_PATH)[:8]`. The hash-stable path keeps the agent-prompt prefix cache-friendly across reruns of the same target, but it also means a previous run on this target may have left stale outputs. Always clean before dispatch:
 ```bash
 find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete
 ```
@@ -44,7 +44,7 @@ OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1 for the q
 
 **Skip this entire section in review mode.** In research mode, build per-agent research prompts with the query profile (type, keywords, scope, depth), project context, and domain research directives (if detected). Output format: Sources → Findings → Confidence → Gaps. Write to `{OUTPUT_DIR}/{agent-name}.md.partial`, rename to `.md` with `<!-- flux-research:complete -->` sentinel when done.
 
-Dispatch all agents via Task tool with `run_in_background: true`. Project Agents use `subagent_type: general-purpose`. Timeouts: quick=30s, standard=2min, deep=5min. Then skip to Step 2.3.
+Dispatch all agents via Task tool with `run_in_background: true`, respecting the concurrency cap defined below (`MAX_CONCURRENT_AGENTS`, default 6). Project Agents use `subagent_type: general-purpose`. Timeouts: quick=30s, standard=2min, deep=5min. Then skip to Step 2.3.
 
 ---
 
@@ -144,6 +144,26 @@ After each stage launch, tell the user:
 - That they are running in background
 - Estimated wait time (~3-5 minutes)
 
+### Concurrency cap (applies to Stage 1, Stage 2 expansion, and research dispatch)
+
+Anthropic API rate limits and prompt-cache contention degrade throughput when too many agents fan out simultaneously (Erlang C predicts ~30% retry-token waste at the 16-agent fan-out tier). Cap concurrent in-flight agent dispatches at:
+
+```
+MAX_CONCURRENT_AGENTS = ${MAX_CONCURRENT_AGENTS:-6}
+```
+
+Resolution order: env var → budget.yaml `dispatch.max_concurrent_agents` → default 6.
+
+**Dispatch loop pattern** (applies wherever this phase fans out — Stage 1 launch, Stage 2 expansion, research-mode parallel dispatch, peer-finding broadcasts):
+
+1. Track in-flight Task calls (those with `run_in_background: true` whose `output_file` has not yet been polled to completion).
+2. Before issuing the next dispatch, if `in_flight_count >= MAX_CONCURRENT_AGENTS`, wait for any in-flight task to complete (poll the Task notifications) before dispatching the next.
+3. The cap is per **flux-drive run**. Outer wrappers like `/flux-review` apply their own per-track cap on top — see `commands/flux-review.md` § Concurrency.
+
+**Why 6:** at the default Anthropic API tier, 6 concurrent agents stays inside the per-minute concurrent-session limit while keeping Stage 1 (typically 2-3 agents) unconstrained. Tune via env when running on higher-tier API keys or when the workload is many small/cheap agents.
+
+**Override** for genuinely concurrent-tolerant runs (large API quotas, fast agents, or where total wall-clock matters more than retry waste): set `MAX_CONCURRENT_AGENTS=N` before invoking. For maximum-conservative runs (rate-limited keys, many heavy agents), lower it (3-4 is a safe floor that still permits Stage 1 parallelism).
+
 ### Step 2.2: Stage 1 — Launch top agents [review only]
 
 **Skip this step if `COMPOSER_ACTIVE=1`** — agents were already dispatched in Step 2.0.4.
@@ -152,7 +172,7 @@ After each stage launch, tell the user:
 
 **Condition**: Use this step when `DISPATCH_MODE = task` (default).
 
-Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as parallel Task calls with `run_in_background: true`.
+Launch Stage 1 agents (top 2-3 by triage score, after trust multiplier) as parallel Task calls with `run_in_background: true`. Stage 1 typically dispatches 2-3 agents and is well under the cap; the cap matters once Stage 2 expansion piles on more agents (see `phases/expansion.md`).
 
 Wait for Stage 1 agents to complete (use the monitoring from Step 2.3).
 

@@ -31,12 +31,13 @@ INPUT_DIR (parent directory if file, else INPUT_PATH)
   ↓
 PROJECT_ROOT (nearest .git ancestor of INPUT_DIR)
   ↓
-OUTPUT_DIR (PROJECT_ROOT/docs/research/flux-drive/INPUT_STEM)
+OUTPUT_DIR (PROJECT_ROOT/docs/research/flux-drive/INPUT_STEM-RUN_HASH)
+RUN_HASH = sha256(INPUT_PATH)[:8]
 ```
 
-**Run Isolation:** The orchestrator MUST clear `OUTPUT_DIR` before each run to prevent cross-contamination from previous reviews.
+**Run Isolation:** The orchestrator MUST clear stale `*.md`, `*.md.partial`, and `peer-findings.jsonl` from `OUTPUT_DIR` before dispatch to prevent cross-contamination from previous reviews of the same input.
 
-> **Why this works:** `.git` ancestry heuristic works for 95% of cases (monorepos, nested projects). Stem-based output directories allow multiple concurrent reviews of different inputs without collision.
+> **Why content-addressing:** Stem + hash gives a stable path across reruns of the same target, which keeps Anthropic prompt cache hits intact across the agent prompts that embed `OUTPUT_DIR` (~21k tok/session per BSC-1, sylveste-a4oj.2). A timestamp-suffixed path would invalidate the cache on every run; an agent-set-hashed path would invalidate when `/flux-gen` adds new agents. Hashing only `INPUT_PATH` keeps the cache stable for the common case (sequential reruns of the same target). Concurrent runs on the same target should pass `--output-dir <unique>` to avoid races.
 
 ---
 

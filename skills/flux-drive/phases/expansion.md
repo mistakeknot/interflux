@@ -302,7 +302,7 @@ else:
     # Dispatch at adjusted models
 ```
 
-**8. Dispatch Stage 2 agents** with `run_in_background: true`, passing the final model per agent.
+**8. Dispatch Stage 2 agents** with `run_in_background: true`, passing the final model per agent. Respect the `MAX_CONCURRENT_AGENTS` cap defined in `phases/launch.md` § Concurrency cap (default 6) — Stage 2 typically launches the most agents and is the primary site where the cap matters. If the candidate count exceeds the cap, dispatch in batches: launch up to `MAX_CONCURRENT_AGENTS`, wait for any to complete, then dispatch the next.
 
 #### Dispatch logging (always, when cross-model dispatch enabled)
 
