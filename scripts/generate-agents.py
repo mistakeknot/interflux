@@ -23,6 +23,19 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sanitize_untrusted import sanitize, sanitize_list  # noqa: E402
+
+
+def _debug(msg: str, *args: Any) -> None:
+    """Print a debug line to stderr when INTERFLUX_DEBUG is set.
+
+    Used by exception handlers that intentionally swallow errors so the silence
+    is observable when investigating. See scripts/README.md § Python error handling.
+    """
+    if os.environ.get("INTERFLUX_DEBUG"):
+        try:
+            sys.stderr.write((msg % args) + "\n")
+        except (TypeError, ValueError):
+            sys.stderr.write(f"{msg} {args}\n")
 from spec_types import (  # noqa: E402
     _normalize_bullet_list,
     _unwrap_spec_list,
@@ -359,7 +372,8 @@ def _parse_frontmatter(path: Path) -> dict[str, Any] | None:
         if not isinstance(data, dict):
             return None
         return data
-    except Exception:
+    except Exception as exc:
+        _debug("generate-agents: frontmatter parse failed: %s", exc)
         return None
 
 
@@ -380,7 +394,8 @@ def _atomic_write(path: Path, content: str) -> None:
         os.close(fd)
         closed = True
         os.rename(tmp_path, str(path))
-    except Exception:
+    except Exception as exc:
+        _debug("generate-agents: atomic write failed for %s: %s", path, exc)
         if not closed:
             try:
                 os.close(fd)

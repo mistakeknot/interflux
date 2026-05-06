@@ -31,6 +31,21 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+
+def _debug(msg: str, *args: Any) -> None:
+    """Print a debug line to stderr when INTERFLUX_DEBUG is set.
+
+    Used by exception handlers that intentionally swallow errors so the silence
+    is observable when investigating. Adds no overhead in normal runs (env var
+    is checked once per call). See scripts/README.md § Python error handling.
+    """
+    if os.environ.get("INTERFLUX_DEBUG"):
+        try:
+            sys.stderr.write((msg % args) + "\n")
+        except (TypeError, ValueError):
+            sys.stderr.write(f"{msg} {args}\n")
+from typing import Any
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from spec_types import _normalize_domains, _unwrap_spec_list  # noqa: E402
 
@@ -125,7 +140,8 @@ def _parse_frontmatter(path: Path) -> dict[str, Any] | None:
     try:
         data = yaml.safe_load(text[3:end])
         return data if isinstance(data, dict) else None
-    except Exception:
+    except Exception as exc:
+        _debug("flux-agent: frontmatter parse failed: %s", exc)
         return None
 
 
@@ -153,7 +169,8 @@ def _update_frontmatter(path: Path, updates: dict[str, Any]) -> bool:
         data = yaml.safe_load(stripped[3:end])
         if not isinstance(data, dict):
             return False
-    except Exception:
+    except Exception as exc:
+        _debug("flux-agent: frontmatter update parse failed for %s: %s", path, exc)
         return False
 
     data.update(updates)
@@ -193,7 +210,8 @@ def _atomic_write(path: Path, content: str) -> None:
         os.close(fd)
         closed = True
         os.rename(tmp, str(path))
-    except Exception:
+    except Exception as exc:
+        _debug("flux-agent: atomic write failed for %s: %s", path, exc)
         if not closed:
             try:
                 os.close(fd)
@@ -687,7 +705,8 @@ def _find_source_spec(agent_name: str, project: Path) -> str | None:
             for s in specs:
                 if isinstance(s, dict) and s.get("name") == agent_name:
                     return spec_file.name
-        except Exception:
+        except Exception as exc:
+            _debug("flux-agent: spec scan skipped %s: %s", spec_file, exc)
             continue
 
     return None

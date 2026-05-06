@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REGISTRY="${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml"
+MODEL_REGISTRY="${MODEL_REGISTRY:-${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml}"
 BUDGET="${SCRIPT_DIR}/../config/flux-drive/budget.yaml"
 THRESHOLDS="${SCRIPT_DIR}/../config/flux-drive/fluxbench-thresholds.yaml"
 
@@ -22,7 +22,7 @@ if [[ "$source_check" != "claude-baseline" ]]; then
 fi
 
 # Check 2: at least one model qualified_via: real
-export _VE_REGISTRY="$REGISTRY"
+export _VE_REGISTRY="$MODEL_REGISTRY"
 real_qualified=$(python3 -c "
 import yaml, os
 reg = yaml.safe_load(open(os.environ['_VE_REGISTRY'])) or {}

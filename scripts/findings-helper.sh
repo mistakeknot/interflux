@@ -33,10 +33,13 @@ case "$cmd" in
       --arg ts "$timestamp" \
       --argjson refs "$refs" \
       '{severity:$sev, agent:$agt, category:$cat, summary:$sum, file_refs:$refs, timestamp:$ts}')
+    # fd 203: peer-findings.jsonl lock domain. fd 200 was previously used here
+    # but collides with the results_jsonl.lock domain in fluxbench-{score,qualify}.sh.
+    # See scripts/README.md § flock fd allocation.
     (
-      flock -x 200
+      flock -x 203
       echo "$line" >> "$findings_file"
-    ) 200>"${findings_file}.lock"
+    ) 203>"${findings_file}.lock"
     ;;
   read)
     findings_file="$1"; shift

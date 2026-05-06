@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REGISTRY_FILE="${MODEL_REGISTRY:-${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml}"
+MODEL_REGISTRY="${MODEL_REGISTRY:-${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml}"
 BUDGET_FILE="${SCRIPT_DIR}/../config/flux-drive/budget.yaml"
 RESULTS_FILE="${1:-}"
 
@@ -16,7 +16,7 @@ MIN_CONFIDENCE=$(python3 -c "import yaml, os; print(yaml.safe_load(open(os.envir
 TODAY=$(date +%Y-%m-%d)
 
 # Parse results, filter by confidence, merge into registry (UNDER FLOCK)
-export _DM_REGISTRY="$REGISTRY_FILE"
+export _DM_REGISTRY="$MODEL_REGISTRY"
 export _DM_RESULTS="$RESULTS_FILE"
 export _DM_MIN_CONF="$MIN_CONFIDENCE"
 export _DM_TODAY="$TODAY"
@@ -97,14 +97,14 @@ with open(reg_path, 'w') as f:
 print(f'Discovery complete: {added} added, {skipped} skipped', file=sys.stderr)
 "
 
-) 201>"${REGISTRY_FILE}.lock" || _dm_flock_rc=$?
+) 201>"${MODEL_REGISTRY}.lock" || _dm_flock_rc=$?
 
 if [[ $_dm_flock_rc -eq 3 ]]; then
-  echo "discover-merge: lock timeout after 30s on ${REGISTRY_FILE}.lock" >&2
+  echo "discover-merge: lock timeout after 30s on ${MODEL_REGISTRY}.lock" >&2
   exit 1
 elif [[ $_dm_flock_rc -ne 0 ]]; then
   echo "discover-merge: registry write failed (rc=$_dm_flock_rc)" >&2
   exit 1
 fi
 
-echo "Registry updated: $REGISTRY_FILE" >&2
+echo "Registry updated: $MODEL_REGISTRY" >&2

@@ -142,7 +142,11 @@ print(json.dumps({
     'prompt_content_policy': best['model'].get('prompt_content_policy', 'fixtures_only'),
     'eligible_tiers': best['model'].get('eligible_tiers', []),
 }))
-" 2>&1)
+")
+  # Note: do NOT redirect 2>&1 into $result. A DeprecationWarning (e.g. from
+  # yaml.safe_load) on stderr would otherwise be baked into the variable and
+  # break the downstream `jq -r '.selected // empty'` parse, silently dropping
+  # challenger selection. Real errors still reach the user via stderr.
 
   selected=$(echo "$result" | jq -r '.selected // empty')
 
@@ -294,7 +298,8 @@ for gate_name in core_gates:
         break
 
 print('true' if all_pass_by_margin else 'false')
-" 2>&1)
+")
+      # Don't capture stderr — same rationale as the select branch above.
 
       if [[ "$early_exit" == "true" ]]; then
         # Fast-track promote

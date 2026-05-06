@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUDGET_FILE="${PLUGIN_DIR}/config/flux-drive/budget.yaml"
-REGISTRY_FILE="${PLUGIN_DIR}/config/flux-drive/model-registry.yaml"
+MODEL_REGISTRY="${MODEL_REGISTRY:-${PLUGIN_DIR}/config/flux-drive/model-registry.yaml}"
 
 FORCE=false
 DRY_RUN=false
@@ -33,8 +33,8 @@ for cmd in jq yq; do
 done
 
 # Check refresh interval
-if [[ "$FORCE" != true && -f "$REGISTRY_FILE" ]]; then
-    last_discovery=$(yq -r '.last_discovery // ""' "$REGISTRY_FILE" 2>/dev/null)
+if [[ "$FORCE" != true && -f "$MODEL_REGISTRY" ]]; then
+    last_discovery=$(yq -r '.last_discovery // ""' "$MODEL_REGISTRY" 2>/dev/null)
     if [[ -n "$last_discovery" && "$last_discovery" != "null" ]]; then
         interval=$(yq -r '.model_discovery.refresh_interval // "weekly"' "$BUDGET_FILE" 2>/dev/null)
         case "$interval" in
