@@ -405,20 +405,30 @@ def _audit_blind_r1(transcript_text: str) -> dict[str, Any]:
 
     Looks for transcript lines like `[ts] debater-cluster-N → debater-cluster-M` during
     Round 1. Returns a summary with violations (if any).
+
+    Round detection is anchored to control-line structure: the orchestrator-lead's spawn
+    prompt instructs it to send messages with explicit "Round 1: begin", "Round 1.5: open",
+    "Round 2: begin" cues from the LEAD. We identify round transitions only on lines where
+    the LEAD sends a control message containing the round marker — body lines from any
+    other sender that happen to mention "round 2" do not flip the state.
     """
+    import re
+
+    # A control line looks like: `[ts] lead → recipient: Round X: ...` (case-insensitive).
+    lead_control = re.compile(r"^\s*\[[^\]]+\]\s*lead\s*[→\->]+\s*[^:]+:\s*Round\s+(\d+(?:\.\d+)?)", re.IGNORECASE)
     violations: list[str] = []
     in_round_1 = False
     for line in transcript_text.splitlines():
-        s = line.strip()
-        low = s.lower()
-        if "round 1" in low and "round 1.5" not in low and "round 2" not in low:
-            in_round_1 = True
+        m = lead_control.match(line)
+        if m:
+            try:
+                round_num = float(m.group(1))
+            except ValueError:
+                continue
+            in_round_1 = round_num == 1.0  # 1.5 and 2.0 both flip OFF
             continue
-        if "round 1.5" in low or "round 2" in low:
-            in_round_1 = False
-            continue
-        if in_round_1 and "debater-cluster-" in s and " → debater-cluster-" in s:
-            violations.append(s)
+        if in_round_1 and "debater-cluster-" in line and " → debater-cluster-" in line:
+            violations.append(line.strip())
     return {"violations": violations, "passed": not violations}
 
 
@@ -476,7 +486,15 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         fm["synthesis_cost_usd"] = "incomplete"
         fm["cost_attribution_gap"] = cost["reason"]
     else:
-        fm["synthesis_cost_usd"] = cost.get("total_usd")
+        # Defensive: cost_capture.sh always sets a numeric total on success, but a malformed
+        # JSON payload that still parses could leave total_usd None. Treat that as incomplete
+        # rather than emitting `synthesis_cost_usd: null` which violates the frontmatter contract.
+        total = cost.get("total_usd")
+        if total is None:
+            fm["synthesis_cost_usd"] = "incomplete"
+            fm["cost_attribution_gap"] = "cost_capture returned status=complete but total_usd missing"
+        else:
+            fm["synthesis_cost_usd"] = total
     if not quality["passed"]:
         fm["synthesis_quality_issues"] = quality["issues"]
 

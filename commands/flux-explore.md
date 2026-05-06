@@ -299,9 +299,18 @@ transcript: docs/research/flux-explore-debates/{slug}/transcript.md  # teams pat
 ---
 ```
 
-`teams_used` and `teams_fallback` are mutually exclusive. The Step 4c-only keys (`synthesis_cost_usd`, `synthesis_quality_check`, `transcript`) are written by `team_synthesize.py` when it owns the synthesis output. When fallback fires, `team_synthesize.py` exits before writing; Step 4b takes over and writes the legacy frontmatter PLUS the `teams_fallback` key (no `teams_used`, no Step-4c-only keys).
+`teams_used` and `teams_fallback` are mutually exclusive. The Step 4c-only keys (`synthesis_cost_usd`, `synthesis_quality_check`, `transcript`) are written by `team_synthesize.py` when it owns the synthesis output.
 
-Prepend the frontmatter to the synthesis content and write using Write tool.
+### Step 4d frontmatter rules (imperative)
+
+When you (the agent running flux-explore) reach this step, build the frontmatter as follows:
+
+1. **Always include** the seven legacy keys: `artifact_type`, `bead`, `method`, `target`, `rounds`, `total_agents`, `date`.
+2. **If `TEAMS_REQUESTED` is `false`**: write only those seven keys. Do NOT include any of `teams_used`, `teams_fallback`, `synthesis_cost_usd`, `synthesis_quality_check`, `transcript`. The frontmatter must be byte-identical in shape to legacy runs.
+3. **If `TEAMS_REQUESTED` is `true` AND `team_synthesize.py finalize` ran successfully** (Step 4c emitted `synthesis_path` and wrote its own frontmatter): the file is already complete. Do NOT re-run Step 4d; skip to Step 5. (The teams path owns its frontmatter.)
+4. **If `TEAMS_REQUESTED` is `true` AND fallback fired** (detection failed, cluster too close, runtime failure, or quality check failed): Step 4b ran the legacy synthesis and you are now writing its frontmatter. Add `teams_fallback: <reason>` after the `date` key. The reason MUST be exactly one of: `detection_disabled`, `detection_version`, `detection_unparseable`, `runtime_failure`, `divergent_clusters`, `synthesis_quality_check_fail`. Do NOT include `teams_used` or any Step 4c-only key in this case.
+
+Prepend the assembled frontmatter to the synthesis content and write using Write tool.
 
 ---
 

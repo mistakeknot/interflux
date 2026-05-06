@@ -101,6 +101,33 @@ def test_audit_blind_r1_contamination():
     assert "debater-cluster-0 → debater-cluster-1" in result["violations"][0]
 
 
+def test_audit_blind_r1_substring_in_body_does_not_flip_state():
+    """A debater body line that mentions 'round 2' must not flip OFF the in_round_1 state.
+
+    Round transitions are only flipped by a LEAD control line — body text from any
+    non-lead sender that contains 'round 2' is just a substring, not a control event.
+    """
+    transcript = """[ts1] lead → debater-cluster-0: Round 1: begin posting candidates
+[ts2] debater-cluster-0 → lead: my candidate references the round 2 mechanism from spec X
+[ts3] debater-cluster-0 → debater-cluster-1: peeking at your work (CONTAMINATION)
+[ts4] lead → questioner: Round 1.5: open visibility
+"""
+    result = _audit_blind_r1(transcript)
+    # The cross-debater message at ts3 is during Round 1 — must be flagged
+    assert not result["passed"], f"got passed=True with violations={result['violations']}"
+    assert any("debater-cluster-0 → debater-cluster-1" in v for v in result["violations"])
+
+
+def test_audit_blind_r1_round_15_disables_state():
+    transcript = """[ts1] lead → debater-cluster-0: Round 1: begin
+[ts2] lead → questioner: Round 1.5: open visibility
+[ts3] debater-cluster-0 → debater-cluster-1: cross-talk now allowed
+"""
+    result = _audit_blind_r1(transcript)
+    # ts3 is after Round 1.5 transition → must NOT be a violation
+    assert result["passed"], f"got violations={result['violations']}"
+
+
 def test_cost_preview_calculation():
     # 5 teammates × 2 rounds × $0.30 = $3.00
     p = _cost_preview(team_size=5, rounds=2, per_session_cost_usd=0.30)

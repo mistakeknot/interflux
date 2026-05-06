@@ -65,9 +65,14 @@ query_one() {
 }
 
 for sid in "${session_ids[@]}"; do
-    # Validate format
+    # Validate format. Record an explicit per_session entry on rejection so the caller
+    # can see attribution gaps without having to compare input vs output cardinality.
     if [[ ! "$sid" =~ ^[a-zA-Z0-9_-]+$ ]]; then
         gap_reason="invalid session_id format: $sid"
+        sid_safe=${sid//\"/\\\"}
+        [[ $first -eq 0 ]] && per_session_json+=","
+        per_session_json+="{\"session_id\":\"$sid_safe\",\"rows\":0,\"cost_usd\":null,\"reason\":\"invalid_format\"}"
+        first=0
         continue
     fi
     # Initial query
