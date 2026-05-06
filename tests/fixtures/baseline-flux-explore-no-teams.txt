@@ -1,0 +1,22 @@
+# Baseline frontmatter contract for /interflux:flux-explore <target> WITHOUT --teams
+# This file is the no-regression check for F2 (sylveste-3xl3.1.5).
+# When --teams is NOT passed, the synthesis frontmatter MUST contain exactly these keys (and no others):
+artifact_type: brainstorm
+bead: <CLAVAIN_BEAD_ID or "none">
+method: flux-explore
+target: "<target>"
+rounds: <int>
+total_agents: <int>
+date: <YYYY-MM-DD>
+
+# Keys that MUST NOT appear in the without-teams frontmatter:
+# - teams_used
+# - teams_fallback
+# - synthesis_cost_usd
+# - synthesis_quality_check
+# - transcript
+
+# File path contract:
+# Synthesis written to docs/brainstorms/{YYYY-MM-DD}-flux-explore-{slug}.md
+# Specs preserved at .claude/flux-gen-specs/{slug}-round-{1..N}.json
+# No new files created when --teams is not requested.

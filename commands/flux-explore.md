@@ -3,7 +3,7 @@ name: flux-explore
 description: Autonomous multi-round semantic exploration — agents from progressively distant knowledge domains, synthesize cross-domain isomorphisms.
 user-invocable: true
 codex-aliases: [flux-explore]
-argument-hint: "<target description> [--rounds=3] [--agents-per-round=5]"
+argument-hint: "<target description> [--rounds=3] [--agents-per-round=5] [--teams]"
 ---
 
 # Flux-Explore — Autonomous Semantic Space Exploration
@@ -15,6 +15,7 @@ Generate review agents from progressively more distant knowledge domains and syn
 Parse `$ARGUMENTS`:
 - Extract `--rounds=N` (default: 3, max: 5)
 - Extract `--agents-per-round=N` (default: 5, max: 7)
+- Extract `--teams` (boolean flag): if present, set `TEAMS_REQUESTED=true`; default `false`. Opts the synthesis pass into Claude Code agent-teams cross-domain debate mode (experimental, requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and `claude` >= 2.1.32). When unavailable at runtime, falls back transparently to the single-Sonnet synthesis path.
 - Remaining text is the target description
 
 If target is empty, build a default:
@@ -175,6 +176,23 @@ Display: `📊 Synthesizing cross-domain findings from {len(accumulated)} agents
 
 **Read all round spec files** from `{PROJECT_ROOT}/.claude/flux-gen-specs/{slug}-round-*.json` (use Glob to find them, Read to load). These contain the full spec with `expected_isomorphisms`, `source_domain`, and `distance_rationale` — fields not present in the generated `.md` files.
 
+### Step 4a: Choose synthesis path (subagent vs teams)
+
+If `TEAMS_REQUESTED` is `false` (default), proceed to **Step 4b: Subagent synthesis** below.
+
+If `TEAMS_REQUESTED` is `true`, run detection:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/teams_detect.sh
+```
+
+- Exit 0 (`available`): proceed to **Step 4c: Teams synthesis**.
+- Exit 1, stdout `disabled`: log `--teams requested but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS not set; falling back to subagent synthesis.`. Set `teams_fallback=detection_disabled`. Proceed to Step 4b.
+- Exit 1, stdout `version_too_old`: log `--teams requires claude >= 2.1.32; current version too old. Falling back to subagent synthesis.`. Set `teams_fallback=detection_version`. Proceed to Step 4b.
+- Exit 1, stdout `version_unparseable`: log `--teams could not detect claude version; falling back to subagent synthesis.`. Set `teams_fallback=detection_unparseable`. Proceed to Step 4b.
+
+### Step 4b: Subagent synthesis (default path)
+
 Launch a **Sonnet** subagent (Agent tool, `model: sonnet`) with this prompt:
 
 ```
@@ -229,6 +247,37 @@ across them. Find the patterns the individual agents cannot see alone.
 Return ONLY the markdown content (no code fences wrapping it).
 ```
 
+### Step 4c: Teams synthesis (--teams path)
+
+Run the cross-domain debate orchestrator:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/team_synthesize.py \
+    --target "{target}" \
+    --slug "{slug}" \
+    --specs-glob "{PROJECT_ROOT}/.claude/flux-gen-specs/{slug}-round-*.json" \
+    --output "{PROJECT_ROOT}/docs/brainstorms/{YYYY-MM-DD}-flux-explore-{slug}.md" \
+    --transcript-dir "{PROJECT_ROOT}/docs/research/flux-explore-debates/{slug}" \
+    --rounds 2
+```
+
+`team_synthesize.py` runs:
+
+1. **Cluster:** `cluster_specs.py` partitions specs into 3 max-distance clusters (or 2 if degraded). Logs centroid distances to stderr regardless of pass/fail.
+2. **Pre-flight cost preview:** estimates `teammate_count × per-session × rounds`; if interactive (TTY on stdin), prints preview + 3-second Ctrl-C window. Skipped non-interactively or when `INTERFLUX_TEAMS_PREVIEW_SLEEP=0`.
+3. **Spawn-prompt build:** writes the orchestrator-lead's spawn prompt to a temp file and dispatches it to a Claude Code agent-team via the lead. The orchestrator-lead is responsible for spawning 5 teammates (1 author, 3 debaters, 1 questioner) per the prompt.
+4. **Debate:** orchestrator runs 2 rounds (blind R1, replies-first R2). `TaskCreated` hook (if installed) caps round count.
+5. **Refuse-to-commit detection:** if no mechanism is cited by ≥2 debaters, set `teams_fallback=divergent_clusters` and fall through to subagent synthesis (Step 4b) — the run still produces a usable doc.
+6. **Author handoff:** transcript persisted to `docs/research/flux-explore-debates/{slug}/transcript.md`; author receives only the path (Read tool reads from disk; no inline content).
+7. **Cost capture:** `cost_capture.sh` enumerates teammate session IDs from the team config, queries `interstat session-cost` per teammate, sums. Transient-empty handling per the F1.3 verdict.
+
+Failure modes:
+- Cluster audit returns `divergent_clusters_too_close`: log notice, set `teams_fallback=divergent_clusters`, proceed to Step 4b.
+- Spawn API returns error: set `teams_fallback=runtime_failure`, proceed to Step 4b.
+- All other errors: set `teams_fallback=runtime_failure`, proceed to Step 4b. Never let a teams failure abort the run.
+
+### Step 4d: Write synthesis output
+
 **Write synthesis** to `{PROJECT_ROOT}/docs/brainstorms/{YYYY-MM-DD}-flux-explore-{slug}.md` with frontmatter:
 
 ```yaml
@@ -240,8 +289,17 @@ target: "{target}"
 rounds: {rounds}
 total_agents: {total}
 date: {YYYY-MM-DD}
+# When TEAMS_REQUESTED=true, exactly one of the next two keys is present.
+# When TEAMS_REQUESTED=false, neither key is present (byte-identical to legacy frontmatter).
+teams_used: true                            # only when teams synthesis succeeded
+teams_fallback: detection_disabled          # OR one of: detection_version | detection_unparseable | runtime_failure | divergent_clusters | synthesis_quality_check_fail
+synthesis_cost_usd: 0.42                    # teams path only; "incomplete" if any teammate log unflushed
+synthesis_quality_check: pass               # teams path only; pass | fail
+transcript: docs/research/flux-explore-debates/{slug}/transcript.md  # teams path only, when transcript was written
 ---
 ```
+
+`teams_used` and `teams_fallback` are mutually exclusive. The Step 4c-only keys (`synthesis_cost_usd`, `synthesis_quality_check`, `transcript`) are written by `team_synthesize.py` when it owns the synthesis output. When fallback fires, `team_synthesize.py` exits before writing; Step 4b takes over and writes the legacy frontmatter PLUS the `teams_fallback` key (no `teams_used`, no Step-4c-only keys).
 
 Prepend the frontmatter to the synthesis content and write using Write tool.
 
