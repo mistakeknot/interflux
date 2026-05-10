@@ -72,6 +72,84 @@ roles:
     max_model: sonnet   # challengers capped at sonnet until promoted
     agents: []          # populated dynamically by fluxbench-challenger.sh
 
+  # ============================================================================
+  # Built-in subagent types and high-volume non-fd agents
+  # Added 2026-05-09 per Sylveste-cs2 (heuristic coverage extension).
+  # Defaults sourced from observed production usage in interstat metrics.db
+  # — see docs/brainstorms/2026-05-06-microrouter-heuristic-baseline.md.
+  # NOTE: lib-routing.sh consumes min_model + max_model; model_tier is
+  # documentation only (the parser does not read it). Defaults expressed
+  # via min_model/max_model floors and ceilings.
+  # ============================================================================
+
+  builtin-explorer:
+    description: Read-only codebase exploration; haiku-default with opus ceiling for deep searches
+    model_tier: haiku       # observed: haiku=88 (65%), opus=32, sonnet=15
+    domain_complexity: low
+    max_model: opus         # allow up-to-opus when caller explicitly requests
+    agents:
+      - Explore
+
+  builtin-planner:
+    description: Architecture/strategy planning; opus-default with sonnet floor
+    model_tier: opus        # observed: opus=6 (75%), haiku=2
+    min_model: sonnet       # never below sonnet — planning needs reasoning
+    domain_complexity: high
+    agents:
+      - Plan
+
+  builtin-general:
+    description: General-purpose subagent for unscoped exploration; opus-default with no floor
+    model_tier: opus        # observed: opus=102 (56%), sonnet=51, haiku=28
+    domain_complexity: medium
+    agents:
+      - general-purpose
+
+  interflux-researcher:
+    description: External research subagents (best-practices, framework-docs, git-history, learnings, repo-research)
+    model_tier: opus        # observed: best-practices-researcher dominantly opus
+    min_model: sonnet       # research synthesis needs reasoning depth
+    domain_complexity: medium
+    agents:
+      - best-practices-researcher
+      - framework-docs-researcher
+      - git-history-analyzer
+      - learnings-researcher
+      - repo-research-analyst
+
+  plugin-reviewer:
+    description: Cross-plugin reviewer subagents (plan-reviewer, synthesize-review, code-reviewer)
+    model_tier: opus        # observed: clavain:plan-reviewer + intersynth:synthesize-review
+    min_model: sonnet       # reviewer-class — never below sonnet
+    domain_complexity: high
+    agents:
+      - plan-reviewer
+      - synthesize-review
+      - code-reviewer
+
+  generated-fd-reviewer:
+    description: |
+      Auto-generated fd-* reviewer agents created by interflux flux-drive.
+      Reviewer-class by convention. Enumerated set is what's been observed in
+      historical workload (interstat metrics.db); future generated agents will
+      need explicit additions here OR a parser extension to support pattern-based
+      defaults (e.g., glob 'fd-*' → reviewer role). The latter is the right v1
+      but lib-routing.sh's YAML parser doesn't currently support patterns.
+    model_tier: sonnet      # reviewer-equivalent default
+    min_model: sonnet       # never downgrade reviewers below sonnet
+    max_model: opus
+    domain_complexity: high
+    agents:
+      - fd-tick-pipeline-integration
+      - fd-ecs-mutation-safety
+      - fd-wgpu-metal-interop
+      - fd-unsafe-ffi-correctness
+      - fd-resource-capacity-contracts
+      - fd-lifecycle-state-machine
+      - fd-integration-contract
+      - fd-computational-tractability
+      - fd-bevy-rendergraph-lifecycle
+
 # Experiment tracking — which experiments have been run and their status.
 # Updated by experiment execution scripts, read by framework_score.py.
 experiments:
