@@ -1,0 +1,310 @@
+# Flux Drive — Compact Review & Research Instructions
+
+Multi-agent document/codebase review and research. Follow phases in order.
+
+## Mode
+
+- Invoked via `/interflux:flux-drive` → `MODE = review`
+- Invoked via `/interflux:flux-research` → `MODE = research`
+- Explicit `--mode=review|research` overrides
+- Default: `MODE = review`
+
+## Input
+
+**[review mode]**: User provides a file or directory path. Detect type:
+
+```
+INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/")
+INPUT_STEM = filename without extension, or dir basename
+PROJECT_ROOT = nearest .git ancestor or INPUT_DIR
+OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}  (absolute path!)
+```
+
+**[research mode]**: User provides a research question.
+
+```
+RESEARCH_QUESTION = <the question>
+PROJECT_ROOT = git root of CWD
+INPUT_STEM = question as kebab-case (max 50 chars)
+OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}  (absolute path!)
+INPUT_TYPE = research
+```
+
+Clean OUTPUT_DIR of stale `.md` files before starting.
+
+## Phase 1: Analyze + Triage
+
+### Step 1.0: Project Understanding
+
+1. Check PROJECT_ROOT for build files (Cargo.toml, go.mod, package.json, etc.)
+2. Read CLAUDE.md/AGENTS.md if present
+3. If qmd MCP available, search for project conventions
+
+### Step 1.0.1: Classify Domains (LLM)
+
+Based on your Step 1.0 project understanding (README, build files, CLAUDE.md/AGENTS.md, source files), classify the project's domain(s). Output as part of your analysis:
+
+```
+Project domains: [comma-separated list from: game-simulation, web-api, ml-pipeline, cli-tool, mobile-app, embedded-systems, library-sdk, data-pipeline, claude-code-plugin, tui-app, desktop-tauri]
+```
+
+A project can match multiple domains (e.g., a monorepo with CLIs, TUI tools, and plugins). If no domain fits, output `Project domains: none`. No external scripts needed — you already have the context.
+
+### Step 1.0.4: Generate Project Agents
+
+Always invoke `/interflux:flux-gen` to generate or refresh project-specific agents. Uses `--mode=skip-existing` by default (fast when agents already exist).
+
+Derive the task from the input:
+- **File input:** `/interflux:flux-gen "Review of {INPUT_FILE}: {1-line summary from Step 1.0}"`
+- **Repo input:** `/interflux:flux-gen "Review of {PROJECT_ROOT basename}: {1-line project description from Step 1.0}"`
+- **Diff input:** `/interflux:flux-gen "Code review of {N}-file diff in {PROJECT_ROOT basename}: {languages/frameworks detected}"`
+
+If flux-gen fails or user cancels, proceed with core agents only (graceful degradation).
+
+### Step 1.1: Analyze Input
+
+**[research mode]**: Build a query profile instead of document profile:
+
+```yaml
+query_profile:
+  type: <onboarding|how-to|why-is-it|what-changed|best-practice|debug-context|exploratory>
+  keywords: [key terms]
+  scope: <narrow|medium|broad>
+  project_domains: [from 1.0.1]
+  estimated_depth: <quick|standard|deep>
+```
+
+Type heuristics: "how do I..." → how-to, "why does..." → why-is-it, "what changed..." → what-changed, "best practice..." → best-practice, "understand this codebase..." → onboarding, "debugging..." → debug-context, else → exploratory.
+
+Depth: quick (30s/agent), standard (2min), deep (5min).
+
+Skip to Step 1.2.
+
+**[review mode]**: Read the input. Extract:
+
+```
+Type: [plan|brainstorm|spec|prd|README|repo-review|diff|other]
+Summary: [1-2 sentences]
+Languages/Frameworks: [from codebase, not just doc]
+Domains touched: [architecture, security, performance, UX, data, API, etc.]
+Project domains: [from 1.0.1]
+Divergence: [none | description]
+Key codebase files: [3-5 files]
+Estimated complexity: [small|medium|large]
+Review goal: [1 sentence]
+```
+
+For diffs: also extract file count, stats (+/-), slicing eligible (>=1000 lines).
+
+### Step 1.2: Select Agents
+
+**[research mode]**: Use the research agent affinity table:
+
+| Query Type | Primary (3) | Secondary (2) | Skip (0) |
+|---|---|---|---|
+| onboarding | repo-research-analyst | learnings-researcher, framework-docs-researcher | best-practices-researcher, git-history-analyzer |
+| how-to | best-practices-researcher, framework-docs-researcher | learnings-researcher | repo-research-analyst, git-history-analyzer |
+| why-is-it | git-history-analyzer, repo-research-analyst | learnings-researcher | best-practices-researcher, framework-docs-researcher |
+| what-changed | git-history-analyzer | repo-research-analyst | best-practices-researcher, framework-docs-researcher, learnings-researcher |
+| best-practice | best-practices-researcher | framework-docs-researcher, learnings-researcher | repo-research-analyst, git-history-analyzer |
+| debug-context | learnings-researcher, git-history-analyzer | repo-research-analyst, framework-docs-researcher | best-practices-researcher |
+| exploratory | repo-research-analyst, best-practices-researcher | git-history-analyzer, framework-docs-researcher, learnings-researcher | — |
+
+Domain bonus: +1 for best-practices/framework-docs if detected domain has Research Directives. Launch all agents with score >= 2. Single-stage dispatch (no Stage 1/2 split). Skip to Step 1.3.
+
+**[review mode]**:
+
+**Step 1.2a.0: Routing Overrides** — Read `.claude/routing-overrides.json` if exists. Exclude any agent with `"action":"exclude"`. If override has `scope` (domains/file_patterns), only exclude when scope matches current input (AND logic; reject `..` or `/`-prefixed patterns). Entries with `"action":"propose"` are informational only (not excluded). Warn if excluded agent covers a cross-cutting domain (architecture, quality, safety, correctness) — also warn if scope contains only `**`. Show canary snapshot `[canary: created <status>, expires <date>]` and confidence `(<value>)` in triage notes when present. Canary is a creation-time snapshot; run `/interspect:status` for live state.
+
+**Step 1.2a: Pre-filter** — Eliminate agents that cannot score >=1:
+- fd-correctness: skip unless DB/migrations/concurrency/async
+- fd-user-product: skip unless PRD/proposal/user-facing
+- fd-safety: skip unless security/credentials/deploy/trust
+- fd-game-design: skip unless game-simulation domain detected
+- fd-architecture, fd-quality: always pass (domain-general)
+- fd-performance: always pass for file/dir; filter for diffs
+- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input (PRD, brainstorm, plan, strategy) — NEVER for code/diff
+
+**Step 1.2b: Score** (0-7 scale):
+
+```
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1)
+```
+
+- base 3=core domain overlap, 2=adjacent, 1=tangential, 0=excluded
+- domain_boost: +2 if agent has injection criteria section in domain profile, +0 otherwise (binary)
+- project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin Agents), +1 for Project Agents
+- Selection: base_score determines inclusion (>=3 always, >=2 if slots, >=1 for thin). Bonuses affect ranking/staging only.
+- Deduplication: exact name match → prefer Project Agent. Partial domain overlap → keep both (Plugin in Stage 2).
+
+**Dynamic slot ceiling:**
+
+```
+total = 4(base) + scope(file:0, small-diff:1, large-diff:2, repo:3) + domain(0:0, 1:1, 2+:2)
+hard_max = 10
+```
+
+**Stage assignment:** Stage 1 = top 40% of slots (min 2, max 5). Stage 2 = remainder.
+
+### Step 1.2c: Budget-aware agent selection
+
+After scoring and stage assignment, apply budget constraints.
+
+**Step 1.2c.1: Load budget config**
+
+Read `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/budget.yaml`. Look up the budget for the current `INPUT_TYPE`:
+- `file` → use the `Document Profile → Type` value (plan, brainstorm, prd, spec, other)
+- `diff` with < 500 lines → `diff-small`
+- `diff` with >= 500 lines → `diff-large`
+- `directory` → `repo`
+
+If a project-level override exists at `{PROJECT_ROOT}/.claude/flux-drive-budget.yaml`, use that instead.
+
+**Sprint budget override:** If `FLUX_BUDGET_REMAINING` env var is set and non-zero, apply: `effective_budget = min(yaml_budget, FLUX_BUDGET_REMAINING)`. This allows sprint-level budget constraints to cap flux-drive dispatch. Note in triage summary: `[sprint-constrained]` when sprint budget is tighter.
+
+Store as `BUDGET_TOTAL`.
+
+**Step 1.2c.2: Estimate per-agent costs**
+
+Run the cost estimator:
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/estimate-costs.sh --model {current_model} [--slicing if slicing active]
+```
+
+For each selected agent, look up its estimate:
+1. If `estimates[agent_name]` exists (from interstat, >= 3 runs): use `est_tokens`, note `source: interstat (N runs)`
+2. Else: classify agent (review/cognitive/research/oracle/generated) and use `defaults[type]`, note `source: default`
+3. If slicing is active AND agent is domain-specific (NOT fd-architecture or fd-quality, which always review full content): multiply estimate by `slicing_multiplier`
+
+**Step 1.2c.3: Apply budget cut**
+
+Budget cuts Stage 2 first. Stage 1 agents are always selected (protected). After Stage 1 is fully allocated, add Stage 2 agents by score until budget is exceeded:
+
+```
+cumulative = 0
+# Stage 1 is always selected (protected)
+for agent in stage_1_agents:
+    agent.action = "Selected"
+    cumulative += agent.est_tokens
+
+# Stage 2 fills remaining budget
+for agent in stage_2_agents_sorted_by_score:
+    if cumulative + agent.est_tokens > BUDGET_TOTAL and agents_selected >= min_agents:
+        agent.action = "Deferred (budget)"
+    else:
+        agent.action = "Selected"
+        cumulative += agent.est_tokens
+```
+
+`min_agents` comes from budget.yaml (default 2). Stage 1 always has at least `min_agents`.
+
+**Stage interaction:** If Stage 1 alone exceeds budget, all Stage 1 agents still launch (stage boundaries override budget). Stage 2 agents are deferred by default when budget is tight. The expansion decision (Step 2.2b) will still offer the user the option to override.
+
+**Exempt agents:** `exempt_agents` in budget.yaml (fd-safety, fd-correctness) are never deferred by budget cuts or AgentDropout. They always run regardless of budget constraints or redundancy signals.
+
+**No-data graceful degradation:** If interstat DB doesn't exist or returns no data, use defaults for ALL agents. Log: "Using default cost estimates (no interstat data)." Do NOT skip budget enforcement — defaults provide reasonable bounds.
+
+### Step 1.3: User Confirmation
+
+**[research mode]**: AskUserQuestion: "Research plan for: '{RESEARCH_QUESTION}'. Query type: {type}. Launching {N} agents ({names}). Estimated depth: {depth}. Proceed?" Options: Launch (Recommended), Edit agents, Cancel.
+
+**[review mode]**: Present triage table with budget context:
+
+Agent | Score | Stage | Est. Tokens | Source | Reason | Action
+
+After the table, add a budget summary line:
+Budget: {cumulative_selected}K / {BUDGET_TOTAL/1000}K ({percentage}%) | Deferred: {N} agents ({deferred_total}K est.)
+
+If agents were deferred, include an override option:
+AskUserQuestion: "Stage 1: [names]. Stage 2: [names]. Launch?"
+Options: Approve, Launch all (override budget), Edit selection, Cancel.
+
+## Agent Roster
+
+| Agent | subagent_type | Domain |
+|-------|--------------|--------|
+| fd-architecture | interflux:review:fd-architecture | Boundaries, coupling, patterns, complexity |
+| fd-safety | interflux:review:fd-safety | Threats, credentials, trust, deploy risk |
+| fd-correctness | interflux:review:fd-correctness | Data consistency, races, transactions |
+| fd-quality | interflux:review:fd-quality | Naming, conventions, tests, idioms |
+| fd-user-product | interflux:review:fd-user-product | User flows, UX, value prop, scope |
+| fd-performance | interflux:review:fd-performance | Bottlenecks, resources, algorithmic complexity |
+| fd-game-design | interflux:review:fd-game-design | Balance, pacing, feedback loops, emergent behavior |
+
+**Cognitive Agents** (document review only — `.md`/`.txt` inputs, NEVER code/diff):
+
+| Agent | subagent_type | Domain |
+|-------|--------------|--------|
+| fd-systems | interflux:review:fd-systems | Feedback loops, emergence, systems dynamics |
+| fd-decisions | interflux:review:fd-decisions | Decision traps, biases, uncertainty, paradoxes |
+| fd-people | interflux:review:fd-people | Trust, power, communication, team culture |
+| fd-resilience | interflux:review:fd-resilience | Antifragility, constraints, resource dynamics |
+| fd-perception | interflux:review:fd-perception | Mental models, information quality, sensemaking |
+
+**Project Agents:** `.claude/agents/fd-*.md` — use `subagent_type: general-purpose`, paste file content as prompt.
+
+**Oracle:** `env DISPLAY=:99 CHROME_PATH=/usr/local/bin/google-chrome-wrapper oracle --wait --timeout 1800 --write-output {OUTPUT_DIR}/oracle-council.md.partial -p "<prompt>" -f "<files>"`
+Never use `> file` redirect or external `timeout` with Oracle.
+
+**Research agents** [research mode roster, or on-demand in review mode]:
+
+| Agent | subagent_type |
+|-------|--------------|
+| best-practices-researcher | interflux:best-practices-researcher |
+| framework-docs-researcher | interflux:framework-docs-researcher |
+| git-history-analyzer | interflux:git-history-analyzer |
+| learnings-researcher | interflux:learnings-researcher |
+| repo-research-analyst | interflux:repo-research-analyst |
+
+## Phase 2: Launch
+
+Read `phases/launch.md` for the full launch protocol. The launch phase respects `MODE`:
+
+**[review mode]**:
+- Step 2.0.5: Measure review complexity signals (token count, file count), then resolve agent models via `routing_resolve_agents()` with `--prompt-tokens/--file-count/--reasoning-depth` from Clavain's `lib-routing.sh`. Classification happens inside the library. Pass `model:` param to each Agent tool call. Fallback: skip if lib-routing.sh unavailable (agents use frontmatter defaults).
+- Step 2.1: Dispatch Stage 1 agents in parallel via Task tool (background mode)
+- Step 2.1a: Inject domain-specific criteria from domain profiles
+- Step 2.1b: For slicing-eligible diffs, apply diff slicing per `phases/slicing.md`
+- Step 2.1c: For documents >200 lines, apply document slicing (section_map per agent)
+- Step 2.2: Monitor completion via `flux-watch.sh` (inotifywait, fallback 5s polling), expand Stage 2 if severity warrants
+- Step 2.2a: Research context dispatch between stages
+- Step 2.2a.5: **AgentDropout** — prune redundant Stage 2 candidates (threshold 0.6)
+- Step 2.2a.6: **Incremental expansion** — speculative Stage 2 launch (max 2) as Stage 1 results arrive
+- Step 2.2b-c: Staged expansion decision (excludes already-launched speculative agents)
+- All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-drive:complete -->` sentinel
+
+**[research mode]**:
+- Step 2.0: Prepare output directory (same)
+- Step 2.0.5: Resolve agent models (same as review mode)
+- Step 2.1: Build per-agent research prompts with query profile, domain directives
+- Step 2.2: Single-stage dispatch — all selected agents via Task tool (background mode)
+- Skip: AgentDropout, staged expansion, peer findings, research context dispatch, slicing
+- All agents write to `{OUTPUT_DIR}/{agent-name}.md` with `<!-- flux-research:complete -->` sentinel
+- Timeouts by depth: quick=30s, standard=2min, deep=5min
+
+## Phase 3: Synthesize
+
+Read `phases/synthesize.md` for the full synthesis protocol. The synthesis phase respects `MODE`:
+
+**[review mode]**:
+- Collect all agent outputs from OUTPUT_DIR
+- Delegate to `intersynth:synthesize-review`
+- Score findings (P0-P3), compute verdict
+- Create beads from P0/P1 findings
+- Silent knowledge compounding
+
+**[research mode]**:
+- Delegate to `intersynth:synthesize-research`
+- Merge findings with source attribution, rank sources
+- Write `{OUTPUT_DIR}/synthesis.md`
+- Skip: bead creation, knowledge compounding
+
+## Phase 4: Cross-AI (Optional)
+
+**[review mode only]** — skip entirely in research mode.
+
+Skip if Oracle was not in roster. Otherwise read `phases/cross-ai.md`.
+
+---
+
+*For edge cases, scoring examples, slicing details, or launch protocol specifics, read the full SKILL.md and its phases/ directory.*
