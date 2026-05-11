@@ -19,8 +19,8 @@
     "exa"
   ],
   "skills": [
-    "./skills/flux-drive",
-    "./skills/flux-review"
+    "./skills/flux-engine",
+    "./skills/flux-review-engine"
   ],
   "commands": [
     "./commands/fetch-findings.md",
