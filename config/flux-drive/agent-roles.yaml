@@ -29,7 +29,8 @@ roles:
   planner:
     description: Architectural decisions requiring high reasoning capability
     model_tier: opus
-    min_model: sonnet   # safety floor — never downgrade below this
+    # No min_model floor: Sylveste-0zy chose to honor deliberate frontmatter tuning.
+    # fd-architecture frontmatter=sonnet; fd-systems frontmatter=haiku (intentional, per git history).
     domain_complexity: high
     agents:
       - fd-architecture
@@ -44,6 +45,9 @@ roles:
       - fd-correctness
       - fd-quality
       - fd-safety
+      # Sylveste-0zy additions (frontmatter sonnet, within band):
+      - fd-integration         # intertrace: cross-module integration review
+      - agent-native-reviewer  # intercraft: plugin pattern review
 
   editor:
     description: Practical suggestions and domain-specific analysis
@@ -53,6 +57,7 @@ roles:
       - fd-performance
       - fd-user-product
       - fd-game-design
+      - voice-analyzer         # interfluence: deep voice analysis (sonnet by frontmatter)
 
   checker:
     description: Pattern matching and cognitive lens application
@@ -107,8 +112,8 @@ roles:
 
   interflux-researcher:
     description: External research subagents (best-practices, framework-docs, git-history, learnings, repo-research)
-    model_tier: opus        # observed: best-practices-researcher dominantly opus
-    min_model: sonnet       # research synthesis needs reasoning depth
+    model_tier: haiku       # Sylveste-0zy: matched to frontmatter; 17/17 April dispatches haiku
+    max_model: opus         # allow up-shift when caller needs deeper synthesis
     domain_complexity: medium
     agents:
       - best-practices-researcher
@@ -119,8 +124,10 @@ roles:
 
   plugin-reviewer:
     description: Cross-plugin reviewer subagents (plan-reviewer, synthesize-review, code-reviewer)
-    model_tier: opus        # observed: clavain:plan-reviewer + intersynth:synthesize-review
-    min_model: sonnet       # reviewer-class — never below sonnet
+    model_tier: haiku       # Sylveste-0zy: matched to frontmatter; plan-reviewer + synthesize-review both deliberately haiku
+    max_model: opus         # allow up-shift when caller needs deeper review
+    # No min_model floor: synthesize-review is intentionally haiku per intersynth design
+    # (synthesis is structuring not reasoning); plan-reviewer was cycled sonnet→haiku→sonnet→haiku in git history.
     domain_complexity: high
     agents:
       - plan-reviewer
@@ -149,6 +156,62 @@ roles:
       - fd-integration-contract
       - fd-computational-tractability
       - fd-bevy-rendergraph-lifecycle
+
+  # ============================================================================
+  # Coverage extension — Sylveste-0zy (2026-05-12)
+  # Added the 14 first-party subagents that had frontmatter `model:` declared
+  # but no agent-roles.yaml role entry. Per Sylveste-0zy's frontmatter-wins
+  # resolution, these are descriptive (no min/max floors) — they record the
+  # empirical/intentional model per subagent so host adapters have full policy
+  # coverage. See docs/research/microrouter-phase1/verify_frontmatter.py for
+  # the drift-audit diagnostic.
+  # ============================================================================
+
+  synthesizer:
+    description: Structuring and assembly tasks (deduplicate, format, compile findings) — not reasoning-heavy
+    model_tier: haiku       # synthesis is structuring, per intersynth design intent
+    max_model: sonnet       # allow up-shift for complex multi-source synthesis
+    domain_complexity: low
+    agents:
+      - synthesize-documents
+      - synthesize-research
+      - report-compiler        # sonnet by frontmatter, within band (max_model: sonnet)
+
+  workflow-executor:
+    description: Task-execution agents (delegate, resolve, validate) — implement changes, drive subprocesses
+    model_tier: haiku       # observed: codex-delegate, pr-comment-resolver, bug-reproduction-validator all haiku
+    max_model: opus         # allow up-shift for hard implementation/repro work
+    domain_complexity: medium
+    agents:
+      - codex-delegate
+      - pr-comment-resolver
+      - bug-reproduction-validator
+
+  research-support:
+    description: Research-pipeline helpers (planning queries, evaluating sources) — orchestrate research-class agents
+    model_tier: haiku       # observed: source-evaluator + research-planner both haiku in interdeep
+    max_model: opus
+    domain_complexity: medium
+    agents:
+      - source-evaluator
+      - research-planner
+
+  # Slotted into existing roles (see above for additions):
+  # - reviewer: fd-integration, agent-native-reviewer (both sonnet by frontmatter)
+  # - editor:   voice-analyzer (sonnet by frontmatter)
+
+  host-default:
+    description: |
+      Agents whose frontmatter intentionally omits `model:`, deferring to the
+      host's default model. No yaml policy is asserted — the role records that
+      the agent exists and that "no opinion" is the intent.
+      Host adapters should NOT inject a model preference for these agents.
+    # No model_tier, no min_model, no max_model — host's choice
+    domain_complexity: low
+    agents:
+      - data-migration-expert  # clavain: validates migrations (author chose host-default)
+      - ui-polish              # clavain: iterative UI refinement
+      - fluxbench-discover     # interflux: weekly cron-style discovery agent
 
 # Experiment tracking — which experiments have been run and their status.
 # Updated by experiment execution scripts, read by framework_score.py.
