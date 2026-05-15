@@ -402,6 +402,7 @@ uv run pytest tests/structural/test_namespace.py -v
 | `update-domain-profiles.py` | python | Refresh domain profile markdown from index.yaml |
 | `validate-gitleaks-waivers.sh` | bash | Validate gitleaks waiver entries |
 | `validate-roster.sh` | bash | Validate agent roster integrity |
+| `verify_frontmatter.py` | python | agent-roles.yaml ↔ subagent frontmatter drift audit. Default mode is diagnostic (exit 0); `--strict` exits 1 on drift (BELOW/ABOVE/UNMAPPED/NO_MODEL) for CI use. See `.github/workflows/routing-drift.yml`. |
 
 ## Environment Variables
 

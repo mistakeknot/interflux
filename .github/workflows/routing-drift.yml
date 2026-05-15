@@ -1,0 +1,58 @@
+name: Routing Drift Audit
+
+# Sylveste-onp: fail the build if agent-roles.yaml ↔ subagent frontmatter
+# drift increases. agent-roles.yaml is the host-agnostic policy source of
+# truth; each host (Claude Code, Codex, Hermes, Droid) projects it into its
+# own config format. This workflow guards the invariant against four
+# scenarios identified in the bead, scoped to agents owned by THIS subrepo:
+#
+#   1. Edit subagent `model:` frontmatter without updating yaml
+#   2. Add a new first-party subagent without registering it in a role
+#   3. Tighten a yaml floor without updating all member agents
+#   4. Delete/rename an agent listed in yaml
+#
+# Subrepo scope rationale: interflux is its own GitHub repo, so the CI
+# checkout only contains interflux files — not sibling subrepos (Clavain,
+# intersynth, intercraft, intertrace, interfluence, interdeep). Each
+# sibling subrepo gets its own copy of this workflow + the audit script
+# (tracked as followup beads).
+#
+# Predecessor: Sylveste-0zy (drift audit script) + Sylveste-cs2/2bg
+# (heuristic-coverage extension yielding zero-drift baseline).
+#
+# No untrusted GitHub event inputs are used in run: steps.
+
+on:
+  push:
+    paths:
+      - "config/flux-drive/agent-roles.yaml"
+      - "agents/**/*.md"
+      - "scripts/verify_frontmatter.py"
+      - ".github/workflows/routing-drift.yml"
+  pull_request:
+    paths:
+      - "config/flux-drive/agent-roles.yaml"
+      - "agents/**/*.md"
+      - "scripts/verify_frontmatter.py"
+      - ".github/workflows/routing-drift.yml"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pyyaml
+        run: pip install pyyaml
+
+      - name: Audit drift (strict, subrepo-scoped)
+        run: python3 scripts/verify_frontmatter.py --strict --root . --agent-dir agents
