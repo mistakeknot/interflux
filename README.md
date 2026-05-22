@@ -75,7 +75,7 @@ agents/
   review/          12 review agents (fd-architecture, fd-safety, fd-correctness, ...)
   research/        5 research agents (best-practices, framework-docs, git-history, ...)
   fluxbench-discover.md   Weekly model discovery agent spec
-skills/            flux-drive, flux-research
+skills/            flux-drive (frontmatter: flux-engine), flux-review (frontmatter: flux-review-engine)
 commands/          7 commands (flux-drive, flux-research, flux-review, flux-gen,
                      flux-explore, flux-agent, fetch-findings)
 config/flux-drive/
