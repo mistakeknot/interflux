@@ -18,7 +18,7 @@ description: Invoked from /flux-drive or /flux-research — runs multi-agent tri
 **Triage in 5 steps (review mode):** (1) classify project domains (Step 1.0.1);
 (2) profile the input — type, languages, domains, complexity (Step 1.1);
 (3) pre-filter + score agents on a 0-8 scale
-`base + domain_boost + project_bonus + domain_agent + tier_bonus` (Steps 1.2a-b);
+`base + domain_boost + project_bonus + domain_agent + tier_bonus + quality_signal_adjust` (Steps 1.2a-b);
 (4) apply the budget cap via `scripts/estimate-costs.sh` — Stage 1 is protected,
 Stage 2 is cut first (Step 1.2c, full algorithm in `references/budget.md`);
 (5) dispatch Stage 1 in parallel (Phase 2).
@@ -227,7 +227,7 @@ Eliminate agents that cannot score >= 1:
 #### Step 1.2b: Score agents (0-8 scale)
 
 ```
-final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1) + tier_bonus(-1 to +1)
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1) + tier_bonus(-1 to +1) + quality_signal_adjust(-1 to +0.5)
 ```
 
 - base: 3=core overlap, 2=adjacent, 1=tangential, 0=excluded (bonuses can't override 0)
@@ -235,6 +235,15 @@ final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin) or always (Project Agent)
 - domain_agent: +1 for flux-gen agents matching detected domain
 - tier_bonus: Read from `.claude/agents/.index.yaml` (cache). +1.0 if tier=proven, +0.5 if tier=used, +0 if tier=generated, -1.0 if tier=stub AND use_count=0 AND lines≤80. If index is missing, tier_bonus=0 (don't fail). Rebuild with `/interflux:flux-agent index`.
+- **quality_signal_adjust** (Sylveste-fwd): Read from `.clavain/interspect/routing-calibration.json` if it exists. For each candidate agent, look up `agents.<name>.weighted_hit_rate` (fall back to `hit_rate`) and `agents.<name>.evidence_sessions`.
+  - Cold start (`evidence_sessions < 5` OR agent not in calibration): `+0` (no adjust). Never skip on insufficient data.
+  - Underperforming (`hit_rate < 0.4`): `-1` (effectively excludes the agent — combines with `tier_bonus -1` for repeated agents to push final_score below the selection floor). Emit a one-line note in the triage table: `[skipped: interspect hit_rate <X.XX> < 0.40]`.
+  - Strong (`hit_rate >= 0.7` AND `evidence_sessions >= 20`): `+0.5`. Note: `[boosted: interspect hit_rate <X.XX>]`.
+  - Otherwise: `0`.
+  - **Fail-open paths** (always emit a one-line stderr warning, never block triage):
+    - calibration file missing → `quality_signal_adjust = 0` for all agents, no warning (normal early state)
+    - calibration file unreadable / invalid JSON → `quality_signal_adjust = 0`, warning `interspect calibration unreadable; skipping quality adjust`
+    - schema_version mismatch (current expects 2) → `quality_signal_adjust = 0`, warning `interspect calibration schema v<X>; interflux expects 2. Skipping quality adjust.`
 - Selection: base >= 3 always included, >= 2 if slots remain, >= 1 only for thin sections
 - Deduplication: exact name match → prefer Project Agent. Partial overlap → keep both.
 

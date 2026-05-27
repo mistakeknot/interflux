@@ -125,15 +125,17 @@ Domain bonus: +1 for best-practices/framework-docs if detected domain has Resear
 - fd-performance: always pass for file/dir; filter for diffs
 - fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input (PRD, brainstorm, plan, strategy) — NEVER for code/diff
 
-**Step 1.2b: Score** (0-7 scale):
+**Step 1.2b: Score** (0-8 scale):
 
 ```
-final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1)
+final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_agent(0-1) + tier_bonus(-1..+1) + quality_signal_adjust(-1..+0.5)
 ```
 
 - base 3=core domain overlap, 2=adjacent, 1=tangential, 0=excluded
 - domain_boost: +2 if agent has injection criteria section in domain profile, +0 otherwise (binary)
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin Agents), +1 for Project Agents
+- tier_bonus: from `.claude/agents/.index.yaml` — proven +1, used +0.5, generated 0, stub -1
+- quality_signal_adjust: from `.clavain/interspect/routing-calibration.json` — cold-start 0, hit_rate<0.4 -1, hit_rate≥0.7 + sessions≥20 +0.5. Fail-open (warn but don't block) on missing/invalid file or schema mismatch.
 - Selection: base_score determines inclusion (>=3 always, >=2 if slots, >=1 for thin). Bonuses affect ranking/staging only.
 - Deduplication: exact name match → prefer Project Agent. Partial domain overlap → keep both (Plugin in Stage 2).
 
