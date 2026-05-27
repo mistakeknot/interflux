@@ -253,6 +253,12 @@ final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_
 
 Present triage table: Agent | Category | Score | Stage | Est. Tokens | Source | Reason | Action
 
+**Persist triage decisions** (Sylveste-nyt): After scoring all candidates and assigning stages, append one JSON line per agent to `{PROJECT_ROOT}/.clavain/interflux/triage.jsonl`. Schema in [triage-log-schema.md](../../../../../docs/contracts/triage-log-schema.md). Include every agent considered (even pre-filtered ones with `base: 0`); share a single `run_id` across all lines from the same triage (use the same 8-char hash that names `OUTPUT_DIR`).
+
+This is the observability foundation that lets `triage-stats.py` answer "is `quality_signal_adjust` causing useful skips, or over-pruning?" — without it, the new scoring term is unmeasurable.
+
+Best-effort: if `.clavain/interflux/` cannot be created or written, log a one-line warning via `hook_log_warn` (if available) and continue. Triage MUST NOT block on logging failure.
+
 ### Scoring Examples
 
 Read `references/scoring-examples.md` for worked examples and thin-section thresholds.
