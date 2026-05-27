@@ -193,7 +193,19 @@ Then skip to **Step 1.3** (user confirmation).
 
 #### Step 1.2a.0: Routing overrides
 
-Read `.claude/routing-overrides.json` if it exists. For each entry with `"action":"exclude"`: apply scope check (domains AND/OR file_patterns — AND logic if both set; reject `..` or `/`-prefixed patterns). Remove matching agents from candidate pool. Warn if excluded agent is cross-cutting (fd-architecture, fd-quality, fd-safety, fd-correctness). Entries with `"action":"propose"` are informational only. Show canary/confidence metadata in triage notes. Discovery nudge: if agent overridden 3+ times this session, suggest `/interspect:correction`.
+Read `.claude/routing-overrides.json` if it exists. Schema is defined in [routing-contract.md](../../../../../docs/contracts/routing-contract.md) — contract version 1.
+
+**Schema-version check (fail-open):** Before reading entries, check the top-level `version` field. If absent OR not equal to `1`, emit a one-line warning to stderr and treat the file as empty:
+
+```
+routing-overrides: unsupported schema version <v> (interflux supports: 1). Ignoring.
+```
+
+This protects against silent breakage when interspect ships a schema-incompatible writer.
+
+For each entry with `"action":"exclude"`: apply scope check (domains AND/OR file_patterns — AND logic if both set; reject `..` or `/`-prefixed patterns). Remove matching agents from candidate pool. Warn if excluded agent is cross-cutting (fd-architecture, fd-quality, fd-safety, fd-correctness). Entries with `"action":"propose"` are informational only. Show canary/confidence metadata in triage notes. Discovery nudge: if agent overridden 3+ times this session, suggest `/interspect:correction`.
+
+Skip malformed entries (missing required fields per the contract) with a one-line warning. Do not block triage on validation errors.
 
 #### Step 1.2a: Pre-filter agents
 
