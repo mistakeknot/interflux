@@ -116,12 +116,17 @@ OUTPUT_DIR = {OUTPUT_DIR}-{RUN_HASH}
 ```
 A timestamp here would vary on every invocation and defeat the cache; a hash over agent names would invalidate when `/flux-gen` adds agents. Hashing only the input keeps the path stable across reruns of the same target.
 
-Before dispatch, clean stale outputs (handles a slow agent from a previous identical run leaving an orphan `.partial` that would otherwise rename into the new run's findings):
+Before dispatch, clean stale outputs (handles a slow agent from a previous identical run leaving an orphan `.partial` that would otherwise rename into the new run's findings). The pre-clean is gated by an atomic occupancy lock and the run-scoped filename scheme — see `phases/launch.md` Step 2.0 for the full protocol. In brief:
 ```
+# 1) Generate FLUX_RUN_UUID. 2) mkdir {OUTPUT_DIR}/.run-{UUID}.lock (atomic).
+#    If another .run-*.lock already exists, auto-suffix OUTPUT_DIR to
+#    {OUTPUT_DIR}-{UUID} so concurrent runs use disjoint dirs.
+# 3) Only then clean (safe because we hold the lock and no peer run is live):
 find {OUTPUT_DIR} -maxdepth 1 \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete 2>/dev/null
 ```
+Every agent writes `{agent-name}.{FLUX_RUN_UUID}.md` (UUID embedded in the filename) and synthesis globs only `{OUTPUT_DIR}/*.{FLUX_RUN_UUID}.md`, so files from a different run are structurally excluded regardless of cleanup timing.
 
-**Concurrent-run caveat:** Two flux-drive invocations on the same target with overlapping execution share OUTPUT_DIR and can race. For genuinely parallel runs, pass `--output-dir <unique>` to force isolation. Sequential reruns are the common case and benefit from the cache win.
+**Concurrent-run caveat (issue #6):** Two flux-drive invocations on the same target with overlapping execution previously shared OUTPUT_DIR and raced — run B's pre-clean could wipe run A's in-flight files. This is now mitigated three ways: (1) the atomic `.run-{UUID}.lock` makes the destructive clean single-writer and auto-suffixes the second run to a disjoint dir; (2) UUID-in-filename + run-scoped synthesis glob means runs never read each other's outputs even in a shared dir; (3) all completion renames use `mv -n` so an agent never clobbers another run's terminal `.md`. For a fully separate output tree, pass `--output-dir <unique>` (this is what flux-review-engine does per track). Sequential reruns remain the common case and benefit from the cache win.
 
 To reuse a fixed OUTPUT_DIR explicitly (e.g., for iterative reviews of the same document), pass `--output-dir <path>`; the same pre-clean discipline applies.
 

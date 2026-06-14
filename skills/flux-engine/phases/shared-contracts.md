@@ -73,7 +73,7 @@ Every agent moves through these states during a flux-drive run. Transitions are 
 
 ### Invariants
 
-- **At most one terminal `.md` per agent per run.** Once a `.md` exists for a given agent name, no other `.md` write may overwrite it. This is enforced by the retry protocol below — not by file locks (filesystem renames are atomic on the same fs but `mv` itself doesn't refuse to overwrite without `mv -n`).
+- **At most one terminal `.md` per agent per run.** Output filenames embed the run UUID (`{agent}.{FLUX_RUN_UUID}.md`), so "per agent per run" is enforced structurally — a concurrent run on the same OUTPUT_DIR writes to a different filename (issue #6). Within a run, once `{agent}.{UUID}.md` exists, no other `.md` write may overwrite it. Completion renames **MUST use `mv -n`** (no-clobber) so that even a same-name late write or cross-run name collision can never destroy an existing terminal `.md`; combined with the abort/aborted-rename retry protocol below, this guarantees the invariant without file locks.
 - **The original Task's late completion must not clobber a retry's output.** When Step 2.3 launches a synchronous retry, it first renames the original's `.md.partial` to `{agent}.md.partial.aborted-<epoch>` so the original's eventual `mv` finds no source and fails harmlessly.
 - **`flux-watch.sh` reports each agent at most once.** Late renames after flux-watch returns are observed in Step 2.3's post-flux-watch reconciliation, not by flux-watch itself.
 - **An agent in `timeout_original_running` is treated as incomplete** (its `.partial` still exists). Orchestrator must retry or write an error stub before synthesis.
@@ -85,17 +85,19 @@ Every agent moves through these states during a flux-drive run. Transitions are 
 When flux-watch returns with `.md.partial` files but no corresponding `.md`:
 
 ```bash
-for partial in "$OUTPUT_DIR"/*.md.partial; do
-  agent=$(basename "$partial" .md.partial)
+# Run-scoped glob: only this run's partials ({agent}.{UUID}.md.partial).
+for partial in "$OUTPUT_DIR"/*."${FLUX_RUN_UUID}".md.partial; do
+  [ -e "$partial" ] || continue
+  agent=$(basename "$partial" ".${FLUX_RUN_UUID}.md.partial")
   # Pre-retry guard: if .md already arrived (race with flux-watch return), skip.
-  [[ -f "$OUTPUT_DIR/$agent.md" ]] && continue
+  [[ -f "$OUTPUT_DIR/$agent.${FLUX_RUN_UUID}.md" ]] && continue
 
   # Mark abort + rename partial out of the way. The original Task's eventual
-  # `mv .partial → .md` will find no source and fail harmlessly. Without this,
+  # `mv -n .partial → .md` will find no source and fail harmlessly. Without this,
   # a slow original Task can clobber the retry's good output.
   ts=$(date +%s)
-  touch "$OUTPUT_DIR/$agent.abort"
-  mv "$partial" "$OUTPUT_DIR/$agent.md.partial.aborted-$ts"
+  touch "$OUTPUT_DIR/$agent.${FLUX_RUN_UUID}.abort"
+  mv "$partial" "$OUTPUT_DIR/$agent.${FLUX_RUN_UUID}.md.partial.aborted-$ts"
 
   # Synchronous retry (run_in_background: false) — agent retry writes its
   # own .partial → .md. The aborted-original is now orphaned; cleanup at
@@ -104,7 +106,7 @@ for partial in "$OUTPUT_DIR"/*.md.partial; do
 
   # Cleanup abort marker after retry returns. Aborted partial is left for
   # post-mortem; sweep at session end if desired.
-  rm -f "$OUTPUT_DIR/$agent.abort"
+  rm -f "$OUTPUT_DIR/$agent.${FLUX_RUN_UUID}.abort"
 done
 ```
 
