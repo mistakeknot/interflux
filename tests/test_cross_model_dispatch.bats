@@ -17,7 +17,7 @@ bats_require_minimum_version 1.5.0
 setup() {
     CONFIG_DIR="${BATS_TEST_DIRNAME}/../config/flux-drive"
     SPEC_DIR="${BATS_TEST_DIRNAME}/../docs/spec/extensions"
-    PHASES_DIR="${BATS_TEST_DIRNAME}/../skills/flux-drive/phases"
+    PHASES_DIR="${BATS_TEST_DIRNAME}/../skills/flux-engine/phases"
 }
 
 # --- F1: Config activation ---

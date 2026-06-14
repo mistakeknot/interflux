@@ -46,23 +46,26 @@ def test_no_stale_clavain_refs_in_commands(project_root: Path):
 
 def test_agent_roster_uses_interflux_namespace(project_root: Path):
     """Agent roster uses interflux:review:fd-* namespace."""
-    roster = (project_root / "skills" / "flux-drive" / "references" / "agent-roster.md").read_text()
+    roster = (project_root / "skills" / "flux-engine" / "references" / "agent-roster.md").read_text()
     assert "interflux:review:fd-architecture" in roster
     assert "interflux:review:fd-safety" in roster
     assert "Plugin Agents (interflux)" in roster
 
 
 def test_launch_uses_interknow_mcp(project_root: Path):
-    """launch.md uses mcp__plugin_interknow_qmd__ prefix (qmd moved to interknow)."""
-    launch = (project_root / "skills" / "flux-drive" / "phases" / "launch.md").read_text()
-    assert "mcp__plugin_interknow_qmd__" in launch
-    assert "mcp__plugin_clavain_qmd__" not in launch
+    """qmd retrieval uses mcp__plugin_interknow_qmd__ prefix (qmd moved to interknow).
+
+    The qmd retrieval protocol was consolidated into
+    references/progressive-enhancements.md (launch.md references it)."""
+    enh = (project_root / "skills" / "flux-engine" / "references" / "progressive-enhancements.md").read_text()
+    assert "mcp__plugin_interknow_qmd__" in enh
+    assert "mcp__plugin_clavain_qmd__" not in enh
 
 
 def test_launch_uses_interknow_collection(project_root: Path):
-    """launch.md uses interknow qmd collection name."""
-    launch = (project_root / "skills" / "flux-drive" / "phases" / "launch.md").read_text()
-    assert '"interknow"' in launch
+    """qmd retrieval uses the interknow qmd collection name."""
+    enh = (project_root / "skills" / "flux-engine" / "references" / "progressive-enhancements.md").read_text()
+    assert '"interknow"' in enh
 
 
 def test_flux_drive_command_uses_interflux(project_root: Path):

@@ -20,8 +20,8 @@ def test_skill_count(skills_dir):
         d for d in skills_dir.iterdir()
         if d.is_dir() and (d / "SKILL.md").exists()
     )
-    assert len(dirs) == 1, (
-        f"Expected 1 skill, found {len(dirs)}: {[d.name for d in dirs]}"
+    assert len(dirs) == 2, (
+        f"Expected 2 skills, found {len(dirs)}: {[d.name for d in dirs]}"
     )
 
 
@@ -42,7 +42,7 @@ def test_skill_has_frontmatter(skill_dir):
 
 def test_flux_drive_phases_exist(skills_dir):
     """flux-drive skill has all expected phase files."""
-    phases_dir = skills_dir / "flux-drive" / "phases"
+    phases_dir = skills_dir / "flux-engine" / "phases"
     expected = ["launch.md", "synthesize.md", "shared-contracts.md", "slicing.md", "cross-ai.md", "launch-codex.md"]
     for name in expected:
         assert (phases_dir / name).exists(), f"Missing phase: {name}"
@@ -50,7 +50,7 @@ def test_flux_drive_phases_exist(skills_dir):
 
 def test_flux_drive_references_exist(skills_dir):
     """flux-drive skill has reference files."""
-    refs_dir = skills_dir / "flux-drive" / "references"
+    refs_dir = skills_dir / "flux-engine" / "references"
     expected = ["agent-roster.md", "scoring-examples.md"]
     for name in expected:
         assert (refs_dir / name).exists(), f"Missing reference: {name}"
@@ -68,8 +68,8 @@ def test_flux_research_skill_removed(skills_dir):
 
 def test_flux_drive_launch_consumes_clavain_b2_routing_contract(skills_dir):
     """Flux launch must activate Clavain B2 routing at dispatch time."""
-    launch = (skills_dir / "flux-drive" / "phases" / "launch.md").read_text()
-    skill = (skills_dir / "flux-drive" / "SKILL.md").read_text()
+    launch = (skills_dir / "flux-engine" / "phases" / "launch.md").read_text()
+    skill = (skills_dir / "flux-engine" / "SKILL.md").read_text()
 
     assert "--phase=<phase>" in skill
     assert "CLAVAIN_COMPOSE_PLAN" in launch
@@ -83,7 +83,7 @@ def test_flux_drive_launch_consumes_clavain_b2_routing_contract(skills_dir):
 
 def test_flux_drive_codex_launch_records_fixed_tier_exception(skills_dir):
     """Codex launch must make the passive-v1 fixed-tier exception explicit."""
-    launch = (skills_dir / "flux-drive" / "phases" / "launch-codex.md").read_text()
+    launch = (skills_dir / "flux-engine" / "phases" / "launch-codex.md").read_text()
 
     assert "CLAVAIN_DISPATCH_PROFILE=clavain" in launch
     assert "--tier deep" in launch
