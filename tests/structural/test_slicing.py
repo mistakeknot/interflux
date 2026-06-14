@@ -7,32 +7,37 @@ import pytest
 
 @pytest.fixture(scope="session")
 def slicing_path(project_root: Path) -> Path:
-    return project_root / "skills" / "flux-drive" / "phases" / "slicing.md"
+    return project_root / "skills" / "flux-engine" / "phases" / "slicing.md"
 
 
 @pytest.fixture(scope="session")
 def slicing_content(project_root: Path) -> str:
-    return (project_root / "skills" / "flux-drive" / "phases" / "slicing.md").read_text()
+    return (project_root / "skills" / "flux-engine" / "phases" / "slicing.md").read_text()
 
 
 @pytest.fixture(scope="session")
 def flux_drive_skill(project_root: Path) -> str:
-    return (project_root / "skills" / "flux-drive" / "SKILL.md").read_text()
+    return (project_root / "skills" / "flux-engine" / "SKILL.md").read_text()
 
 
 @pytest.fixture(scope="session")
 def launch_phase(project_root: Path) -> str:
-    return (project_root / "skills" / "flux-drive" / "phases" / "launch.md").read_text()
+    return (project_root / "skills" / "flux-engine" / "phases" / "launch.md").read_text()
+
+
+@pytest.fixture(scope="session")
+def prompt_template(project_root: Path) -> str:
+    return (project_root / "skills" / "flux-engine" / "references" / "prompt-template.md").read_text()
 
 
 @pytest.fixture(scope="session")
 def shared_contracts(project_root: Path) -> str:
-    return (project_root / "skills" / "flux-drive" / "phases" / "shared-contracts.md").read_text()
+    return (project_root / "skills" / "flux-engine" / "phases" / "shared-contracts.md").read_text()
 
 
 @pytest.fixture(scope="session")
 def synthesize_phase(project_root: Path) -> str:
-    return (project_root / "skills" / "flux-drive" / "phases" / "synthesize.md").read_text()
+    return (project_root / "skills" / "flux-engine" / "phases" / "synthesize.md").read_text()
 
 
 # --- slicing.md existence and structure ---
@@ -40,7 +45,7 @@ def synthesize_phase(project_root: Path) -> str:
 
 def test_slicing_file_exists(slicing_path: Path):
     """phases/slicing.md exists."""
-    assert slicing_path.exists(), "skills/flux-drive/phases/slicing.md is missing"
+    assert slicing_path.exists(), "skills/flux-engine/phases/slicing.md is missing"
 
 
 def test_slicing_has_both_modes(slicing_content: str):
@@ -111,7 +116,7 @@ def test_slicing_has_synthesis_rules(slicing_content: str):
 def test_slicing_has_report_template(slicing_content: str):
     """slicing.md has a slicing report template."""
     assert "Slicing report" in slicing_content
-    assert "Routing improvements" in slicing_content
+    assert "routing improvements" in slicing_content
 
 
 # --- Thresholds and overrides ---
@@ -134,7 +139,7 @@ def test_skill_mentions_input_type_diff(flux_drive_skill: str):
 def test_skill_has_diff_profile(flux_drive_skill: str):
     """SKILL.md contains a Diff Profile section."""
     assert "Diff Profile" in flux_drive_skill
-    assert "slicing_eligible" in flux_drive_skill
+    assert "slicing eligible" in flux_drive_skill
 
 
 def test_skill_detects_diff_content(flux_drive_skill: str):
@@ -157,9 +162,9 @@ def test_launch_references_slicing(launch_phase: str):
     assert "Step 2.1b" in launch_phase
 
 
-def test_launch_has_diff_to_review_section(launch_phase: str):
-    """launch.md has a Diff to Review prompt template section."""
-    assert "## Diff to Review" in launch_phase
+def test_launch_has_diff_to_review_section(prompt_template: str):
+    """references/prompt-template.md has a Diff to Review prompt template section."""
+    assert "## Diff to Review" in prompt_template
 
 
 def test_shared_contracts_references_slicing(shared_contracts: str):

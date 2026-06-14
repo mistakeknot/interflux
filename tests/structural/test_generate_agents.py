@@ -290,7 +290,7 @@ class TestRenderAgent:
         fm_with = yaml.safe_load(content_with[3:content_with.index("---", 3)])
         fm_without = yaml.safe_load(content_without[3:content_without.index("---", 3)])
 
-        assert fm_with["flux_gen_version"] == 5
+        assert fm_with["flux_gen_version"] == 6
         assert fm_without["flux_gen_version"] == 4
 
     def test_escalation_instruction_in_decision_lens(self):
@@ -403,7 +403,7 @@ class TestGenerateFromSpecs:
         report = generate_from_specs(project, specs_path)
 
         assert "bad-name" not in report["generated"]
-        assert any("must start with 'fd-'" in e for e in report["errors"])
+        assert any("does not match" in e for e in report["errors"])
 
     def test_invalid_json(self, tmp_path):
         """Invalid JSON specs produce error status."""
