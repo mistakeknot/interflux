@@ -75,21 +75,21 @@ else
 fi
 
 # Test 8: references/budget.md documents the full Step 1.2c algorithm
-if grep -q "Step 1.2c" "${PLUGIN_DIR}/skills/flux-drive/references/budget.md"; then
+if grep -q "Step 1.2c" "${PLUGIN_DIR}/skills/flux-engine/references/budget.md"; then
   pass "references/budget.md documents Step 1.2c (budget cut)"
 else
   fail "references/budget.md missing Step 1.2c documentation"
 fi
 
 # Test 9: references/budget.md specifies the Est. Tokens triage column
-if grep -q "Est. Tokens" "${PLUGIN_DIR}/skills/flux-drive/references/budget.md"; then
+if grep -q "Est. Tokens" "${PLUGIN_DIR}/skills/flux-engine/references/budget.md"; then
   pass "Triage table includes Est. Tokens column"
 else
   fail "Triage table missing Est. Tokens column"
 fi
 
 # Test 10: synthesize.md references cost report
-if grep -q "Cost Report\|cost_report\|Step 3.4b" "${PLUGIN_DIR}/skills/flux-drive/phases/synthesize.md"; then
+if grep -q "Cost Report\|cost_report\|Step 3.4b" "${PLUGIN_DIR}/skills/flux-engine/phases/synthesize.md"; then
   pass "synthesize.md references cost report"
 else
   fail "synthesize.md missing cost report reference"
