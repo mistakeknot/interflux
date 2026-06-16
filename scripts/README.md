@@ -29,6 +29,7 @@ When multiple scripts share a process and all use `flock(2)` (per-FD locks), fd 
 | 201 | Model registry | `${MODEL_REGISTRY}.lock` | `lib-registry.sh`, `fluxbench-drift.sh`, `fluxbench-qualify.sh`, `discover-merge.sh` |
 | 202 | Sync state | `*.sync.lock` | `fluxbench-sync.sh` |
 | 203 | Peer findings JSONL | `${findings_file}.lock` | `findings-helper.sh` |
+| 204 | Dispatch slots (concurrency cap) | `{OUTPUT_DIR}/.dispatch-slots.lock` | `flux-dispatch.sh` |
 
 **Rule:** never reuse an fd across lock domains in the same process. When adding a new lock domain, pick the next free fd and update this table.
 
