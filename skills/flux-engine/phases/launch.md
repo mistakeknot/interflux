@@ -155,19 +155,36 @@ After each stage launch, tell the user:
 
 ### Concurrency cap (applies to Stage 1, Stage 2 expansion, and research dispatch)
 
-Anthropic API rate limits and prompt-cache contention degrade throughput when too many agents fan out simultaneously (Erlang C predicts ~30% retry-token waste at the 16-agent fan-out tier). Cap concurrent in-flight agent dispatches at:
+Anthropic API rate limits and prompt-cache contention degrade throughput when too many agents fan out simultaneously (Erlang C predicts ~30% retry-token waste at the 16-agent fan-out tier). The concurrency cap is **mechanically enforced** by `scripts/flux-dispatch.sh` — a `flock`-guarded slot semaphore at `{OUTPUT_DIR}/.dispatch-slots` that holds at most `MAX_CONCURRENT_AGENTS` tokens. This is admission control, not advice: a dispatch path that fails to acquire a slot blocks until one frees, so the orchestrator cannot breach the cap by emitting all `Agent` calls at once.
 
 ```
 MAX_CONCURRENT_AGENTS = ${MAX_CONCURRENT_AGENTS:-6}
 ```
 
-Resolution order: env var → budget.yaml `dispatch.max_concurrent_agents` → default 6.
+Resolution order: explicit arg → env var → budget.yaml `dispatch.max_concurrent_agents` → default 6 (the script applies this order; see `scripts/flux-dispatch.sh` and `config/flux-drive/budget.yaml` § `dispatch`).
 
-**Dispatch loop pattern** (applies wherever this phase fans out — Stage 1 launch, Stage 2 expansion, research-mode parallel dispatch, peer-finding broadcasts):
+**Enforced dispatch loop** (applies wherever this phase fans out — Stage 1 launch, Stage 2 expansion, research-mode parallel dispatch, peer-finding broadcasts). Once per run, before the first wave, initialize the slot file:
 
-1. Track in-flight Task calls (those with `run_in_background: true` whose `output_file` has not yet been polled to completion).
-2. Before issuing the next dispatch, if `in_flight_count >= MAX_CONCURRENT_AGENTS`, wait for any in-flight task to complete (poll the Task notifications) before dispatching the next.
-3. The cap is per **flux-drive run**. Outer wrappers like `/flux-review` apply their own per-track cap on top — see `commands/flux-review.md` § Concurrency.
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-dispatch.sh reset {OUTPUT_DIR}
+```
+
+Then, for **every** agent dispatch:
+
+1. **Acquire a slot before the `Agent` call** — this blocks if the cap is reached:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-dispatch.sh acquire {OUTPUT_DIR}   # blocks until a slot is free
+   ```
+2. Issue the `Agent`/Task call with `run_in_background: true`.
+3. **Release the slot when the agent's terminal `.md` appears.** The `wait` subcommand does both (block on the file, then release), so run it in the background per agent:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-dispatch.sh wait {OUTPUT_DIR} {OUTPUT_DIR}/{agent}.md   # background this
+   ```
+   (`wait` always releases — even on its own timeout — so a stalled agent cannot permanently consume a slot and deadlock the cap.)
+
+The slot file is the single chokepoint: every fan-out path must `acquire` before dispatching. The cap is per **flux-drive run**. Outer wrappers like `/flux-review` apply their own per-track cap on top — see `commands/flux-review.md` § Concurrency.
+
+**Simpler wave form (acceptable alternative):** dispatch in fixed waves of `MAX_CONCURRENT_AGENTS`, then barrier on `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {wave_size} {TIMEOUT}` before launching the next wave. This caps peak concurrency at the wave size without a slot file, at the cost of head-of-line blocking within a wave.
 
 **Why 6:** at the default Anthropic API tier, 6 concurrent agents stays inside the per-minute concurrent-session limit while keeping Stage 1 (typically 2-3 agents) unconstrained. Tune via env when running on higher-tier API keys or when the workload is many small/cheap agents.
 

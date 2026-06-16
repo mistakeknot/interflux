@@ -29,6 +29,18 @@ slicing_multiplier: 0.5
 # Minimum agents to always dispatch (regardless of budget)
 min_agents: 2
 
+# Dispatch admission control — mechanical concurrency cap (issue #5)
+# Enforced by scripts/flux-dispatch.sh (a flock-guarded slot semaphore under
+# {OUTPUT_DIR}/.dispatch-slots), NOT by prose the orchestrating LLM is asked to honor.
+# Resolution order for the live cap: env MAX_CONCURRENT_AGENTS → this key → default 6.
+# See skills/flux-engine/phases/launch.md § Concurrency cap.
+dispatch:
+  max_concurrent_agents: 6   # max agents in-flight at once across a flux-drive run
+                             # At the default Anthropic API tier, 6 stays inside the
+                             # per-minute concurrent-session limit while keeping Stage 1
+                             # (typically 2-3 agents) unconstrained. Raise on higher-tier
+                             # keys; lower (3-4) on rate-limited keys / many heavy agents.
+
 # Budget enforcement
 enforcement: soft          # soft = warn + offer override | hard = block
 cost_basis: billing        # billing = input+output (cache reads free) | total = all tokens incl. cache
