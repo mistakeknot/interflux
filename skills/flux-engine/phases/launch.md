@@ -9,19 +9,46 @@ Create the output directory before launching agents. Resolve to an absolute path
 mkdir -p {OUTPUT_DIR}  # Must be absolute, e.g. /root/projects/Foo/docs/research/flux-drive/my-doc-name-20260404T1930
 ```
 
-OUTPUT_DIR is content-addressed by default (see SKILL.md § Run isolation): suffix is `sha256(INPUT_PATH)[:8]`. The hash-stable path keeps the agent-prompt prefix cache-friendly across reruns of the same target, but it also means a previous run on this target may have left stale outputs. Always clean before dispatch:
-```bash
-find {OUTPUT_DIR} -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" -o -name "decisions.log" \) -delete
-```
-
-**Generate the run UUID (quire-mark).** Every artifact emitted by this run carries the same opaque identifier so synthesis can detect cross-run contamination (a stale `.md` from a prior run on this same OUTPUT_DIR, or a foreign agent file written by another concurrent invocation). Generate once, export for child processes:
+**Generate the run UUID (quire-mark) FIRST.** Every artifact emitted by this run carries the same opaque identifier so synthesis can scope its globs to this run and detect cross-run contamination (a stale `.md` from a prior run on this same OUTPUT_DIR, or a foreign agent file written by another concurrent invocation). Generate once, export for child processes:
 ```bash
 FLUX_RUN_UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
 export FLUX_RUN_UUID
-export FLUX_OUTPUT_DIR="{OUTPUT_DIR}"
 ```
 
-`FLUX_RUN_UUID` is auto-consumed by `scripts/_verification.py` (every VerificationStep records it) and by `scripts/_decisions_log.py` (every decision record). Pass it into agent prompts via the `RUN_UUID` template variable — agents emit it in their output preamble for synthesis-time validation.
+**Take an atomic occupancy lock BEFORE any destructive cleanup.** `mkdir` is atomic on POSIX filesystems: it either creates the directory and succeeds, or fails because it already exists. This makes OUTPUT_DIR a single-writer resource and prevents a second concurrent run on the same target from wiping the first run's in-flight files (issue #6). The lock acquisition is what serialises the destructive pre-clean below.
+```bash
+LOCK_DIR="{OUTPUT_DIR}/.run-${FLUX_RUN_UUID}.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  # Our own UUID lock collided (astronomically unlikely) — regenerate and retry once.
+  FLUX_RUN_UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
+  export FLUX_RUN_UUID
+  LOCK_DIR="{OUTPUT_DIR}/.run-${FLUX_RUN_UUID}.lock"
+  mkdir "$LOCK_DIR"
+fi
+# If ANOTHER run already holds a lock on this OUTPUT_DIR, this run must NOT run the
+# destructive find -delete below — that would wipe the live run's in-flight outputs.
+# Detect a concurrent holder and auto-suffix to a disjoint directory:
+other_locks=$(find "{OUTPUT_DIR}" -maxdepth 1 -type d -name ".run-*.lock" ! -name ".run-${FLUX_RUN_UUID}.lock" 2>/dev/null)
+if [ -n "$other_locks" ]; then
+  rmdir "$LOCK_DIR" 2>/dev/null || true       # release the lock we took on the shared dir
+  OUTPUT_DIR="{OUTPUT_DIR}-${FLUX_RUN_UUID}"   # disjoint per-run directory
+  mkdir -p "$OUTPUT_DIR"
+  LOCK_DIR="${OUTPUT_DIR}/.run-${FLUX_RUN_UUID}.lock"
+  mkdir "$LOCK_DIR"
+fi
+export FLUX_OUTPUT_DIR="$OUTPUT_DIR"
+# Best-effort lock release happens at end of run (synthesize.md Step 3.7). A stale
+# lock from a crashed run is harmless — the next run just auto-suffixes around it.
+```
+
+OUTPUT_DIR is content-addressed by default (see SKILL.md § Run isolation): suffix is `sha256(INPUT_PATH)[:8]`. The hash-stable path keeps the agent-prompt prefix cache-friendly across reruns of the same target, but it also means a previous *sequential* run on this target may have left stale outputs. Clean stale outputs from prior runs — but ONLY now that we hold the occupancy lock and have confirmed no concurrent run is live. Combined with the run-scoped filenames below, even an aggressive clean cannot harm a live run's artifacts:
+```bash
+# Safe pre-clean: our lock is held and no other lock exists, so any remaining files
+# are stale orphans from a prior sequential run on this same target.
+find "$OUTPUT_DIR" -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" -o -name "decisions.log" \) -delete
+```
+
+`FLUX_RUN_UUID` is auto-consumed by `scripts/_verification.py` (every VerificationStep records it) and by `scripts/_decisions_log.py` (every decision record). Pass it into agent prompts via the `RUN_UUID` template variable — agents emit it in their output preamble for synthesis-time validation **and embed it in their output filename** (`{agent-name}.{RUN_UUID}.md`, see `references/prompt-template.md` § Output Format). The UUID-in-filename scheme is the structural half of the quire-mark: synthesis globs only `{OUTPUT_DIR}/*.${FLUX_RUN_UUID}.md`, so stale or foreign files are excluded by construction, not just by content check.
 
 ### Step 2.0.4: Composer dispatch plan (optional)
 
@@ -51,7 +78,7 @@ OPTIONAL — read `references/progressive-enhancements.md` § Step 2.1 for the q
 
 ### Step 2.1-research: Build research prompts and dispatch [research only]
 
-**Skip this entire section in review mode.** In research mode, build per-agent research prompts with the query profile (type, keywords, scope, depth), project context, and domain research directives (if detected). Output format: Sources → Findings → Confidence → Gaps. Write to `{OUTPUT_DIR}/{agent-name}.md.partial`, rename to `.md` with `<!-- flux-research:complete -->` sentinel when done.
+**Skip this entire section in review mode.** In research mode, build per-agent research prompts with the query profile (type, keywords, scope, depth), project context, and domain research directives (if detected). Output format: Sources → Findings → Confidence → Gaps. Write to `{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md.partial`, rename to `{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md` (with `mv -n`) and a `<!-- flux-research:complete -->` sentinel when done.
 
 Dispatch all agents via Task tool with `run_in_background: true`, respecting the concurrency cap defined below (`MAX_CONCURRENT_AGENTS`, default 6). Project Agents use `subagent_type: general-purpose`. Timeouts: quick=30s, standard=2min, deep=5min. Then skip to Step 2.3.
 
@@ -135,7 +162,7 @@ Apply the appropriate algorithm (Diff Slicing or Document Slicing) based on `INP
 
 Read `references/prompt-template.md` for the full agent prompt template. Key sections to construct per agent:
 
-1. **Output Format**: Write to `{OUTPUT_DIR}/{agent-name}.md.partial` → rename to `.md` with `<!-- flux-drive:complete -->` sentinel. Structure: Findings Index → Verdict → Summary → Issues Found → Improvements.
+1. **Output Format**: Write to `{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md.partial` → rename (with `mv -n`) to `{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md` with `<!-- flux-drive:complete -->` sentinel. The `{RUN_UUID}` filename segment scopes the file to this run so synthesis globs only the current run's output. Structure: Findings Index → Verdict → Summary → Issues Found → Improvements.
 2. **Review Task**: `You are reviewing a {document_type} for {review_goal}.`
 3. **Knowledge Context** (if Step 2.1 returned entries): Include entries with provenance note (independently confirmed vs primed confirmation).
 4. **Domain Context** (if Step 2.1a loaded criteria): Domain classification + per-domain bullet points for this agent, up to 3 domains.
@@ -266,7 +293,7 @@ OPTIONAL — read `references/progressive-enhancements.md` § Step 2.2a for trig
 **Cross-AI (Oracle)**:
 - Run via Bash tool with `run_in_background: true` and `timeout: 600000`
 - Requires `DISPLAY=:99` and `CHROME_PATH=/usr/local/bin/google-chrome-wrapper`
-- Output goes to `{OUTPUT_DIR}/oracle-council.md.partial`, renamed to `.md` on success
+- Output goes to `{OUTPUT_DIR}/oracle-council.{RUN_UUID}.md.partial`, renamed (with `mv -n`) to `{OUTPUT_DIR}/oracle-council.{RUN_UUID}.md` on success
 
 **Document content**: Write the document to a temp file once; agents Read it as their first action. See Step 2.1c below.
 
@@ -284,7 +311,7 @@ Monitor via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {
 
 **Stall rescue (opt-in):** Pass `STALL_RESCUE=1`, `STALL_TIMEOUT=60` (default), and `EXPECTED_AGENTS=$(printf '%s\n' "${AGENT_NAMES[@]}")` to flux-watch.sh. When an expected agent has neither `.md` nor `.md.partial` after `STALL_TIMEOUT` seconds of no overall progress, flux-watch writes a `{agent}.md` stall stub (verdict: `error`, summary: `Agent stalled — no output within Ns of stall window`) and appends a `kind:stall` entry to `peer-findings.jsonl`. The stub increments `seen` so synthesis treats the stall as data, not silence. Saves up to 16 minutes of wall-clock per stalled agent (vs the full 300s timeout × N agents). Off by default for back-compat; turn on for any review where partial-progress synthesis is preferable to all-or-nothing.
 
-**Completion verification:** List `{OUTPUT_DIR}/` — expect `.md` per agent. For `.md.partial` only (incomplete): retry once via the **Retry Race Protocol** in `phases/shared-contracts.md` § Dispatch State Machine. Briefly: touch `{agent}.abort`, rename `.md.partial` to `.md.partial.aborted-<epoch>`, then sync retry with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if `.md` exists (race with flux-watch return). If retry fails, write error stub per `phases/shared-contracts.md`. Cleanup: remove `.abort` markers; leave `.aborted-*` partials for post-mortem. Report: "N/M completed, K retried, J failed".
+**Completion verification:** List `{OUTPUT_DIR}/` — expect one `{agent-name}.{FLUX_RUN_UUID}.md` per agent (the run-uuid filename segment distinguishes this run's outputs from any concurrent run's). For `{agent}.{FLUX_RUN_UUID}.md.partial` only (incomplete): retry once via the **Retry Race Protocol** in `phases/shared-contracts.md` § Dispatch State Machine. Briefly: touch `{agent}.{FLUX_RUN_UUID}.abort`, rename the `.md.partial` to `.md.partial.aborted-<epoch>`, then sync retry with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if the run-scoped `.md` exists (race with flux-watch return). If retry fails, write error stub per `phases/shared-contracts.md`. Cleanup: remove `.abort` markers; leave `.aborted-*` partials for post-mortem. Report: "N/M completed, K retried, J failed". When all agents complete, release the occupancy lock: `rmdir "$LOCK_DIR" 2>/dev/null || true` (also done in synthesize.md Step 3.7).
 
 **Synthetic refusal detection (Opus 4.7 + later):** The Anthropic API occasionally
 returns a server-generated Usage Policy error on combinations that the input
