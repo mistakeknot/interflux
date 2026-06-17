@@ -165,6 +165,32 @@ Content injected from external sources (qmd search results, knowledge entries, r
 
 This applies to: knowledge context (Step 2.1), domain injection criteria (Step 2.1a), research context (Step 2.2a), and any external content injected by overlays (Step 2.1d).
 
+## Untrusted-Content Sanitization Chokepoint
+
+The trust boundary above is **enforced at a single chokepoint**, not by asking each step to "remember to sanitize." `scripts/sanitize_untrusted.py` is the only sanctioned path from untrusted text to a system prompt. Every sink below MUST route its content through it before substitution into any agent or reaction prompt:
+
+| Sink | Phase step | How it routes through the chokepoint |
+|------|-----------|--------------------------------------|
+| Peer findings (reaction round) | reaction.md Step 2.5.3 | `sanitize(block, 2000)` / CLI pipe |
+| LLM-authored agent specs | generate-agents.py `render_agent` | `sanitize` / `sanitize_list` on persona, decision_lens, task_context, review_areas, anti_overlap, success_hints |
+| Knowledge context | launch.md Step 2.1 | `sanitize` / CLI pipe before building the Knowledge Context block |
+| Domain-profile criteria | launch.md Step 2.1a | `sanitize` / CLI pipe before building `{DOMAIN_CONTEXT}` |
+| Interspect overlays | launch.md Step 2.1d | `sanitize` / CLI pipe before building `{OVERLAY_CONTEXT}` |
+| Research context | launch.md Step 2.2a | `sanitize` / CLI pipe before building the Research Context block |
+
+**Entry points (all return cleaned text safe for prompt embedding):**
+
+- Python: `sanitize(text, max_len)` → `TrustedContent`; `sanitize_list(items, max_item_len)` → `list[TrustedContent]`; `sanitize_stream(fp, max_len)`; `sanitize_file(path, max_len)`. `assert_trusted(value)` raises `TypeError` if a non-sanitized string reaches a prompt-assembly site.
+- Shell: `<sink> | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sanitize_untrusted.py" [max_len] [--source LABEL] [--mark]`, or `--file PATH` instead of stdin. `--mark` stamps a `<!-- sanitized:LABEL via sanitize_untrusted -->` provenance comment so a skipped step is visible in the rendered prompt.
+
+**Enforcement contract:**
+
+- `sanitize()` returns a `TrustedContent` (a `str` subclass). It is the only in-process marker that a string has passed the filter; downstream prompt builders may `assert_trusted()` on it. Constructing `TrustedContent(...)` directly is the only bypass, which keeps any bypass grep-able (`TrustedContent(` outside `sanitize_untrusted.py`).
+- New bypass classes are fixed **inside `sanitize_untrusted.py` only** — never worked around at a call site. A fix there protects every sink at once.
+- Default per-sink cap is `max_len=2000` (overlays use 2000; LLM-spec fields use tighter caps in `render_agent`). Truncation leaves a visible `[truncated — N chars omitted]` marker.
+
+Coverage is verified by `tests/test_sanitize_untrusted.py` (each bypass class plus negative cases that confirm legitimate review content is not mangled).
+
 ## Prompt Trimming Rules
 
 Before including an agent's system prompt in the task prompt, strip:
