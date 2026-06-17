@@ -184,6 +184,8 @@ After each stage launch, tell the user:
 
 Anthropic API rate limits and prompt-cache contention degrade throughput when too many agents fan out simultaneously (Erlang C predicts ~30% retry-token waste at the 16-agent fan-out tier). The concurrency cap is **mechanically enforced** by `scripts/flux-dispatch.sh` — a `flock`-guarded slot semaphore at `{OUTPUT_DIR}/.dispatch-slots` that holds at most `MAX_CONCURRENT_AGENTS` tokens. This is admission control, not advice: a dispatch path that fails to acquire a slot blocks until one frees, so the orchestrator cannot breach the cap by emitting all `Agent` calls at once.
 
+The cap is not static: it is **congestion-controlled**. When agents hit rate limits (HTTP 429 / `overloaded_error`), `scripts/flux-backoff.sh decrease` multiplicatively lowers the *effective* cap for the rest of the run (TCP/client-go style), and `acquire` claims against `min(MAX_CONCURRENT_AGENTS, congestion_cap)`. See **Transient-failure backpressure** below — this is the enforced response to 429s the Erlang-C waste figure is about.
+
 ```
 MAX_CONCURRENT_AGENTS = ${MAX_CONCURRENT_AGENTS:-6}
 ```
@@ -216,6 +218,44 @@ The slot file is the single chokepoint: every fan-out path must `acquire` before
 **Why 6:** at the default Anthropic API tier, 6 concurrent agents stays inside the per-minute concurrent-session limit while keeping Stage 1 (typically 2-3 agents) unconstrained. Tune via env when running on higher-tier API keys or when the workload is many small/cheap agents.
 
 **Override** for genuinely concurrent-tolerant runs (large API quotas, fast agents, or where total wall-clock matters more than retry waste): set `MAX_CONCURRENT_AGENTS=N` before invoking. For maximum-conservative runs (rate-limited keys, many heavy agents), lower it (3-4 is a safe floor that still permits Stage 1 parallelism).
+
+### Transient-failure backpressure (429 / rate-limit handling)
+
+A rate-limited dispatch is **not** a failed agent. It never started, leaves no `.partial` or `.md`, and would otherwise stay invisible until the 300s flux-watch timeout — exactly the gap that produces the ~30% retry-token waste cited above. The orchestrator must classify and respond the moment the `Agent` tool returns, **before** the timeout, using `scripts/flux-backoff.sh`.
+
+Three failure classes (see also `phases/shared-contracts.md` § Dispatch State Machine):
+
+| Class | Signal | Response |
+|-------|--------|----------|
+| **transient** | HTTP `429`, `rate_limit_error`, `overloaded_error`, `503`/`529`, "too many requests", capacity/quota | Do **not** count as failed. Back off + re-enqueue + decrease the cap. |
+| **terminal** | Usage-Policy refusal (`unable to respond … violate our Usage Policy`) | Deterministic — plain retry refuses again. Tier-downgrade per Step 2.3 "Synthetic refusal detection". |
+| **unknown** | crash, silent stall, anything else | Existing Retry Race Protocol / stall-rescue. No cap decrease. |
+
+Classify a returned agent's failure text (subagent transcript tail, or the Bash/Task error) with:
+```bash
+class=$(printf '%s' "$agent_error_text" | bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-backoff.sh classify)
+```
+
+**On `transient` (this is the enforced backpressure path):**
+
+1. **Multiplicatively decrease the effective cap** (congestion-control, applies for the rest of the run):
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-backoff.sh decrease {OUTPUT_DIR}   # cap /= 2, floored at 1
+   ```
+   This writes `{OUTPUT_DIR}/.dispatch-cap`; every subsequent `flux-dispatch.sh acquire` then admits against `min(MAX_CONCURRENT_AGENTS, .dispatch-cap)`, so the fan-out self-throttles without orchestrator bookkeeping.
+2. **Back off with exponential delay + full jitter** before re-enqueueing (decorrelates the retry storm so the whole wave doesn't re-hit the limit in lockstep):
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-backoff.sh sleep "$attempt"   # attempt is 1-based; sleeps base*2^(attempt-1) jittered
+   ```
+3. **Re-enqueue** the agent through the normal acquire → `Agent` → `wait` loop. It does **not** count toward the failed tally and does **not** get an error stub on this attempt.
+4. **Recovery (optional):** after a clean wave with no further 429s, additively restore one slot at a time:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-backoff.sh increase {OUTPUT_DIR}   # +1, clears .dispatch-cap once back at base
+   ```
+
+Tunables (env → `budget.yaml` `dispatch.backoff.*` → defaults): `FLUX_BACKOFF_BASE_DELAY` (2s), `FLUX_BACKOFF_MAX_DELAY` (60s), `FLUX_BACKOFF_FACTOR` (2), `FLUX_BACKOFF_DECREASE_FACTOR` (2), `FLUX_BACKOFF_MIN_CAP` (1). `flux-dispatch.sh reset` clears any stale `.dispatch-cap` at the start of a run.
+
+A persistently-transient agent (still 429 after a small bounded number of re-enqueues, e.g. 3) is finally treated as `unknown` — write an error stub per `phases/shared-contracts.md` so synthesis sees it as data rather than looping forever.
 
 ### Step 2.2: Stage 1 — Launch top agents [review only]
 
@@ -310,6 +350,8 @@ Monitor via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/flux-watch.sh {OUTPUT_DIR} {N} {
 **Progress display:** flux-watch.sh outputs progress lines as each agent completes: `[N/M | elapsed] agent-name`. Display these to the user as they arrive — this is the primary UX feedback during agent runs. Do not suppress or buffer this output.
 
 **Stall rescue (opt-in):** Pass `STALL_RESCUE=1`, `STALL_TIMEOUT=60` (default), and `EXPECTED_AGENTS=$(printf '%s\n' "${AGENT_NAMES[@]}")` to flux-watch.sh. When an expected agent has neither `.md` nor `.md.partial` after `STALL_TIMEOUT` seconds of no overall progress, flux-watch writes a `{agent}.md` stall stub (verdict: `error`, summary: `Agent stalled — no output within Ns of stall window`) and appends a `kind:stall` entry to `peer-findings.jsonl`. The stub increments `seen` so synthesis treats the stall as data, not silence. Saves up to 16 minutes of wall-clock per stalled agent (vs the full 300s timeout × N agents). Off by default for back-compat; turn on for any review where partial-progress synthesis is preferable to all-or-nothing.
+
+**Transient-failure check (do this BEFORE waiting out the timeout):** When an `Agent` call returns an error, or a dispatched agent has produced *neither* `.md` nor `.partial` shortly after dispatch, classify the error text with `flux-backoff.sh classify` (see § Transient-failure backpressure above). A `transient` (429/overloaded) result must engage backpressure immediately — `decrease` the cap, `sleep` the backoff, and re-enqueue — rather than waiting for the 300s flux-watch timeout. Only `unknown` results fall through to the Retry Race / stall-rescue paths below.
 
 **Completion verification:** List `{OUTPUT_DIR}/` — expect one `{agent-name}.{FLUX_RUN_UUID}.md` per agent (the run-uuid filename segment distinguishes this run's outputs from any concurrent run's). For `{agent}.{FLUX_RUN_UUID}.md.partial` only (incomplete): retry once via the **Retry Race Protocol** in `phases/shared-contracts.md` § Dispatch State Machine. Briefly: touch `{agent}.{FLUX_RUN_UUID}.abort`, rename the `.md.partial` to `.md.partial.aborted-<epoch>`, then sync retry with `run_in_background: false`, timeout 300000ms. Pre-retry guard: skip if the run-scoped `.md` exists (race with flux-watch return). If retry fails, write error stub per `phases/shared-contracts.md`. Cleanup: remove `.abort` markers; leave `.aborted-*` partials for post-mortem. Report: "N/M completed, K retried, J failed". When all agents complete, release the occupancy lock: `rmdir "$LOCK_DIR" 2>/dev/null || true` (also done in synthesize.md Step 3.7).
 
