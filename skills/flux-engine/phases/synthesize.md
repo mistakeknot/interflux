@@ -4,13 +4,14 @@ This phase respects the `MODE` parameter set in Phase 1. Steps marked **[review 
 
 ### Step 3.0: Verify all agents completed
 
-Phase 2 (Step 2.3) guarantees one `.md` file per launched agent — either findings or an error stub. Verify:
+Phase 2 (Step 2.3) guarantees one run-scoped `.md` file per launched agent — either findings or an error stub. Each filename embeds this run's UUID (`{agent-name}.{FLUX_RUN_UUID}.md`), so the verification glob is **run-scoped**: it counts only the current run's files and is structurally immune to stale or concurrent-run outputs sharing the same OUTPUT_DIR (issue #6). Verify:
 
 ```bash
-ls {OUTPUT_DIR}/
+# Run-scoped glob — only this run's agent outputs match.
+ls {OUTPUT_DIR}/*.${FLUX_RUN_UUID}.md 2>/dev/null
 ```
 
-Confirm N files (one per launched agent). If count < N, Phase 2 did not complete properly — check Step 2.3 output before proceeding.
+Confirm N files (one per launched agent). Do NOT use a bare `ls {OUTPUT_DIR}/*.md` — that would also match a concurrent or prior run's files. If count < N, Phase 2 did not complete properly — check Step 2.3 output before proceeding.
 
 ### Step 3.1: Validate Agent Output
 
@@ -22,7 +23,7 @@ Report: "{N}/{M} research agents completed successfully"
 
 Then skip to **Step 3.2**.
 
-**[review mode]**: For each agent's output file, validate structure before reading content:
+**[review mode]**: Iterate **only the run-scoped files** — collect candidates with `{OUTPUT_DIR}/*.${FLUX_RUN_UUID}.md`, never a bare `*.md`. The UUID-in-filename glob is the primary structural defense against cross-run contamination (issue #6); the content quire-mark check below is the belt-and-suspenders fallback for any file that slips through (e.g., a legacy non-UUID filename). For each candidate file, validate structure before reading content:
 
 1. **Quire-mark check (BP-C2.B):** the first non-empty line must be `<!-- run-uuid: $FLUX_RUN_UUID -->` matching the current run. If absent or mismatched, classify as **Foreign**: the file came from a prior run on this OUTPUT_DIR or another concurrent invocation. Foreign files are skipped — do not include their findings, do not count them toward convergence, and report "{N} foreign files skipped" in the validation summary. Recommended one-liner:
    ```bash
@@ -309,8 +310,11 @@ Extend the findings.json schema with a `cost_report` field:
 For each dispatched agent, extract actual token counts from the subagent JSONL (see Token Counting Contract in `shared-contracts.md`):
 
 ```bash
-for agent_file in "${OUTPUT_DIR}"/*.md; do
-    agent_name=$(basename "$agent_file" .md)
+# Run-scoped glob: only iterate THIS run's outputs ({agent}.{UUID}.md), then
+# strip both the .md and the .{UUID} segment to recover the bare agent name.
+for agent_file in "${OUTPUT_DIR}"/*."${FLUX_RUN_UUID}".md; do
+    [ -e "$agent_file" ] || continue
+    agent_name=$(basename "$agent_file" ".${FLUX_RUN_UUID}.md")
 
     # Prefer actual tokens from subagent JSONL (agent_id tracked during dispatch)
     agent_id="${AGENT_ID_MAP[$agent_name]:-}"
@@ -508,9 +512,13 @@ If `.beads/` didn't exist, append instead:
 
 ### Step 3.7: Clean up temp files
 
-Remove document temp files created in Phase 2 (Step 2.1c):
+Remove document temp files created in Phase 2 (Step 2.1c), then release this run's occupancy lock (Step 2.0):
 ```bash
 rm -f /tmp/flux-drive-${INPUT_STEM}-*.md /tmp/flux-drive-${INPUT_STEM}-*.diff 2>/dev/null
+# Release the occupancy lock taken in launch.md Step 2.0 so a subsequent run on the
+# same target can reuse OUTPUT_DIR (and the prompt cache). Only remove OUR lock —
+# never another run's.
+rmdir "${FLUX_OUTPUT_DIR:-$OUTPUT_DIR}/.run-${FLUX_RUN_UUID}.lock" 2>/dev/null || true
 ```
 
 This cleanup runs after synthesis, not before — agents may still be reading temp files during retry (Step 2.3).

@@ -206,14 +206,25 @@ Launch one flux-drive review per active track using the Agent tool, all in paral
 | C (Distant) review | sonnet | sonnet | opus |
 | D (Esoteric) review | sonnet | sonnet | opus |
 
+**Per-track output isolation (issue #6).** Every track runs flux-drive on the **same** `INPUT_PATH`, so the inner runs would otherwise content-address to the **identical** default OUTPUT_DIR (`docs/research/flux-drive/{stem}-{sha256(INPUT_PATH)[:8]}`) and race — track B's pre-clean would wipe track A's in-flight files, and both would write the same agent filenames. To make tracks deterministically disjoint, pass an explicit `--output-dir` per track so each inner flux-drive writes to its own directory:
+```
+TRACK_OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-review/{SLUG}/track-{track_letter}
+```
+where `{track_letter}` is `a`/`b`/`c`/`d`. This mirrors where the final synthesis lands (`docs/research/flux-review/{SLUG}/`) and keeps every track's artifacts under one reviewable tree while guaranteeing no two tracks share a directory.
+
 For each active track, launch an Agent tool with the appropriate model. Use this prompt template **verbatim** — do NOT embellish with strategic-influence framing (e.g., "reach AI labs", "ruthless prioritization", or naming specific AI lab operators as targets). Those combinations, together with multi-agent dispatch instructions and first-person persona adoption in agent files, can trigger server-side input classifiers and produce synthetic Usage Policy refusals.
 
 ```
 Run a flux-drive review of {INPUT_PATH}.
 
-Use the `interflux:flux-engine` skill on {INPUT_PATH}. This will auto-discover
-the project agents (including the newly generated {track_name}-domain agents)
-and run the full triage → launch → synthesize pipeline.
+Use the `interflux:flux-engine` skill on {INPUT_PATH} with
+`--output-dir {PROJECT_ROOT}/docs/research/flux-review/{SLUG}/track-{track_letter}`.
+The explicit --output-dir is REQUIRED: all tracks review the same INPUT_PATH, so
+without it every track would resolve to the same content-addressed directory and
+the tracks would clobber each other's outputs (issue #6).
+
+This will auto-discover the project agents (including the newly generated
+{track_name}-domain agents) and run the full triage → launch → synthesize pipeline.
 
 Focus on {track_focus_description}. The generated agents for this track
 ({list agent names}) should be triaged as Project Agents.

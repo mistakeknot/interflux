@@ -4,7 +4,7 @@ Cross-track synthesis fans the per-track flux-drive findings back into a single 
 
 ## Read findings
 
-Each per-track flux-drive run writes findings to `docs/research/flux-drive/{INPUT_STEM}/` (or per-track subdirectories like `interflux-roadmap-track-a/` if the track agents specified output dirs in their dispatch prompts). Read all `.md` finding files across the involved track directories.
+Each per-track flux-drive run writes findings to its own **disjoint** directory: `{PROJECT_ROOT}/docs/research/flux-review/{SLUG}/track-{letter}/` (the explicit `--output-dir` passed in Step 3 — see `track-dispatch.md` § Per-track output isolation, issue #6). Read all `.md` finding files across the active track directories (`track-a/`, `track-b/`, `track-c/`, `track-d/` as applicable). Within each track directory the finding files are run-scoped (`{agent}.{run-uuid}.md`); read them all — each track dir is a single flux-drive run, so there is exactly one run-uuid per track directory.
 
 ## Launch synthesis subagent
 

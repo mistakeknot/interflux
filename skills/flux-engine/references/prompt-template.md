@@ -7,8 +7,14 @@ This is the full template for constructing per-agent review prompts. The orchest
 ```
 ## Output Format
 
-Write findings to `{OUTPUT_DIR}/{agent-name}.md.partial`. Rename to `.md` when done.
-Add `<!-- flux-drive:complete -->` as the last line before renaming.
+Write findings to `{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md.partial`. Rename to
+`{OUTPUT_DIR}/{agent-name}.{RUN_UUID}.md` when done, using `mv -n` (never clobber
+an existing file). Add `<!-- flux-drive:complete -->` as the last line before renaming.
+
+The `{RUN_UUID}` segment in the filename scopes every artifact to this run, so a
+concurrent run on the same OUTPUT_DIR cannot overwrite your output and synthesis
+globs only this run's files (`{OUTPUT_DIR}/*.{RUN_UUID}.md`). Copy `{RUN_UUID}`
+verbatim into both the filename and the run-uuid preamble line below.
 
 ALL findings go in that file — do NOT return findings in your response text.
 
