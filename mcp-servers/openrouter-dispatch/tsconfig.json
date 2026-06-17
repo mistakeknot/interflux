@@ -11,6 +11,12 @@
     "declaration": true
   },
   "include": [
-    "index.ts"
+    "index.ts",
+    "dispatch-core.ts"
+  ],
+  "exclude": [
+    "dispatch-core.test.ts",
+    "dist",
+    "node_modules"
   ]
 }

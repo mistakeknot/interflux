@@ -1,9 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import {
+  admitAndReserve,
+  buildInputSchema,
+  loadDispatchConfig,
+  mergeCommittedMonotonic,
+  newLedger,
+  reconcile,
+  type DispatchInput,
+} from "./dispatch-core.js";
 
 const API_KEY = process.env.OPENROUTER_API_KEY;
 if (!API_KEY) {
@@ -23,6 +31,9 @@ const RATE_LIMIT = parseInt(process.env.OPENROUTER_RATE_LIMIT || "20", 10);
 const SPEND_CEILING = parseFloat(
   process.env.OPENROUTER_SPEND_CEILING_USD || "0",
 );
+const CEILING_ENABLED = SPEND_CEILING > 0;
+
+const config = loadDispatchConfig();
 
 // Rate-limit + spend state is persisted so concurrent MCP instances share one
 // budget. Without persistence each session saw the full RATE_LIMIT and
@@ -45,7 +56,11 @@ type PersistedState = {
 const refillRate = RATE_LIMIT / 60000; // tokens per ms
 let tokenBucket = RATE_LIMIT;
 let lastRefill = Date.now();
-let cumulativeSpendUsd = 0;
+
+// Spend is tracked as a committed/reserved ledger (see dispatch-core.ts). Only
+// committedSpendUsd is persisted; reservations are process-local, in-flight holds
+// that close the check/act window for concurrent calls within this process.
+const ledger = newLedger();
 
 async function acquireLock(): Promise<() => Promise<void>> {
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -96,7 +111,9 @@ async function loadState(): Promise<void> {
       tokenBucket = Math.min(RATE_LIMIT, parsed.tokenBucket);
     if (typeof parsed.lastRefill === "number") lastRefill = parsed.lastRefill;
     if (typeof parsed.cumulativeSpendUsd === "number")
-      cumulativeSpendUsd = parsed.cumulativeSpendUsd;
+      // Monotonic merge: a same-user local process (or a rolled-back state file)
+      // cannot lower the committed ledger to reclaim budget.
+      mergeCommittedMonotonic(ledger, parsed.cumulativeSpendUsd);
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException | undefined)?.code;
     if (code !== "ENOENT") {
@@ -113,7 +130,10 @@ async function saveState(): Promise<void> {
   const payload: PersistedState = {
     tokenBucket,
     lastRefill,
-    cumulativeSpendUsd,
+    // Persist only committed spend. Outstanding reservations are process-local
+    // and would be double-counted if shared; they reconcile to committed on
+    // call completion.
+    cumulativeSpendUsd: ledger.committedSpendUsd,
     updatedAt: new Date().toISOString(),
   };
   const tmp = `${STATE_FILE}.tmp.${process.pid}`;
@@ -157,27 +177,23 @@ const server = new McpServer({
 server.tool(
   "review_with_model",
   "Dispatch a review prompt to a model via OpenRouter",
-  {
-    model_id: z
-      .string()
-      .describe("OpenRouter model ID (e.g., 'deepseek/deepseek-chat')"),
-    prompt: z.string().describe("The review prompt to send"),
-    system_prompt: z
-      .string()
-      .optional()
-      .describe("System prompt for the model"),
-    max_tokens: z
-      .number()
-      .optional()
-      .default(4096)
-      .describe("Max tokens in response"),
-  },
-  async ({ model_id, prompt, system_prompt, max_tokens }) => {
+  buildInputSchema(config),
+  async ({ model_id, prompt, system_prompt, max_tokens }: DispatchInput) => {
+    // Admission, rate token, AND cost reservation all happen inside ONE lock.
+    // Reserving the estimate here (not after the network call) closes the
+    // check/act window: concurrent admissions each see prior reservations, so
+    // they cannot collectively overshoot the ceiling by in-flight concurrency.
+    const estimate = config.estimatedCallCostUsd;
     const acquired = await withStateLock(() => {
-      if (SPEND_CEILING > 0 && cumulativeSpendUsd >= SPEND_CEILING) {
+      const admit = admitAndReserve(ledger, SPEND_CEILING, estimate);
+      if (!admit.ok) {
         return { ok: false as const, kind: "spend" as const };
       }
       if (!tryAcquireInMemory()) {
+        // Roll back the reservation we just took — the call won't proceed.
+        // Debiting 0 actual releases the held reservation and leaves committed
+        // spend unchanged, so a rate-limited call costs no budget.
+        reconcile(ledger, estimate, 0, CEILING_ENABLED);
         return { ok: false as const, kind: "rate" as const };
       }
       return { ok: true as const };
@@ -205,7 +221,7 @@ server.tool(
             type: "text" as const,
             text: JSON.stringify({
               error: "spend_ceiling_exceeded",
-              message: `Cumulative spend $${cumulativeSpendUsd.toFixed(4)} >= ceiling $${SPEND_CEILING}`,
+              message: `Cumulative spend $${ledger.committedSpendUsd.toFixed(4)} (+ reserved) >= ceiling $${SPEND_CEILING}`,
             }),
           },
         ],
@@ -213,73 +229,93 @@ server.tool(
       };
     }
 
-    const startMs = Date.now();
-    const messages: Array<{ role: string; content: string }> = [];
-    if (system_prompt)
-      messages.push({ role: "system", content: system_prompt });
-    messages.push({ role: "user", content: prompt });
+    // From here the reservation is held; it MUST be reconciled on every exit
+    // path below so a thrown error or HTTP failure never leaks a reservation.
+    let actualCost: number | undefined;
+    try {
+      const startMs = Date.now();
+      const messages: Array<{ role: string; content: string }> = [];
+      if (system_prompt)
+        messages.push({ role: "system", content: system_prompt });
+      messages.push({ role: "user", content: prompt });
 
-    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/sylveste-ai/sylveste",
-        "X-Title": "FluxBench Qualification",
-      },
-      body: JSON.stringify({ model: model_id, messages, max_tokens }),
-    });
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/sylveste-ai/sylveste",
+            "X-Title": "FluxBench Qualification",
+          },
+          body: JSON.stringify({ model: model_id, messages, max_tokens }),
+        },
+      );
 
-    const latencyMs = Date.now() - startMs;
+      const latencyMs = Date.now() - startMs;
 
-    if (!resp.ok) {
-      const body = await resp.text();
+      if (!resp.ok) {
+        // The request reached OpenRouter and may have been (partially) billed;
+        // leave actualCost undefined so reconcile debits the conservative
+        // estimate rather than zero.
+        const body = await resp.text();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `openrouter_${resp.status}`,
+                message: body.slice(0, 500),
+                latency_ms: latencyMs,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const data = (await resp.json()) as {
+        choices: Array<{ message: { content: string } }>;
+        usage?: {
+          prompt_tokens: number;
+          completion_tokens: number;
+          total_cost?: number;
+        };
+        model: string;
+      };
+
+      const tokensUsed =
+        (data.usage?.prompt_tokens ?? 0) +
+        (data.usage?.completion_tokens ?? 0);
+      // A response WITHOUT a usable total_cost is still billed — leave
+      // actualCost undefined so reconcile() debits the conservative estimate,
+      // never zero (which would drift the ceiling upward over time).
+      const rawCost = data.usage?.total_cost;
+      if (typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost >= 0) {
+        actualCost = rawCost;
+      }
+
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({
-              error: `openrouter_${resp.status}`,
-              message: body.slice(0, 500),
+              content: data.choices[0]?.message?.content ?? "",
+              model: data.model,
+              tokens_used: tokensUsed,
               latency_ms: latencyMs,
             }),
           },
         ],
-        isError: true,
       };
-    }
-
-    const data = (await resp.json()) as {
-      choices: Array<{ message: { content: string } }>;
-      usage?: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_cost?: number;
-      };
-      model: string;
-    };
-
-    const tokensUsed =
-      (data.usage?.prompt_tokens ?? 0) + (data.usage?.completion_tokens ?? 0);
-    if (data.usage?.total_cost) {
+    } finally {
+      // Always release the reservation and debit the actual (or conservative)
+      // cost, regardless of how the call exited.
       await withStateLock(() => {
-        cumulativeSpendUsd += data.usage!.total_cost!;
+        reconcile(ledger, estimate, actualCost, CEILING_ENABLED);
       });
     }
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            content: data.choices[0]?.message?.content ?? "",
-            model: data.model,
-            tokens_used: tokensUsed,
-            latency_ms: latencyMs,
-          }),
-        },
-      ],
-    };
   },
 );
 
