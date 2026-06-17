@@ -108,6 +108,25 @@ After the synthesis subagent returns:
    ```
    This produces `discourse-health.json` as a convenience artifact. The canonical health data is already in findings.json.
 
+### Step 3.2a: Structural grounding check [review only] — MANDATORY
+
+The synthesis subagent (Step 3.2) is the *only* reader of agent prose, and the host is told never to open agent output files. Nothing else verifies that the findings the subagent wrote into `findings.json` actually trace back to a real agent's machine-parseable Findings Index — so a hallucinated or blended finding ("invented coastline") would otherwise reach the user with a fabricated P0/P1 verdict. This step closes that gap with a cheap, deterministic check the host runs *itself* (it reads only the structured Findings Index bullets via the script, never prose):
+
+```bash
+FLUX_RUN_UUID="${FLUX_RUN_UUID}" \
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/verify-synthesis-grounding.sh" "{OUTPUT_DIR}"
+grounding_status=$?
+```
+
+What it asserts: every `(severity, id)` pair in `findings.json` is grounded in some agent's Findings Index entry (`- SEVERITY | ID | "Section" | Title`, matched by the anchored bullet regex `^-\s*([Pp][0-9]+)\s*\|`), restricted to files carrying the current run's quire-mark (Foreign files from prior/concurrent runs are excluded, exactly as Step 3.1).
+
+**Failure policy:**
+- **Exit 3 (grounding violation):** at least one **P0 or P1** synthesized finding has no backing index entry. This is a fabricated blocking verdict. **Do not present the synthesis as-is.** Re-run the synthesis subagent once (Step 3.2); if the violation persists, surface it to the user explicitly — list the ungrounded finding IDs and note that synthesis could not be structurally verified — and degrade the verdict (do not assert `risky`/`needs-changes` on the strength of an unverifiable finding).
+- **Exit 0 with warnings (P2+ ungrounded, or `severity-mismatch`):** non-blocking. A `severity-mismatch` (id present but severity differs) is an expected outcome of dedup rule 4 ("conflicting severity → use highest"). Note warnings in the run log; proceed.
+- **Exit 2 (bad invocation / missing findings.json):** treat as a synthesis failure — `findings.json` should exist by this point.
+
+Pass `--strict` to fail on *any* ungrounded finding (any severity) or any severity-mismatch; `--json` for machine-readable output (consumed by post-mortem tooling).
+
 ### Step 3.3: (Handled by synthesis subagent)
 
 Deduplication, convergence tracking, conflict detection, and cognitive agent dedup are all performed by the synthesis subagent above. The 5 dedup rules (defined in `docs/spec/core/synthesis.md` Step 3) are executed in the subagent's context:
