@@ -219,13 +219,15 @@ Eliminate agents that cannot score >= 1:
 **File/directory inputs:**
 - fd-correctness: skip unless DB/migrations/concurrency/async/state (or domain has >=3 injection criteria)
 - fd-user-product: skip unless PRD/proposal/user-facing
-- fd-safety: skip unless security/credentials/deploy/trust
+- fd-safety: skip unless security/credentials/deploy/trust — **UNLESS the input is ship-class** (see below), which forces fd-safety mandatory and overrides this skip
 - fd-game-design: skip unless game-simulation domain detected
 - fd-architecture, fd-quality: always pass (domain-general)
 - fd-performance: always pass for file/dir
 
 **Diff inputs** (use routing patterns from `phases/slicing.md`):
 - Each domain agent: skip unless changed files match its priority file patterns or hunks contain its keywords
+
+**Ship-class inputs (fd-safety MANDATORY rung):** If any changed file (diff) or the reviewed file/path matches the ship-class patterns in `phases/slicing.md` → "Ship-class file patterns" — plugin manifests (`plugin.json`, `.claude-plugin/plugin.json`), MCP server configs (`mcp-*.json`, `mcp-server.*`), hook scripts (`hooks/*.sh|py|ts|js`, `hooks.json`), interlock/authorization/capability files, signing-key paths (`.clavain/keys/**`), or shell-out paths — then **fd-safety is mandatory**: force it into Stage 1 with `base_score = 3` regardless of the keyword pre-filter above, and it cannot be deferred (it is already `budget.yaml`-exempt). These surfaces execute or gate platform code; an unreviewed change is an RCE / supply-chain risk. Mark `ship_class: true` in fd-safety's triage-table Reason so the mandatory promotion is visible.
 
 **Cognitive agents** (fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception): skip unless `.md`/`.txt` document or `text` input with document type PRD/brainstorm/plan/strategy/vision/roadmap/options analysis. NEVER for code/diff. Base scores: 3 (systems/strategy content), 2 (PRD/brainstorm/plan), 1 (technical reference).
 
