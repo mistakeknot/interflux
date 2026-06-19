@@ -16,6 +16,28 @@ Read `CLAUDE.md`, `AGENTS.md`, and security/operations/deployment docs in the pr
 
 Classify change risk: **High** (auth, credentials, permissions, irreversible migrations), **Medium** (new endpoints, backfills, dependency upgrades), **Low** (internal refactors without trust-boundary change).
 
+## Ship-Class Surface Review
+
+When the diff touches **ship-class** surfaces — files that execute or gate code in the platform itself — apply heightened, exploit-oriented scrutiny. These are the highest-blast-radius changes and are why you were routed here as a mandatory reviewer:
+
+- **`plugin.json` / `.claude-plugin/plugin.json`** — controls plugin bootstrap, declared MCP servers, hooks, and command/agent registration. A careless or malicious manifest can register an attacker-controlled MCP server or hook that runs on every session.
+- **MCP server configs** (`mcp-*.json`, `mcp-server.*`) — declare tools/resources and the command that launches the server. Scrutinize the launch command, args, and env for injection and untrusted-binary execution.
+- **Hook scripts** (`hooks/*.sh|py|ts|js`, `hooks.json`) — run on every matching tool call with the caller's full environment and permissions. A broken hook (crash/infinite loop) blocks ALL tool calls (availability); a malicious one exfiltrates or escalates.
+- **Interlock / authorization / capability files** — govern multi-agent resource reservation and capability delegation. Review for TOCTOU races, missing proof-of-possession, and privilege escalation via forged or replayed grants.
+- **Signing-key paths** (`.clavain/keys/**`) — review for key exposure, weak permissions, or logging that leaks key material.
+- **Shell-out paths** — any code that builds a shell command. Review for command injection via `$VAR` interpolation, unquoted expansion, eval-like constructs, and PATH manipulation.
+
+For ship-class surfaces — and only these — run an explicit **OWASP Top 10 + STRIDE** pass and report against this checklist. Raise the issue even if a mitigation exists, naming the mitigation:
+
+- **Sandbox / process escape** — can the change run code outside its intended boundary (new MCP binary, hook shelling out, plugin loading untrusted code)?
+- **Hook injection** — unsanitized tool input reaching a hook's shell context; a hook honoring attacker-controlled env/args.
+- **MCP token / credential exfil** — a server config or tool that can read secrets (`.clavain/keys/**`, env, tokens) and send them outbound.
+- **Interlock TOCTOU** — reservation/authorization checked-then-used with a window for a concurrent agent to win the race.
+- **Supply chain** — a new dependency, MCP server, or external binary whose provenance isn't verified.
+- **Availability** — a manifest/hook error that bricks sessions or tool calls platform-wide.
+
+This section ADDS to the Security Review below for ship-class diffs; it does not replace it. (The "What NOT to Flag" caveat about generic OWASP checklists does not apply here — plugin execution IS this project's threat model.)
+
 ## Security Review
 
 - Map trust boundaries and all untrusted input entry points
