@@ -22,6 +22,11 @@ Flux-drive routes content to agents based on relevance. Diffs >= 1000 lines and 
 
 **Priority hunk keywords:** `password`, `secret`, `token`, `api_key`, `credential`, `private_key`, `encrypt`, `decrypt`, `hash`, `salt`, `bearer`, `oauth`, `jwt`, `session`, `cookie`, `csrf`, `cors`, `sanitize`, `inject`, `trust`, `chmod`, `sudo`, `admin`
 
+**Ship-class file patterns (fd-safety MANDATORY — not merely priority):**
+`**/plugin.json`, `**/.claude-plugin/plugin.json`, `**/mcp-*.json`, `**/mcp-*.y?ml`, `**/mcp-server.*`, `hooks/*.sh`, `hooks/*.py`, `hooks/*.ts`, `hooks/*.js`, `**/hooks/*.sh`, `**/hooks/*.py`, `**/hooks.json`, `**/interlock-*.y?ml`, `**/authorization*.json`, `**/capability-*.json`, `**/.clavain/keys/**`, `scripts/*shell*`, `**/*shell-exec*`
+
+When any changed file matches a ship-class pattern, fd-safety is promoted from optional to a **mandatory Stage 1 rung** (see SKILL.md Step 1.2a → "Ship-class inputs") — it cannot be skipped by the keyword pre-filter or deferred by budget. These surfaces control plugin bootstrap, MCP registration, per-tool-call hook execution, multi-agent authorization, signing keys, and shell-out — the highest-blast-radius code in the platform.
+
 #### fd-correctness
 
 **Priority file patterns:**
