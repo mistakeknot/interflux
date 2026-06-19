@@ -59,6 +59,7 @@ When any changed file matches a ship-class pattern, fd-safety is promoted from o
 
 - **80% overlap**: If priority items cover >= 80% of total lines, send full content (slicing overhead not worth it)
 - **Safety override**: Sections mentioning auth/credentials/secrets/tokens/certificates are always priority for fd-safety
+- **Ship-class mandatory**: Changes to plugin manifests, MCP configs, hook scripts, interlock/authorization/capability files, signing-key paths, or shell-out paths force fd-safety as a mandatory (non-deferrable) Stage 1 rung — see the Ship-class file patterns under fd-safety above
 - **Multi-agent overlap**: A file matching multiple agents is priority for all of them
 - **Zero priority fallback**: Agent with zero priority sections gets full document (log warning, mark as `mode: full (zero-priority fallback)`)
 
