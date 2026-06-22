@@ -416,7 +416,7 @@ uv run pytest tests/structural/test_namespace.py -v
 | `install-git-hooks.sh` | bash | Install local git hooks (`core.hooksPath=.githooks`) — enables the pre-commit routing drift gate. See AGENTS.md § "Routing Drift Gates". |
 | `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from LLM-designed specs JSON (v6: extended frontmatter, domain overlap detection) |
 | `flux-agent.py` | python | Agent lifecycle manager — index, backfill, stats, prune, promote, record. Manages quality tiers and cached `.index.yaml`. |
-| `launch-exa.sh` | bash | Launch Exa MCP server (checks `EXA_API_KEY`) |
+| `launch-exa.sh` | bash | Launch Exa MCP server (prefers installed `exa-mcp-server`, falls back to `npx -y`; checks `EXA_API_KEY`) |
 | `update-domain-profiles.py` | python | Refresh domain profile markdown from index.yaml |
 | `validate-gitleaks-waivers.sh` | bash | Validate gitleaks waiver entries |
 | `validate-roster.sh` | bash | Validate agent roster integrity |
