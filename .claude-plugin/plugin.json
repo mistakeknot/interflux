@@ -69,15 +69,5 @@
         "OPENROUTER_SPEND_CEILING_USD": "1.00"
       }
     }
-  },
-  "peerDependencies": [
-    "intercept",
-    "interknow",
-    "interpeer",
-    "interrank",
-    "interspect",
-    "interstat",
-    "intersynth",
-    "intertrust"
-  ]
+  }
 }

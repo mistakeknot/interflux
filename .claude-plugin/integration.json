@@ -33,18 +33,23 @@
     {
       "feature": "Full-fidelity synthesis (discourse layer: reactions, Lorenzen move validation, stemma, sycophancy, DWSQ)",
       "requires": "intersynth",
-      "fallback": "Degraded host synthesis per docs/spec/contracts/synthesis-delegation.md \u2014 core verdict + findings preserved, discourse layer dropped, output labeled 'degraded synthesis'"
+      "fallback": "Degraded host synthesis per docs/spec/contracts/synthesis-delegation.md — core verdict + findings preserved, discourse layer dropped, output labeled 'degraded synthesis'"
     }
   ],
   "companions": {
     "recommended": [
       "interwatch",
       "intersynth",
-      "interknow"
+      "interknow",
+      "intercept",
+      "interpeer",
+      "interrank",
+      "interspect",
+      "interstat",
+      "intertrust"
     ],
     "optional": [
-      "interphase",
-      "interstat"
+      "interphase"
     ]
   }
 }
