@@ -47,11 +47,14 @@ Report validation results to user: "5/6 agents returned valid Findings Index, 1 
 
 **Do NOT read agent output files yourself.** Delegate ALL collection, validation, deduplication, and verdict writing to a synthesis subagent. This keeps agent prose entirely out of the host context.
 
+This delegation is governed by the **Synthesis Delegation contract** (`docs/spec/contracts/synthesis-delegation.md`). Every call carries `SYNTHESIS_PROTOCOL_VERSION=1.0`; the synthesizer echoes `Protocol: 1.0` as the first line of its return string. If intersynth is unavailable, errors, writes no output file, or echoes a mismatched major version, run the **degraded host fallback** in Step 3.2a instead — never fail silently.
+
 **[research mode]**: Launch the **intersynth research synthesis agent**:
 
 ```
 Task(intersynth:synthesize-research):
   prompt: |
+    SYNTHESIS_PROTOCOL_VERSION=1.0
     OUTPUT_DIR={OUTPUT_DIR}
     VERDICT_LIB=auto
     RESEARCH_QUESTION={RESEARCH_QUESTION}
@@ -72,10 +75,12 @@ After the synthesis subagent returns:
 ```
 Task(intersynth:synthesize-review):
   prompt: |
+    SYNTHESIS_PROTOCOL_VERSION=1.0
     OUTPUT_DIR={OUTPUT_DIR}
     VERDICT_LIB=auto
     MODE=flux-drive
     CONTEXT="Reviewing {INPUT_TYPE}: {INPUT_STEM} ({N} agents, {early_stop_note})"
+    PROTECTED_PATHS={PROTECTED_PATHS}
     FINDINGS_TIMELINE={OUTPUT_DIR}/peer-findings.jsonl
     LORENZEN_CONFIG={lorenzen_config_json}
 ```
@@ -107,6 +112,21 @@ After the synthesis subagent returns:
    bash interverse/interflux/scripts/discourse-health.sh "{OUTPUT_DIR}" 2>/dev/null || true
    ```
    This produces `discourse-health.json` as a convenience artifact. The canonical health data is already in findings.json.
+
+### Step 3.2a: Degraded Host Fallback (intersynth unavailable)
+
+Per the Synthesis Delegation contract (`docs/spec/contracts/synthesis-delegation.md`), the synthesizer is REQUIRED for full-fidelity synthesis but MUST NOT be a hard dependency. If detection fires — the Task reports an unknown agent (intersynth not installed), the Task errors/times out, the expected report file (`summary.md` / `synthesis.md`) or `findings.json` was not written, or the returned `Protocol:` **major** version differs from `1` — perform synthesis yourself in degraded mode:
+
+1. **Read indexes only.** For each valid agent output, read the Findings Index (≤30 lines/agent per Step 2 / `docs/spec/core/synthesis.md` Step 2). This is the ONLY situation in which the host reads agent files directly.
+2. **Deduplicate** by `section + title` and count convergence (basic rules, `synthesis.md` spec Step 3).
+3. **Compute the deterministic verdict** (`synthesis.md` spec Step 5): any P0 → `risky`, any P1 → `needs-changes`, else `safe`.
+4. **Write minimal outputs.** Review mode: `{OUTPUT_DIR}/summary.md` + `{OUTPUT_DIR}/findings.json` (stamped `"synthesis_protocol_version": "1.0"`). Research mode: `{OUTPUT_DIR}/synthesis.md`.
+5. **Label it.** Both the report file and the user-facing summary MUST begin with:
+   ```
+   degraded synthesis — intersynth unavailable
+   ```
+
+The degraded path **deliberately drops the discourse layer** (reactions, Lorenzen move validation, stemma, sycophancy, DWSQ, diverse perspectives) — those are synthesizer-only. The core verdict and headline findings are preserved. Then continue at Step 3.4 (review) / Step 3.5-research (research).
 
 ### Step 3.3: (Handled by synthesis subagent)
 
@@ -184,6 +204,7 @@ After collecting and deduplicating findings, generate `{OUTPUT_DIR}/findings.jso
 
 ```json
 {
+  "synthesis_protocol_version": "1.0",
   "reviewed": "YYYY-MM-DD",
   "input": "{INPUT_PATH}",
   "agents_launched": ["agent1", "agent2"],
@@ -214,7 +235,7 @@ After collecting and deduplicating findings, generate `{OUTPUT_DIR}/findings.jso
 }
 ```
 
-Use the Write tool to create this file. The orchestrator generates this from the collected Findings Indexes — agents never write JSON.
+Use the Write tool to create this file. The orchestrator generates this from the collected Findings Indexes — agents never write JSON. The `synthesis_protocol_version` stamp is required by the Synthesis Delegation contract (`docs/spec/contracts/synthesis-delegation.md`); the canonical field set is defined in `docs/spec/core/synthesis.md` Step 6.
 
 **Verdict logic**: If any finding is P0 → "risky". If any P1 → "needs-changes". Otherwise → "safe".
 

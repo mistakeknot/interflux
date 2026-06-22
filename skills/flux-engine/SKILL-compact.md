@@ -288,7 +288,7 @@ Read `phases/launch.md` for the full launch protocol. The launch phase respects 
 
 ## Phase 3: Synthesize
 
-Read `phases/synthesize.md` for the full synthesis protocol. The synthesis phase respects `MODE`:
+Read `phases/synthesize.md` for the full synthesis protocol. Delegation follows the Synthesis Delegation contract (`docs/spec/contracts/synthesis-delegation.md`): pass `SYNTHESIS_PROTOCOL_VERSION=1.0`; if intersynth is unavailable, run the degraded host fallback (Step 3.2a) — never fail silently. The synthesis phase respects `MODE`:
 
 **[review mode]**:
 - Collect all agent outputs from OUTPUT_DIR

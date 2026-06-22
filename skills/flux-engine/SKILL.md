@@ -344,6 +344,7 @@ Read `phases/reaction.md` now.
 **Read the synthesis phase file now:**
 - Read `phases/synthesize.md` (in the flux-drive skill directory)
 - The synthesis phase respects the `MODE` parameter — research mode delegates to `intersynth:synthesize-research` and skips bead creation and knowledge compounding
+- Delegation follows the Synthesis Delegation contract (`docs/spec/contracts/synthesis-delegation.md`): every call carries `SYNTHESIS_PROTOCOL_VERSION=1.0`, and if intersynth is unavailable the host runs the degraded fallback (Step 3.2a) instead of failing silently
 
 **After synthesis completes — record agent usage:**
 Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/flux-agent.py {PROJECT_ROOT} record <agent1> <agent2> ...` with the names of all Project Agents (`.claude/agents/fd-*.md`) that were launched in this review. This increments `use_count`, updates `last_used`, and auto-promotes tiers. Skip Plugin Agents. If the script is not found, skip silently — the registry is a best-effort optimization, not a hard dependency.

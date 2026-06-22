@@ -37,6 +37,7 @@ This spec serves two audiences:
 |----------|-------|-------------|
 | [contracts/findings-index.md](contracts/findings-index.md) | 133 | Structured agent output: `SEVERITY \| ID \| "Section" \| Title` + `Verdict: safe\|needs-changes\|risky`. The machine-readable interface between agents and orchestrator. |
 | [contracts/completion-signal.md](contracts/completion-signal.md) | 107 | How agents signal completion: `.partial` → sentinel → rename. Timeout handling, error stubs, partial results. |
+| [contracts/synthesis-delegation.md](contracts/synthesis-delegation.md) | 256 | How the host delegates synthesis to intersynth: input params, output filenames, `synthesis_protocol_version`, and the mandatory degraded host fallback when the synthesizer is unavailable. |
 
 ### Extensions (Optional)
 
@@ -107,11 +108,12 @@ For newcomers, we recommend:
 2. **[core/protocol.md](core/protocol.md)**: the 3-phase lifecycle (the big picture)
 3. **[contracts/findings-index.md](contracts/findings-index.md)**: the output format (the interface)
 4. **[contracts/completion-signal.md](contracts/completion-signal.md)**: how agents signal done
-5. **[core/scoring.md](core/scoring.md)**: how agents are selected
-6. **[core/staging.md](core/staging.md)**: how dispatch adapts to findings
-7. **[core/synthesis.md](core/synthesis.md)**: how results are aggregated
-8. **[extensions/domain-detection.md](extensions/domain-detection.md)**: optional domain awareness
-9. **[extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md)**: optional review memory
+5. **[contracts/synthesis-delegation.md](contracts/synthesis-delegation.md)**: how the host delegates synthesis (and degrades without it)
+6. **[core/scoring.md](core/scoring.md)**: how agents are selected
+7. **[core/staging.md](core/staging.md)**: how dispatch adapts to findings
+8. **[core/synthesis.md](core/synthesis.md)**: how results are aggregated
+9. **[extensions/domain-detection.md](extensions/domain-detection.md)**: optional domain awareness
+10. **[extensions/knowledge-lifecycle.md](extensions/knowledge-lifecycle.md)**: optional review memory
 
 ## Directory structure
 
@@ -132,5 +134,6 @@ docs/spec/
 │   └── agent-dropout.md               # Redundancy filtering
 └── contracts/
     ├── findings-index.md                # Agent output format
-    └── completion-signal.md             # Completion signaling
+    ├── completion-signal.md             # Completion signaling
+    └── synthesis-delegation.md          # Host -> synthesizer delegation + fallback
 ```
