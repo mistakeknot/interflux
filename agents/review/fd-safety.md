@@ -1,6 +1,7 @@
 ---
 name: fd-safety
 description: "Flux-drive Safety reviewer — evaluates security threats, credential handling, trust boundaries, deployment risk, rollback procedures, and migration safety. Examples: <example>user: \"I've updated the login to use OAuth2 — review security implications\" assistant: \"I'll use the fd-safety agent to evaluate auth flow changes and credential handling.\" <commentary>Auth flow changes involve trust boundaries and credential handling.</commentary></example> <example>user: \"Review the new file upload endpoint for security issues\" assistant: \"I'll use the fd-safety agent to check for security threats in the upload endpoint.\" <commentary>File uploads need trust boundary analysis, input validation, and deployment risk assessment.</commentary></example>"
+risk_addressed: "Security and deployment harm — exploitable vulnerabilities, leaked credentials, broken trust boundaries, and irreversible or unsafe migrations/rollbacks."
 model: sonnet
 ---
 

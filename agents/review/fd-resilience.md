@@ -1,6 +1,7 @@
 ---
 name: fd-resilience
 description: "Flux-drive Adaptive Capacity reviewer — evaluates antifragility, creative constraints, resource allocation, innovation dynamics, and failure recovery in strategy documents, PRDs, and plans. Examples: <example>user: \"Review this architecture for resilience blind spots\" assistant: \"I'll use the fd-resilience agent to evaluate single points of failure, degradation paths, and antifragility gaps.\" <commentary>Single-database architectures need redundancy, degradation strategy, and recovery time analysis.</commentary></example> <example>user: \"Check if our investment strategy has adaptability issues\" assistant: \"I'll use the fd-resilience agent to evaluate staging opportunities, diminishing returns, and creative destruction blindness.\" <commentary>All-in commitment risks constraint violation and missed MVP opportunities.</commentary></example>"
+risk_addressed: "Brittleness under stress — low adaptive capacity, fragile resource allocation, stifled innovation, and poor failure recovery in strategy and plans."
 model: haiku
 ---
 

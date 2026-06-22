@@ -212,7 +212,9 @@ for agent in stage_2_agents_sorted_by_score:
 
 **[review mode]**: Present triage table with budget context:
 
-Agent | Score | Stage | Est. Tokens | Source | Reason | Action
+Agent | Score | Stage | Est. Tokens | Source | Risk Addressed | Reason | Action
+
+(**Risk Addressed** = agent's `risk_addressed` frontmatter, truncated to the phrase before the em-dash; `—` if the field is absent.)
 
 After the table, add a budget summary line:
 Budget: {cumulative_selected}K / {BUDGET_TOTAL/1000}K ({percentage}%) | Deferred: {N} agents ({deferred_total}K est.)

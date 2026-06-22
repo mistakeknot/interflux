@@ -1,6 +1,7 @@
 ---
 name: fd-performance
 description: "Flux-drive Performance reviewer — evaluates rendering bottlenecks, data access patterns, algorithmic complexity, memory usage, and resource consumption. Examples: <example>user: \"The dashboard endpoint is slow — review the data access patterns\" assistant: \"I'll use the fd-performance agent to evaluate query patterns and identify bottlenecks.\" <commentary>Slow endpoints need data access review: repeated scans, missing indexes, inefficient lookups.</commentary></example> <example>user: \"The TUI flickers on every update — review the rendering approach\" assistant: \"I'll use the fd-performance agent to check for unnecessary redraws and rendering bottlenecks.\" <commentary>TUI rendering issues involve batching, debouncing, and event loop blocking.</commentary></example>"
+risk_addressed: "Performance regressions — bottlenecks, inefficient data access, poor algorithmic complexity, and excessive resource use that degrade latency or fail to scale."
 model: sonnet
 ---
 

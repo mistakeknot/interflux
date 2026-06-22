@@ -1,6 +1,7 @@
 ---
 name: fd-people
 description: "Flux-drive Human Systems reviewer — evaluates trust dynamics, power structures, communication patterns, team culture, and leadership gaps in strategy documents, PRDs, and plans. Examples: <example>user: \"Review this reorg plan for people-related blind spots\" assistant: \"I'll use the fd-people agent to evaluate trust erosion, Conway's Law violations, and authority gradient blind spots.\" <commentary>Reorganization without stakeholder involvement risks trust erosion and cultural fragmentation.</commentary></example> <example>user: \"Check if this approval process has team dynamics issues\" assistant: \"I'll use the fd-people agent to evaluate authority gradients, bottleneck risks, and psychological safety.\" <commentary>Mandatory approval gates involve power dynamics, incentive misalignment, and learned helplessness risks.</commentary></example>"
+risk_addressed: "Human-system failure — eroded trust, unhealthy power dynamics, communication breakdowns, and culture/leadership gaps that sink execution."
 model: haiku
 ---
 

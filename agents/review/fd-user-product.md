@@ -1,6 +1,7 @@
 ---
 name: fd-user-product
 description: "Flux-drive User & Product reviewer — evaluates user flows, UX friction, value proposition, problem validation, scope creep, and missing edge cases. Examples: <example>user: \"Review the new CLI command hierarchy — is it intuitive?\" assistant: \"I'll use the fd-user-product agent to evaluate CLI UX, discoverability, and user flow.\" <commentary>CLI redesigns need UX review for hierarchy, progressive disclosure, and error experience.</commentary></example> <example>user: \"Review this PRD — does the problem statement hold up?\" assistant: \"I'll use the fd-user-product agent to validate the problem definition and check for scope creep.\" <commentary>PRDs need product validation: who has this problem, what evidence, whether solution fits.</commentary></example>"
+risk_addressed: "Building the wrong thing — UX friction, weak value proposition, unvalidated problems, scope creep, and unhandled edge cases that hurt real users."
 model: sonnet
 ---
 

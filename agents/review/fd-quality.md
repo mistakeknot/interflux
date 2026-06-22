@@ -1,6 +1,7 @@
 ---
 name: fd-quality
 description: "Flux-drive Quality & Style reviewer — evaluates naming, conventions, test approach, error handling, and language-specific idioms. Auto-detects language. Examples: <example>user: \"Review this Go handler for style and conventions\" assistant: \"I'll use the fd-quality agent to evaluate naming, error handling, and Go idioms.\" <commentary>Go code needs explicit error handling with %w, accept-interfaces-return-structs, table-driven tests.</commentary></example> <example>user: \"I've converted the utils to TypeScript — check type safety\" assistant: \"I'll use the fd-quality agent to review type safety and idiomatic patterns.\" <commentary>Cross-language refactoring needs proper type narrowing, avoiding 'any', consistent naming.</commentary></example>"
+risk_addressed: "Maintainability erosion — inconsistent naming/conventions, weak error handling, thin test coverage, and non-idiomatic code that slows future contributors."
 model: sonnet
 ---
 

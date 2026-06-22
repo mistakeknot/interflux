@@ -126,7 +126,7 @@ interflux/
 
 ### Technical Agents (7)
 
-Auto-detect language from code under review. Each reads project CLAUDE.md/AGENTS.md for codebase-aware analysis. YAML frontmatter: `name`, `description` (with `<example>` blocks), `model: sonnet`.
+Auto-detect language from code under review. Each reads project CLAUDE.md/AGENTS.md for codebase-aware analysis. YAML frontmatter: `name`, `description` (with `<example>` blocks), `risk_addressed` (one-line statement of the risk class that goes unreviewed if the agent is skipped — rendered as the **Risk Addressed** column in the flux-drive triage table), `model: sonnet`.
 
 | Agent | Domain | Role |
 |-------|--------|------|

@@ -258,7 +258,9 @@ final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_
 
 **Stage assignment:** Stage 1 = top 40% of slots (min 2, max 5). Stage 2 = rest. Expansion pool = scored >= 2 but no slot.
 
-Present triage table: Agent | Category | Score | Stage | Est. Tokens | Source | Reason | Action
+Present triage table: Agent | Category | Score | Stage | Est. Tokens | Source | Risk Addressed | Reason | Action
+
+The **Risk Addressed** column is the agent's `risk_addressed` frontmatter value — the class of risk that goes unreviewed if this agent is skipped. Read it from each candidate's agent `.md` frontmatter (Plugin and Project agents alike). Truncate to a short phrase (the text before the em-dash, e.g. "Silent incorrectness", "Security and deployment harm") so the table stays readable; the full sentence lives in the frontmatter. If an agent has no `risk_addressed` field (older or third-party agents), render `—`.
 
 **Persist triage decisions** (Sylveste-nyt): After scoring all candidates and assigning stages, append one JSON line per agent to `{PROJECT_ROOT}/.clavain/interflux/triage.jsonl`. Schema in [triage-log-schema.md](../../../../../docs/contracts/triage-log-schema.md). Include every agent considered (even pre-filtered ones with `base: 0`); share a single `run_id` across all lines from the same triage (use the same 8-char hash that names `OUTPUT_DIR`).
 

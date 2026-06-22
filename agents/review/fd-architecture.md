@@ -1,6 +1,7 @@
 ---
 name: fd-architecture
 description: "Flux-drive Architecture & Design reviewer — evaluates module boundaries, coupling, design patterns, anti-patterns, code duplication, and unnecessary complexity. Examples: <example>user: \"I've split the data layer into three packages — review the module boundaries\" assistant: \"I'll use the fd-architecture agent to evaluate module boundaries and coupling.\" <commentary>Module restructuring involves architecture boundaries and coupling.</commentary></example> <example>user: \"We're adding Redis as a caching layer — review the integration plan\" assistant: \"I'll use the fd-architecture agent to evaluate how Redis integrates with existing architecture.\" <commentary>New dependency evaluation requires design pattern and coupling assessment.</commentary></example>"
+risk_addressed: "Structural decay — tangled module boundaries, hidden coupling, anti-patterns, and accidental complexity that make the codebase progressively harder to change."
 model: sonnet
 ---
 

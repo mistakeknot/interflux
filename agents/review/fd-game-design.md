@@ -1,6 +1,7 @@
 ---
 name: fd-game-design
 description: "Flux-drive Game Design reviewer — evaluates balance, pacing, player psychology, feedback loops, emergent behavior, and procedural content quality. Examples: <example>user: \"Review the utility AI system for agent behavior\" assistant: \"I'll use the fd-game-design agent to evaluate needs curves, action scoring, and emergent behavior.\" <commentary>Utility AI tuning involves game design balance, not just code correctness.</commentary></example> <example>user: \"Check if the storyteller pacing feels right\" assistant: \"I'll use the fd-game-design agent to review drama curve, event cooldowns, and death spiral prevention.\" <commentary>Drama pacing is a game design concern about player experience.</commentary></example>"
+risk_addressed: "Unfun or unbalanced play — broken balance, poor pacing, weak feedback loops, and unintended emergent behavior that undermine the player experience."
 model: sonnet
 ---
 
