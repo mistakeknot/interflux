@@ -311,6 +311,23 @@ Cost estimation: `scripts/estimate-costs.sh` queries interstat historical data, 
 | exp3_collaboration_modes | deferred | Requires flux-drive dispatch changes |
 | exp4_pareto_frontier | partial | B1 + safety floors is Pareto-optimal for current workload |
 
+## Routing Drift Gates
+
+`config/flux-drive/agent-roles.yaml` is the host-agnostic policy source of truth for per-role model tiers; each subagent's `model:` frontmatter must stay within the role's `[min_model, max_model]` band. Two gates guard that invariant:
+
+- **CI (hard gate)** — `.github/workflows/routing-drift.yml` runs `scripts/verify_frontmatter.py --strict` on every push/PR that touches `agent-roles.yaml`, `agents/**/*.md`, or the audit script. Origin: Sylveste-onp.
+- **Pre-commit (light gate)** — `.githooks/pre-commit` runs the same `--strict` audit locally when any of those files is staged, blocking the commit on drift before it reaches CI. Origin: Sylveste-10p.
+
+Install the local hook once per clone:
+
+```bash
+scripts/install-git-hooks.sh   # sets core.hooksPath=.githooks
+```
+
+The hook is a no-op unless a routing input (`agent-roles.yaml`, an `agents/**/*.md`, or `scripts/verify_frontmatter.py`) is staged, so unrelated commits are unaffected.
+
+**Bypass (emergency only):** `git commit --no-verify` skips the hook. Use sparingly — CI still enforces the gate on push, so bypassed drift will fail the build.
+
 ## Protocol Specification
 
 Formal spec in `docs/spec/` (flux-drive-spec 1.0.0). Extracts the abstract protocol from the interflux reference implementation into standalone, framework-agnostic documents.
@@ -396,6 +413,7 @@ uv run pytest tests/structural/test_namespace.py -v
 | `bump-version.sh` | bash | Version bump, commit, push (plugin + marketplace) |
 | `estimate-costs.sh` | bash | Per-agent cost estimation (interstat historical + budget.yaml fallback) |
 | `findings-helper.sh` | bash | Write/read peer findings JSONL during parallel reviews |
+| `install-git-hooks.sh` | bash | Install local git hooks (`core.hooksPath=.githooks`) — enables the pre-commit routing drift gate. See AGENTS.md § "Routing Drift Gates". |
 | `generate-agents.py` | python | Generate `.claude/agents/fd-*.md` from LLM-designed specs JSON (v6: extended frontmatter, domain overlap detection) |
 | `flux-agent.py` | python | Agent lifecycle manager — index, backfill, stats, prune, promote, record. Manages quality tiers and cached `.index.yaml`. |
 | `launch-exa.sh` | bash | Launch Exa MCP server (checks `EXA_API_KEY`) |

@@ -1,0 +1,53 @@
+#!/usr/bin/env sh
+# interflux pre-commit hook — routing frontmatter drift gate (Sylveste-10p)
+#
+# Light gate that complements the GitHub Actions drift audit
+# (.github/workflows/routing-drift.yml, Sylveste-onp). When any routing
+# input is staged, run the strict frontmatter audit and block the commit
+# on drift — catching it before push instead of after a CI roundtrip.
+#
+# Triggers (same paths as the CI workflow) — runs only if a STAGED file
+# matches one of:
+#   - config/flux-drive/agent-roles.yaml   (policy source of truth)
+#   - agents/**/*.md                       (subagent frontmatter)
+#   - scripts/verify_frontmatter.py        (the audit itself)
+#
+# Bypass (emergency only): git commit --no-verify
+# See AGENTS.md § "Pre-commit Drift Gate" for the rationale.
+
+set -eu
+
+# Collect staged (added/copied/modified) files; ignore deletions.
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+# Does any staged path match a routing trigger?
+match=$(printf '%s\n' "$staged" | grep -E \
+  '^(config/flux-drive/agent-roles\.yaml|agents/.*\.md|scripts/verify_frontmatter\.py)$' || true)
+
+if [ -z "$match" ]; then
+  exit 0
+fi
+
+# Resolve a python interpreter (python3 preferred).
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
+else
+  echo "pre-commit: python3 not found — cannot run frontmatter drift audit." >&2
+  echo "  Install python3, or bypass with: git commit --no-verify" >&2
+  exit 1
+fi
+
+repo_root=$(git rev-parse --show-toplevel)
+
+echo "pre-commit: routing input staged — running frontmatter drift audit…" >&2
+if ! "$PY" "$repo_root/scripts/verify_frontmatter.py" \
+      --strict --quiet --root "$repo_root" --agent-dir agents; then
+  echo "" >&2
+  echo "pre-commit: BLOCKED — agent-roles.yaml ↔ frontmatter drift detected." >&2
+  echo "  Fix the drift, or bypass with: git commit --no-verify" >&2
+  exit 1
+fi
+
+exit 0
