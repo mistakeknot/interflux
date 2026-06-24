@@ -1,0 +1,32 @@
+{
+  "id": "fd-performance",
+  "kind": "base",
+  "parents": [],
+  "domain": "performance / concurrency / caching strategy",
+  "axioms": [
+    "A cache must pay for itself; an optimization that does not reduce the dominant cost is dead weight",
+    "Every read of shared mutable state across processes/coroutines is a race until proven serialized",
+    "The fast path is whatever runs on a hit; its real cost is measured, not assumed",
+    "State split across stores (index + file) must have a defined coherence/teardown order"
+  ],
+  "primitives": [
+    "hot path",
+    "disk vs memory cost",
+    "cross-process cache coherence",
+    "atomicity / ordering",
+    "TOCTOU windows"
+  ],
+  "failure_mode": [
+    "ignores security/credential semantics",
+    "treats a stale secret as merely a cache miss",
+    "does not reason about who is harmed by serving old data"
+  ],
+  "findings": [
+    "f-001",
+    "f-005",
+    "f-006",
+    "f-011",
+    "f-012",
+    "f-013"
+  ]
+}

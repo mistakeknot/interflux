@@ -1,0 +1,139 @@
+{
+  "objective": "surface the highest-risk and most novel weaknesses, especially any that only appear at the intersection of two concerns",
+  "weights": "balanced",
+  "round": 1,
+  "min_rounds": 2,
+  "max_rounds": 2,
+  "budget": {
+    "total": 10,
+    "remaining": 2,
+    "round_cost_floor": 3
+  },
+  "coverage": {
+    "regions": [
+      "token_cache.py:9-51",
+      "context:54-59"
+    ],
+    "tiers_used": [
+      "adjacent",
+      "distant",
+      "fusion",
+      "formal-methods"
+    ],
+    "lens_pairs_fused": [
+      [
+        "fd-security",
+        "fd-performance"
+      ]
+    ]
+  },
+  "heat_map": {
+    "regions": [
+      {
+        "region": "token_cache.py:48-51 (purge_all)",
+        "yield_density": 5.0,
+        "max_risk": 6,
+        "disagreement_flags": 1
+      },
+      {
+        "region": "token_cache.py:33-46 (lookup fast path)",
+        "yield_density": 4.7,
+        "max_risk": 6,
+        "disagreement_flags": 1
+      },
+      {
+        "region": "token_cache.py:25-30 (store)",
+        "yield_density": 3.0,
+        "max_risk": 6,
+        "disagreement_flags": 0
+      },
+      {
+        "region": "token_cache.py:14-17 (dual representation / _index)",
+        "yield_density": 6.0,
+        "max_risk": 2,
+        "disagreement_flags": 0
+      },
+      {
+        "region": "token_cache.py:57 (per-process index, context)",
+        "yield_density": 6.0,
+        "max_risk": 3,
+        "disagreement_flags": 0
+      },
+      {
+        "region": "token_cache.py:20-22 (path build)",
+        "yield_density": 0.0,
+        "max_risk": 9,
+        "disagreement_flags": 0
+      }
+    ],
+    "lens_pairs": [
+      {
+        "pair": [
+          "fd-security",
+          "fd-performance"
+        ],
+        "shared_heat": 3,
+        "complementarity": 2,
+        "redundancy": 0,
+        "score": 5,
+        "fused": true,
+        "emergent_yield": 0
+      },
+      {
+        "pair": [
+          "fd-security",
+          "fd-ecology-control"
+        ],
+        "shared_heat": 3,
+        "complementarity": 1,
+        "redundancy": 2,
+        "score": 2
+      },
+      {
+        "pair": [
+          "fd-performance",
+          "fd-ecology-control"
+        ],
+        "shared_heat": 2,
+        "complementarity": 1,
+        "redundancy": 2,
+        "score": 1
+      }
+    ],
+    "disagreement_flags": [
+      {
+        "location": "token_cache.py:44-51",
+        "finding_ids": [
+          "f-007",
+          "f-008",
+          "f-022",
+          "f-027"
+        ],
+        "note": "OPEN at halt: does purge leave a silent live-credential window (f-007/f-008) or an availability crash with no silent serve (f-027)? Verify refuted the silent-serve mechanism for THIS code (f-022) but the seed security framing f-007/f-008 remains as a live taste/severity call."
+      }
+    ]
+  },
+  "gain_history": [
+    {
+      "round": 0,
+      "yield": 14,
+      "novel_cluster_rate": 0.67
+    },
+    {
+      "round": 1,
+      "yield": 2,
+      "novel_cluster_rate": 0.625
+    }
+  ],
+  "frontier": [
+    "f-001",
+    "f-027",
+    "f-007",
+    "f-004",
+    "f-028",
+    "f-008",
+    "f-003"
+  ],
+  "should_stop": true,
+  "halt_reason": "BUDGET"
+}

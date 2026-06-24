@@ -42,12 +42,12 @@ CONTINUE  ⟺  round < max_rounds                              # not at CEILING
 
 `min_rounds = 2` ensures the loop runs at least twice before yield can stop it — one weak round (e.g. a seed that happened to hit a quiet region) cannot trigger an early DRY halt. `diminishing_threshold` defaults to 1 (a round that opened zero new qualifying clusters is dry).
 
-Set the halt reason when stopping:
-- `round >= max_rounds` → **`CEILING`**
-- `budget.remaining < round_cost_floor` → **`BUDGET`** (hard)
-- `YIELD <= diminishing_threshold` (and past `min_rounds`) → **`DRY`**
+Set the halt reason when stopping. When more than one condition is true at the same boundary (common: a seed-heavy run hits `BUDGET` on the same round it would hit `CEILING`), record the **first** in this fixed precedence — most-informative-cause first:
+1. **`BUDGET`** — `budget.remaining < round_cost_floor` (you ran out of resources; this is what actually stopped you, and it would have stopped you even with more rounds allowed)
+2. **`DRY`** — `YIELD <= diminishing_threshold` and past `min_rounds` (the target is exhausted; you stopped by choice, not by limit)
+3. **`CEILING`** — `round >= max_rounds` (you hit the configured round cap)
 
-Write `melange-state.json:should_stop` (bool) and `halt_reason`.
+Precedence is BUDGET > DRY > CEILING: a budget exhaustion is the binding constraint, dryness is a quality signal, and the ceiling is the least informative (a mere config cap). Write `melange-state.json:should_stop` (bool) and the single chosen `halt_reason`.
 
 ## Step 5: GOAL-MET soft stop (`--interactive` only)
 

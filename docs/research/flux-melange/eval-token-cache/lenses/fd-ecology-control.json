@@ -1,0 +1,32 @@
+{
+  "id": "fd-ecology-control",
+  "kind": "base",
+  "parents": [],
+  "domain": "distant: ecology / control systems (propagation lag, stale-signal control, inter-deme dynamics)",
+  "axioms": [
+    "A local belief must track ground truth through a bounded-lag channel or it diverges",
+    "A signal that does not propagate to every population leaves stale demes that act on dead information",
+    "Sensor and actuator must share a clock or the controller holds a stale setpoint",
+    "An intervention applied to one patch is only a partial intervention on the whole system"
+  ],
+  "primitives": [
+    "signal propagation lag",
+    "inter-deme divergence",
+    "stale observer",
+    "clock-reference frames",
+    "partial intervention"
+  ],
+  "failure_mode": [
+    "does not know real attack vectors (e.g. path traversal mechanics)",
+    "speaks in analogy and may miss the literal exploit",
+    "imprecise on language-level semantics (GIL, file modes)"
+  ],
+  "findings": [
+    "f-001",
+    "f-004",
+    "f-010",
+    "f-012",
+    "f-014",
+    "f-015"
+  ]
+}

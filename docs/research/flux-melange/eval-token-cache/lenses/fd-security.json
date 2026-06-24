@@ -1,0 +1,34 @@
+{
+  "id": "fd-security",
+  "kind": "base",
+  "parents": [],
+  "domain": "security / trust boundaries / credential lifecycle",
+  "axioms": [
+    "All input crossing a trust boundary is hostile until validated",
+    "A secret's validity is defined by its authoritative source, not by any cache that mirrors it",
+    "A revocation must propagate everywhere the secret was ever cached before it is complete",
+    "Confidentiality of secret material spans its whole lifetime including memory and disk at rest"
+  ],
+  "primitives": [
+    "untrusted input",
+    "path/filename construction",
+    "revocation propagation",
+    "secret-at-rest",
+    "TTL as a security control"
+  ],
+  "failure_mode": [
+    "ignores read-side latency / performance tradeoffs",
+    "treats 'best effort, just re-auth' at face value",
+    "ignores pure-concurrency races with no security angle"
+  ],
+  "findings": [
+    "f-001",
+    "f-002",
+    "f-003",
+    "f-004",
+    "f-007",
+    "f-008",
+    "f-009",
+    "f-010"
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "fixture_id": "fixture-token-cache",
+  "agent_type": "judgment",
+  "schema_note": "Extends the FluxBench gold schema with heat labels (novelty/risk/taste) and capability tags for evaluating flux-melange. `requires_fusion` marks findings only a fused lens should surface. `buried_by_severity` marks findings whose risk.product is high but whose severity rank is low — the class melange must surface and flux-review buries.",
+  "findings": [
+    {
+      "id": "g1",
+      "severity": "P0",
+      "location": "token_cache.py:34-45",
+      "description": "lookup() returns the secret cached in the in-process _index and never touches the file (the performance fast path); purge_all() clears only the local process's _index, so in every OTHER process the index still holds the secret and keeps authenticating a revoked/rotated credential until TTL — even though the on-disk file was deleted. The optimization (cache the secret, skip I/O) is exactly what defeats revocation.",
+      "category": "security",
+      "novelty": 2,
+      "risk": {
+        "blast_radius": 3,
+        "likelihood": 2,
+        "product": 6
+      },
+      "taste": 0,
+      "taste_kind": null,
+      "requires_fusion": true,
+      "fusion_parents": [
+        "security",
+        "performance"
+      ],
+      "buried_by_severity": false,
+      "rationale": "EMERGENT: a security reviewer sees 'purge clears the index, fine'; a performance reviewer sees 'caching the secret to skip I/O — good'. Only the FUSION names that the secret-caching optimization is precisely what lets a purged credential survive in other processes' indices. Neither parent alone connects the optimization to the cross-process revocation gap. (Verified against the corrected fixture code: lookup returns the index secret and never reads the file.)"
+    },
+    {
+      "id": "g2",
+      "severity": "P0",
+      "location": "token_cache.py:21-23",
+      "description": "Path traversal: token_id comes straight from the client query string and is concatenated into a filesystem path (_path_for), so a token_id like '../../etc/passwd' or an absolute path escapes CACHE_DIR for both read (lookup) and write (store).",
+      "category": "security",
+      "novelty": 1,
+      "risk": {
+        "blast_radius": 3,
+        "likelihood": 3,
+        "product": 9
+      },
+      "taste": 0,
+      "taste_kind": null,
+      "requires_fusion": false,
+      "buried_by_severity": false,
+      "rationale": "Commodity P0 any security lens catches. Included as the 'flux-review hits this trivially' control — melange should also get it but it is not where melange's value lies."
+    },
+    {
+      "id": "g3",
+      "severity": "P2",
+      "location": "token_cache.py:48-51",
+      "description": "purge_all() is not atomic and not multi-process safe: os.listdir then os.remove races with concurrent store(); under credential rotation across processes, purge can miss files written mid-iteration, leaving revoked secrets on disk. Low severity in isolation but high blast radius because it fires exactly during a security-critical rotation event.",
+      "category": "correctness",
+      "novelty": 2,
+      "risk": {
+        "blast_radius": 3,
+        "likelihood": 1,
+        "product": 3
+      },
+      "taste": 0,
+      "taste_kind": null,
+      "requires_fusion": false,
+      "buried_by_severity": true,
+      "rationale": "BURIED-BY-SEVERITY: ranks P2 (rare — only on rotation), so flux-review's severity-weighted rank sinks it below routine P1s. But blast 3 x likelihood 1 = risk 3, and it fires precisely when it matters most (rotation). melange's frontier should surface it; flux-review should bury it. This is the head-to-head discriminator."
+    },
+    {
+      "id": "g4",
+      "severity": "P1",
+      "location": "token_cache.py:26-31",
+      "description": "store() has no exception handling and does not create CACHE_DIR; open() raises if /var/run/tokcache is absent, and a partial write (crash mid json.dump) leaves a truncated file that lookup() will later fail to parse.",
+      "category": "correctness",
+      "novelty": 0,
+      "risk": {
+        "blast_radius": 1,
+        "likelihood": 2,
+        "product": 2
+      },
+      "taste": 0,
+      "taste_kind": null,
+      "requires_fusion": false,
+      "buried_by_severity": false,
+      "rationale": "Routine P1 robustness gap. Commodity finding — multiple lenses see it. Low novelty by construction."
+    },
+    {
+      "id": "g5",
+      "severity": "P3",
+      "location": "token_cache.py:18",
+      "description": "_index as a module-global dict caching (secret, expires_at) is an asymmetry: store() writes the secret to BOTH the file and the index, but lookup() reads only the index and purge_all() deletes only the file (plus the local index) — two stores of the same secret with no single source of truth and no shared invalidation. A small write-through type or an index that holds a path+version (not the secret) would make the dual-store invariant explicit and structurally prevent the g1 revocation gap.",
+      "category": "architecture",
+      "novelty": 2,
+      "risk": {
+        "blast_radius": 1,
+        "likelihood": 1,
+        "product": 1
+      },
+      "taste": 2,
+      "taste_kind": "asymmetry",
+      "requires_fusion": false,
+      "buried_by_severity": false,
+      "rationale": "TASTE finding (+2 asymmetry): the dual-write-without-a-type smell is the root cause that makes g1 possible. Low risk in isolation, P3 severity, but high taste — flux-review's severity rank drops it to the bottom; melange's Taste Calls view should surface it as 'the elegant fix that prevents g1'."
+    }
+  ],
+  "expected_capability_signals": {
+    "frontier_top": [
+      "g2",
+      "g1",
+      "g3"
+    ],
+    "buried_finding": "g3",
+    "fusion_emergent": "g1",
+    "fusion_negative_control": "fusing security x i18n must yield ZERO emergents here",
+    "taste_call": "g5",
+    "commodity_controls": [
+      "g2",
+      "g4"
+    ]
+  },
+  "annotator": "hybrid",
+  "annotation_date": "2026-06-24",
+  "notes": "Planted structure: g2 (commodity P0, both modes get it), g4 (commodity P1, low novelty), g1 (fusion-emergent: security x performance interaction, the revoked-token-survives bug), g3 (buried-by-severity: P2 but risk 3, fires on rotation), g5 (taste: the asymmetry that is g1's root cause). A correct flux-melange run should surface g1/g3/g5 in its frontier/fusion/taste views where flux-review buries them by severity. The negative control (security x i18n fusion) must produce no emergents."
+}

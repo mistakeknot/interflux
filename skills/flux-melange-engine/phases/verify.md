@@ -25,7 +25,13 @@ Verifiers may run in parallel; each only reads (no design). Decrement `budget.re
 
 ## Emergent-finding verification
 
-A fusion EMERGENT finding (novelty floored at 3) always clears the gate. Its verifier additionally checks the **`intersection_justification`**: does the finding genuinely require both parents, or could one parent alone have produced it? If one parent suffices, demote it (`status: upheld` but re-scored as non-emergent in synthesis) — this is the guard against fusion degrading into a redundant third reviewer.
+A fusion EMERGENT finding (novelty floored at 3) always clears the gate — the emergence promotion makes it *louder*, so it must be verified *harder*, not trusted. The verifier applies **three** checks in order (the first live run promoted a confident-but-false emergent finding to the top of the report; only this ordering catches it):
+
+1. **Is it true at all?** Re-read the cited `location` in the real source and confirm the claimed mechanism actually exists. A fused lens is *more* prone to a plausible-but-false interaction than a single lens, because it is rewarded for connecting two causes — and "connect two causes" is exactly the shape of a hallucinated link. If the mechanism is not present in the code, stamp **`status: refuted`** (even though novelty was floored at 3 — a refuted finding is excluded from the frontier regardless of its scores). **This is the dominant failure mode; check it first.**
+2. **Does it require both parents?** If true, check the `intersection_justification`: could one parent alone have produced it? If one parent suffices, keep `status: upheld` but re-score as non-emergent in synthesis (the guard against fusion degrading into a redundant third reviewer).
+3. **Genuine emergent.** True AND requires both parents → `status: upheld`, stays emergent.
+
+Order matters: a refuted finding (check 1) must never reach check 2, or a false interaction gets debated on its merits instead of dropped.
 
 ## Output
 

@@ -8,11 +8,25 @@ flux-melange spends agents over *many* rounds, so an unbounded loop is the prima
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/config/flux-melange/defaults.yaml` (`budget:` block) and merge any `{PROJECT_ROOT}/.claude/flux-melange.yaml` override.
 2. If `--budget=N` is passed, it wins (N = total agent slots across the whole run).
-3. If `--budget=auto`, derive from the existing estimator:
-   ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/scripts/estimate-costs.sh --model {QUALITY's design model}
-   ```
-   This returns `{"estimates":{...}, "defaults":{review,cognitive,research,oracle,generated}, "slicing_multiplier"}`. Use `defaults.generated` (fused/probe lenses are generated agents) as the per-agent token estimate, and convert the YAML token budget into an agent-slot count: `total_slots = floor(token_budget / per_agent_estimate)`, clamped to the **hard cap of 30 agents** regardless of config.
+3. If `--budget=auto`, derive a slot count in two steps (the estimator gives the *per-agent* cost; `budget.yaml` gives the *total* token budget — they live in different files):
+
+   a. **Per-agent token estimate** from the estimator:
+      ```bash
+      bash ${CLAUDE_PLUGIN_ROOT}/scripts/estimate-costs.sh --model {QUALITY's design model}
+      ```
+      It returns `{"estimates":{...}, "defaults":{review,cognitive,research,oracle,generated}, "slicing_multiplier"}`. Use `defaults.generated` (fused/probe lenses are generated agents) as `per_agent_estimate`. **Cold-start note:** if `jq`/`sqlite3`/interstat are absent the script prints a warning and returns empty `estimates{}` with the hardcoded `defaults` — that is fine, `defaults.generated` (≈40000) is exactly the value auto mode needs; do not treat the empty `estimates` as a failure.
+
+   b. **Total token budget** from `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/budget.yaml` (the `budgets.*` map), keyed by the melange target's `INPUT_TYPE`:
+      | melange INPUT_TYPE | `budgets.*` key |
+      |--------------------|-----------------|
+      | `directory` | `repo` |
+      | `file` (a doc/plan/prd) | `plan` |
+      | `file` (code) or `diff` < 500 lines | `diff-small` |
+      | `diff` ≥ 500 lines | `diff-large` |
+      | `text` (inline) | `plan` |
+      Because melange *loops*, multiply the single-pass `budgets.*` value by `max_rounds` to get `token_budget` (a loop spends roughly per-round what a single review spends).
+
+   Then `total_slots = floor(token_budget / per_agent_estimate)`, clamped to the **hard cap of 30 agents** regardless of config. If `budget.yaml` cannot be read, fall back to the `defaults.yaml` `budget:` block's numeric value (already a slot count), else the 30-cap.
 4. Honor `FLUX_BUDGET_REMAINING` exactly as flux-drive does: `effective = min(derived, FLUX_BUDGET_REMAINING)` when that env var is set and non-zero (so a sprint can cap a melange run). Tag the plan `[sprint-constrained]` when it binds.
 
 Write the result to `melange-state.json:budget = { total, remaining: total, round_cost_floor }`. `round_cost_floor` is the minimum slots a useful round needs (default 3); the loop halts on BUDGET when `remaining < round_cost_floor`.

@@ -6,6 +6,10 @@ The **only** round not steered by heat. Its job is to populate the ledger with f
 
 Seed deliberately mirrors `flux-review`'s two outer tiers — **adjacent** (domain experts) + **distant** (cross-domain isomorphisms) — not the full 4-track lattice. Two tiers give the controller both a "deep" and a "wide" starting signal without spending the budget before the loop begins.
 
+> **Slot accounting (clarified — this tripped the first live run).** A *slot* counts a **review/probe agent** that consumes context against the target, not the cheap design pass that *writes* the lens specs. Two design subagents (one per tier) produce N lens specs in one shot; generating them costs design tokens, not slots. The slots the seed spends are the **review probes** — by default 2 (one adjacent review, one distant review), regardless of how many lens specs were designed. So a 10-slot budget spends ~2 on the seed and leaves ~8 for the adaptive rounds, consistent with the "2-round economy ≈ 8–10 slots" cost table in `references/budget-ladder.md`.
+
+> **Budget-aware seed.** Before designing, check `melange-state.json:budget`. If `total < 6` (too small to seed *and* run a round), shrink the seed to a **single combined probe** (adjacent only) so at least one adaptive round can follow — never let the seed consume more than `floor(total/2)` slots. Record the shrink in the round-0 spice-trail entry.
+
 Launch **two** design subagents in parallel (model per `references/budget-ladder.md`):
 - **Adjacent:** reuse the Track A prompt from `flux-review-engine/phases/track-dispatch.md` (5 → trim to `seed.adjacent` agents, default 3).
 - **Distant:** reuse the Track C prompt (anti-clustering: the 13 blocked AI-analogy domains), `seed.distant` agents (default 2).

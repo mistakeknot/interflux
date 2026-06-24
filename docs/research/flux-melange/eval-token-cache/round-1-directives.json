@@ -1,0 +1,58 @@
+[
+  {
+    "type": "PROBE-DISAGREEMENT",
+    "target": {
+      "region": "token_cache.py:48-51",
+      "finding_ids": [
+        "f-007",
+        "f-008",
+        "f-009",
+        "f-010"
+      ]
+    },
+    "rationale": "Same location (purge_all), contradictory framing of the post-purge sibling-process state: security/ecology call it 'serves a revoked secret' (f-007/f-008, risk 6) while performance/ecology also call it 'opens a just-unlinked file' and 'crashes with FileNotFoundError' (f-009/f-010). Adjudicate: after purge, does a sibling lookup serve a stale secret, crash, or both — and which dominates the rotation-event risk?",
+    "lens": "fd-correctness-adjudicator",
+    "budget_weight": 0.20
+  },
+  {
+    "type": "DEEPEN",
+    "target": {
+      "region": "token_cache.py:48-51",
+      "cluster_id": "c-crossproc-revocation"
+    },
+    "rationale": "f-007/f-008 (risk.product 6, novelty 2) found once each, convergence not yet linked, status raw — the cross-process revocation gap is the highest-risk unconfirmed cluster. Confirm or refute that purge_all() genuinely fails to evict sibling-process index entries before it can lead the report.",
+    "lens": "fd-security",
+    "budget_weight": 0.30
+  },
+  {
+    "type": "FUSE",
+    "target": {
+      "region": "token_cache.py:33-46",
+      "lens_pair": [
+        "fd-security",
+        "fd-performance"
+      ]
+    },
+    "rationale": "Top non-redundant high-complementarity pair: security's primitive 'revocation/TTL-as-control' sits inside performance's failure_mode ('treats a stale secret as merely a cache miss'); performance's primitive 'fast path skips re-validation for speed' sits inside security's failure_mode ('ignores read-side latency tradeoffs'). They co-touched the lookup fast path (lines 33-46) on DIFFERENT clusters (c-stale-revalidation vs c-fastpath-false) — low redundancy, high shared heat. Probe the intersection: where does the performance optimization (trusting the index, skipping the stat/re-read) create a SECURITY gap that neither lens names alone?",
+    "fusion_agent": "fd-fusion-security-x-performance",
+    "parent_lenses": [
+      "fd-security",
+      "fd-performance"
+    ],
+    "budget_weight": 0.35
+  },
+  {
+    "type": "STEER-WIDE",
+    "target": {
+      "region": "novel-ground",
+      "distant_from": [
+        "security",
+        "performance",
+        "ecology/control-systems"
+      ]
+    },
+    "rationale": "Round-0 novel_cluster_rate = 14/21 = 0.67 >= 0.6 wide_threshold, so widening is still paying off. Reserved minimal slot for one distant lens (formal-methods / linguistics-of-naming) maximally distant from current coverage, goal-biased toward intersection weaknesses.",
+    "lens": "fd-distant-formal-methods",
+    "budget_weight": 0.15
+  }
+]
