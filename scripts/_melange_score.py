@@ -193,15 +193,53 @@ def score(run: list[dict[str, Any]], gold_doc: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _surfaced_view(run_path: str, run: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What the REPORT actually surfaced — the eval target — not the raw working
+    ledger. Two earlier definitions were both wrong (found in experiment E1):
+    scoring the raw ledger over-counts (it has raw/refuted/convergent rows never
+    shown to the user → inflated false-positive rate); a single Pareto front
+    under-counts (it discards the buried finding the *risk axis* surfaces and the
+    taste call the *Taste view* surfaces). The correct surfaced set is the UNION of
+    the synthesis's five views.
+
+    Preferred source: a `surfaced.jsonl` the synthesis phase emits next to the
+    ledger (the real output contract). Fallback for ledgers predating that contract:
+    status != refuted, then the union of (Pareto front) ∪ (top-risk) ∪ (|taste|>=2)
+    — an approximation of the five views. A flat baseline (no status/heat) is
+    returned unchanged."""
+    surfaced_path = Path(run_path).parent / "surfaced.jsonl"
+    if surfaced_path.exists():
+        return _load_run(str(surfaced_path))
+    kept = [f for f in run if f.get("status") != "refuted"]
+    if not kept:
+        return []
+    if not any("novelty" in f or "risk" in f for f in kept):
+        return kept  # flat baseline — no-op
+    idxs = set(_pareto_front(kept))
+    # risk axis: high-risk findings the novelty-dominated Pareto check may drop.
+    # Use a threshold (>=4), not just the max — the buried finding is precisely the
+    # one with MODERATE-high risk (high blast x low likelihood) that a max-only
+    # filter discards. This is a coarse fallback; the real surfaced set comes from
+    # the synthesis-emitted surfaced.jsonl.
+    idxs |= {i for i, f in enumerate(kept) if _risk_product(f) >= 4}
+    # taste view: anything with |taste| >= 2
+    idxs |= {i for i, f in enumerate(kept) if abs(int(f.get("taste", 0))) >= 2}
+    return [kept[i] for i in idxs]
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     as_json = "--json" in sys.argv
+    surfaced = "--surfaced" in sys.argv or "--frontier-only" in sys.argv
     if len(args) != 2:
         print(__doc__)
         return 2
     run = _load_run(args[0])
+    if surfaced:
+        run = _surfaced_view(args[0], run)
     gold_doc = json.loads(Path(args[1]).read_text())
     result = score(run, gold_doc)
+    result["scored_view"] = "surfaced" if surfaced else "full-ledger"
     if as_json:
         print(json.dumps(result, indent=2))
     else:

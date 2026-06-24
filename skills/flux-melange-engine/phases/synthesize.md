@@ -80,6 +80,16 @@ date: {DATE}
 
 Include any caveats discovered during synthesis (a probe that failed and contributed no findings; a fusion that produced only redundant findings; a region the loop never reached before halting on budget).
 
+## Also emit `surfaced.jsonl` (the report's output contract)
+
+Alongside the markdown, write `{OUTPUT_ROOT}/surfaced.jsonl` — one line per finding that appears in **any** of the five views, tagged by which view(s) surfaced it. This is the machine-readable answer to "what did the report actually show the user," and it is what evaluation scores against (the raw `heat-ledger.jsonl` includes raw/refuted/convergent rows that were never surfaced, so scoring the ledger over-counts; a single Pareto front under-counts because it discards the buried finding the *risk axis* surfaces and the taste call the *Taste view* surfaces — experiment E1 found both errors). Shape:
+
+```json
+{"id": "f-027", "views": ["frontier", "if-you-read-one-thing"], "novelty": 3, "risk": {"product": 6}, "taste": 0, "claim": "...", "location": "token_cache.py:48-51", "status": "upheld"}
+```
+
+`views` is any subset of `frontier` | `fusion` | `taste` | `convergence` | `disagreement` | `if-you-read-one-thing`. A finding surfaced by the risk axis of view 1 OR the taste view OR the fusions view all belong here — the surfaced set is the **union** of the five views, not a single Pareto front. Refuted findings never appear. This file is the eval target for `scripts/_melange_score.py`.
+
 ## Then → Phase 8 Report
 
 Return to `SKILL.md` § Report to print the paths, spice trail, halt reason, total cost, and regeneration hints.

@@ -174,3 +174,46 @@ silently penalizes every correct run.
 aggregate P0/P1 tuple, not per-finding refs. A small helper that emits per-finding
 location-overlap pairs (reusing `hungarian_maximize`) would close this; until then the linking is
 manual LLM work, which is fine for small runs but won't scale.
+
+## E1 — head-to-head: melange vs flux-review (first real measurement)
+
+Both arms blind to ground truth. Baseline = a 3-lens severity-ranked single pass (faithful
+flux-review emulation). Melange = the E0 live ledger.
+
+| metric | flux-review baseline | flux-melange E0 |
+|---|---|---|
+| matched / 5 gold | 2 | **4** |
+| frontier recall | 0.5 | **1.0** |
+| assayer agreement | 0.0 (no heat scores) | **0.75** |
+| buried recall | 1.0 | 1.0 (tie) |
+| fusion emergent | 0.0 | 0.0 |
+
+**Supports the central claim:** melange matched twice as many planted findings and got both
+Pareto-front findings, and its heat scores genuinely track the gold labels (0.75 agreement). On
+"surface the high-heat findings," melange beat the severity baseline.
+
+**But E1's most valuable output was three measurement bugs it exposed** — a reminder that you
+must run the system before trusting the harness:
+
+1. **Score the surfaced set, not the raw ledger.** Scoring all 29 ledger rows (incl. raw/refuted/
+   convergent duplicates) against 5 gold findings forced a false-positive rate of 0.86 — an
+   artifact, not a melange flaw. *Fix:* `_melange_score.py --surfaced` + the synthesis now emits
+   `surfaced.jsonl` (see `synthesize.md`).
+2. **A single Pareto front is the wrong "surfaced" definition.** It discards the buried finding
+   (surfaced via the report's *risk axis* / "if you read one thing") and the taste call (the
+   *Taste* view). The surfaced set is the **union of the five synthesis views**, not one front —
+   which is exactly why the engine must *declare* it (`surfaced.jsonl`) rather than have the
+   scorer guess. The `--surfaced` flag's heuristic union is a coarse fallback for ledgers
+   predating that contract; it intentionally errs on the buried finding (no threshold rule can
+   place a high-blast/low-likelihood finding correctly — that is the construct).
+3. **Recall hides the burying; rank is the construct.** The baseline *found* the buried finding
+   (recall 1.0) but ranked it P2 below the P0/P1s — the whole point. A recall metric can't see
+   that. *Open lever:* a rank-aware metric (position of the buried finding in melange's frontier
+   vs its severity rank in the baseline). Not yet built — flagged for the next pass.
+
+**Methodological note (when to STOP tuning):** after these fixes, further adjustment of the
+`--surfaced` fallback threshold was chasing the fixture's single hardest finding. The sound fix
+is the `surfaced.jsonl` contract (done) validated by a *fresh* run that emits it — not retrofitting
+a heuristic onto the E0 ledger. E2–E4 (steering ablation, fusion ablation + negative control,
+assayer kappa across runs) should run against a fresh corrected-fixture run that emits
+`surfaced.jsonl`.
