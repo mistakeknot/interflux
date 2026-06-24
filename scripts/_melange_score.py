@@ -36,7 +36,74 @@ from typing import Any
 
 # Reuse the FluxBench matcher — same dir.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _fluxbench_score import match_score, hungarian_maximize, MATCH_THRESHOLD  # noqa: E402
+from _fluxbench_score import (  # noqa: E402
+    match_score as _fb_match_score,
+    hungarian_maximize,
+    MATCH_THRESHOLD,
+    _normalize_location,
+)
+from difflib import SequenceMatcher  # noqa: E402
+import re  # noqa: E402
+
+
+def _loc_range(loc: str) -> tuple[str, int | None, int | None]:
+    """Parse 'file.py:34-45' -> ('file.py', 34, 45); 'file.py:44' -> ('file.py', 44, 44)."""
+    norm = _normalize_location(loc)
+    parts = norm.split(":")
+    if len(parts) < 2:
+        return (norm, None, None)
+    m = re.match(r"(\d+)(?:-(\d+))?", parts[1])
+    if not m:
+        return (parts[0], None, None)
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else start
+    return (parts[0], start, end)
+
+
+def _range_location_score(m_loc: str, b_loc: str) -> float:
+    """Range-aware location score. FluxBench's location_score parses only the START of
+    a range, so a finding at line 44 scores 0 against a gold finding spanning 34-45 even
+    though 44 is INSIDE it (found in experiment E3 — melange cites ranges, flux-drive
+    cites single lines). This wrapper: 1.0 if the ranges overlap/contain, else fall back
+    to ±5 proximity between the nearest endpoints."""
+    mf, ms, me = _loc_range(m_loc)
+    bf, bs, be = _loc_range(b_loc)
+    if mf != bf:
+        return 0.0
+    if ms is None or bs is None:
+        return 0.5  # same file, no line info
+    if ms <= be and bs <= me:  # ranges overlap (includes containment)
+        return 1.0
+    gap = max(ms - be, bs - me)  # positive distance between the nearest endpoints
+    if gap <= 5:
+        return max(0.5, 1.0 - gap * 0.1)
+    return 0.0
+
+
+def match_score(m: dict[str, Any], b: dict[str, Any]) -> float:
+    """Range-aware re-implementation of FluxBench match_score: same description x location
+    combination, but with range-overlap location matching (see _range_location_score) and
+    an exact-location escape hatch.
+
+    The escape hatch (found necessary in experiment E3): when the location matches exactly
+    (overlapping line ranges → loc_s == 1.0), two findings are very likely the SAME bug even
+    if worded completely differently — `SequenceMatcher` scores paraphrases of one finding as
+    low as 0.14, which would drop a true match below the 0.20 threshold. So on an exact
+    location, floor the description contribution at 0.5 (still rewarding literal agreement
+    above that). This generalizes — any two reviewers describing the same line range in
+    different words — and does NOT lower the global threshold (which would create false matches
+    at non-matching locations)."""
+    desc_ratio = SequenceMatcher(
+        None, m.get("description", "").lower(), b.get("description", "").lower()
+    ).ratio()
+    loc_s = _range_location_score(m.get("location", ""), b.get("location", ""))
+    if loc_s >= 1.0:
+        return max(0.5, desc_ratio)  # exact location: same bug, regardless of wording
+    if loc_s > 0:
+        return loc_s * desc_ratio
+    if desc_ratio >= 0.60:
+        return 0.4 * desc_ratio
+    return 0.0
 
 
 def _risk_product(f: dict[str, Any]) -> int:

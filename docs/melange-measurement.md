@@ -214,6 +214,38 @@ must run the system before trusting the harness:
 **Methodological note (when to STOP tuning):** after these fixes, further adjustment of the
 `--surfaced` fallback threshold was chasing the fixture's single hardest finding. The sound fix
 is the `surfaced.jsonl` contract (done) validated by a *fresh* run that emits it — not retrofitting
-a heuristic onto the E0 ledger. E2–E4 (steering ablation, fusion ablation + negative control,
-assayer kappa across runs) should run against a fresh corrected-fixture run that emits
-`surfaced.jsonl`.
+a heuristic onto the E0 ledger. E2/E4 (steering ablation, assayer kappa across runs) should run
+against a fresh corrected-fixture run that emits `surfaced.jsonl`.
+
+## E3 — fusion ablation + negative control (the defining capability)
+
+Two targeted probes against the corrected fixture, both blind to ground truth:
+
+- **Real fusion (security × performance):** surfaced g1 — the cross-process revocation bug — and
+  **explicitly discarded** path-traversal, plaintext-secrets, and generic TTL-staleness as "a
+  single parent lens catches this alone." That discard discipline is the capability: a fused lens
+  that reports everything is just a third reviewer. Its `intersection_justification` correctly
+  named what each parent contributes ("security knows purge=revocation must be global; performance
+  knows the index-trust shortcut makes the disk delete unobservable").
+- **Negative control (security × i18n):** returned an **empty findings array** with sound
+  reasoning (no locale handling, no Unicode processing, token_id used as a raw key). A system that
+  manufactures emergents on demand would have invented something here. Empty-when-it-should-be-empty
+  is the falsification test passing — arguably the single most important result in this whole eval.
+
+**Verdict:** the fusion capability is genuine and falsifiable. The experiment succeeded.
+
+**But automated scoring of E3 hit the lexical-matcher boundary** (a real harness limitation, now
+the top open lever): the fusion finding is unmistakably the same as gold g1, but FluxBench's
+`match_score` uses `SequenceMatcher` (character-sequence overlap), which scores two *paraphrases*
+of the same finding at 0.14 — below the 0.20 threshold — so the scorer records `fusion_emergent
+0/1` despite a human-obvious match. E3 *did* fix the other half of the matcher: `_melange_score.py`
+now has a **range-aware `location_score`** (a finding at line 44 now matches a gold range 34-45;
+FluxBench's parser took only the range start, scoring it 0). Location is fixed and regression-clean;
+description similarity is the residual.
+
+- **Top open lever (H-D):** semantic (not lexical) description matching. Options: drop the desc
+  threshold only when `location_score == 1.0` (exact-location findings are likely the same bug
+  regardless of wording); or an embedding/LLM-judge match for the description axis. Lowering the
+  global threshold is wrong — it creates false matches elsewhere. Until fixed, fusion-emergent
+  recall must be confirmed by a human reading the matched_pairs, not trusted blind. This is the
+  one place the harness currently cannot self-certify.
