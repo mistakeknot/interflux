@@ -29,9 +29,11 @@ When multiple scripts share a process and all use `flock(2)` (per-FD locks), fd 
 | 201 | Model registry | `${MODEL_REGISTRY}.lock` | `lib-registry.sh`, `fluxbench-drift.sh`, `fluxbench-qualify.sh`, `discover-merge.sh` |
 | 202 | Sync state | `*.sync.lock` | `fluxbench-sync.sh` |
 | 203 | Peer findings JSONL | `${findings_file}.lock` | `findings-helper.sh` |
-| 204 | Dispatch slots (concurrency cap) | `{OUTPUT_DIR}/.dispatch-slots.lock` | `flux-dispatch.sh` |
+| 204 | Dispatch slots + congestion cap (concurrency) | `{OUTPUT_DIR}/.dispatch-slots.lock` | `flux-dispatch.sh`, `flux-backoff.sh` |
 
 **Rule:** never reuse an fd across lock domains in the same process. When adding a new lock domain, pick the next free fd and update this table.
+
+`flux-backoff.sh` (issue #9 transient-failure backpressure) deliberately **shares** fd 204 rather than taking its own: it mutates `{OUTPUT_DIR}/.dispatch-cap` (the congestion cap read by `flux-dispatch.sh acquire`) under the *same* `.dispatch-slots.lock`, so cap writes and slot reads serialize against one lock domain. A 429 classified `transient` triggers `decrease` (cap /= 2, floored at `min_effective_cap`); `acquire` then admits against `min(base_max, .dispatch-cap)`. See `skills/flux-engine/phases/shared-contracts.md` § Transient-Failure Backpressure.
 
 ## Atomic registry mutations
 

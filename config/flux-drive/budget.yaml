@@ -41,6 +41,20 @@ dispatch:
                              # (typically 2-3 agents) unconstrained. Raise on higher-tier
                              # keys; lower (3-4) on rate-limited keys / many heavy agents.
 
+  # Transient-failure backpressure (issue #9) — TCP/client-go congestion control.
+  # Enforced by scripts/flux-backoff.sh: a 429/rate-limit/overloaded failure is
+  # classified TRANSIENT (not counted as failed), then the agent is re-enqueued
+  # with exponential backoff + full jitter while the EFFECTIVE concurrency cap is
+  # multiplicatively decreased for the rest of the run (cap /= decrease_factor,
+  # floored at min_effective_cap). The reduced cap is written to
+  # {OUTPUT_DIR}/.dispatch-cap and honored by flux-dispatch.sh acquire.
+  backoff:
+    base_delay_secs: 2       # attempt-1 exponential window (seconds)
+    max_delay_secs: 60       # ceiling on the exponential window
+    factor: 2                # exponential multiplier per attempt
+    decrease_factor: 2       # multiplicative decrease divisor on sustained 429
+    min_effective_cap: 1     # never throttle below this many in-flight (progress)
+
 # Budget enforcement
 enforcement: soft          # soft = warn + offer override | hard = block
 cost_basis: billing        # billing = input+output (cache reads free) | total = all tokens incl. cache

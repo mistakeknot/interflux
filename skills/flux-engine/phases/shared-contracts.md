@@ -79,6 +79,16 @@ Every agent moves through these states during a flux-drive run. Transitions are 
 - **An agent in `timeout_original_running` is treated as incomplete** (its `.partial` still exists). Orchestrator must retry or write an error stub before synthesis.
 - **`failed` agents leave a `.refused.md` or error-stub `.md`.** Synthesis includes them in counts but treats their findings as zero.
 - **A stall-rescued agent leaves a `{agent}.md` stall stub** (verdict `error`, `kind:stall` peer-finding) when `STALL_RESCUE=1` and no `.partial` or `.md` appears within `STALL_TIMEOUT` (default 60s) of any progress event. Synthesis treats stall stubs as failed (zero findings) but reports the stall in the run summary. Caller must pass `EXPECTED_AGENTS=$(printf '%s\n' "${AGENT_NAMES[@]}")` so flux-watch knows which agents are missing.
+- **A transient failure (429 / rate-limit / overloaded) is NOT a `failed` state.** It is a distinct class: the agent never started, leaves no `.partial`/`.md`, and must be re-enqueued with backoff rather than stubbed. It is the only failure class that **decreases** the effective concurrency cap (issue #9 backpressure). See § Transient-Failure Backpressure below. Only after a bounded number of transient re-enqueues does the agent fall through to `failed` (error stub).
+
+### Transient-Failure Backpressure (issue #9)
+
+Distinct from the Retry Race Protocol (which handles a `.partial` that never became `.md` — a *slow/crashed* agent at the **same** concurrency). A transient failure is rate-limit/overload backpressure and is owned by `scripts/flux-backoff.sh`, composing with the `flux-dispatch.sh` slot semaphore:
+
+- **Classify** the returned error text — `flux-backoff.sh classify` emits `transient | terminal | unknown`. Transient = HTTP `429`/`502`/`503`/`529`, `rate_limit_error`, `overloaded_error`, "too many requests", quota/capacity. Terminal = deterministic Usage-Policy refusal (tier-downgrade path, not plain retry). Unknown = crash/stall (Retry Race / stall-rescue).
+- **Exponential backoff + full jitter** — `flux-backoff.sh delay <attempt>` / `sleep <attempt>`. Window = `min(max_delay, base_delay × factor^(attempt-1))`; actual delay is uniform in `[0, window]` so the fan-out's retries decorrelate instead of re-hitting the limit in lockstep.
+- **Multiplicative decrease** — `flux-backoff.sh decrease {OUTPUT_DIR}` halves the effective cap (floored at `min_effective_cap`, default 1) by writing `{OUTPUT_DIR}/.dispatch-cap`. `flux-dispatch.sh acquire` admits against `min(MAX_CONCURRENT_AGENTS, .dispatch-cap)`, so the reduced ceiling throttles every later dispatch for the rest of the run (TCP/client-go congestion control). `flux-backoff.sh increase` additively recovers; `flux-dispatch.sh reset` clears the cap at run start.
+- **This must engage BEFORE the 300s timeout**, not after — a 429 leaves no filesystem artifact, so the orchestrator classifies the moment the `Agent` tool returns rather than waiting out flux-watch.
 
 ### Retry Race Protocol (Step 2.3)
 
