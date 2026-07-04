@@ -1,0 +1,114 @@
+# ============================================================================
+# Flux-Melange Configuration
+# ============================================================================
+#
+# Override per-project:    {PROJECT_ROOT}/.claude/flux-melange.yaml
+# Override per-invocation:  /flux-melange path --goal="..." --weights=X --budget=N ...
+#
+# flux-melange is the apex of the interflux escalation ladder. Unlike
+# flux-review (open-loop: triage tracks once, fan out blind, synthesize),
+# it threads one scored HEAT LEDGER between adaptive rounds — each round's
+# targeting is computed from the previous round's findings. Tune the loop
+# here; the loop's CORRECTNESS (the continue predicate, the steering
+# decoupling) lives in the engine, not in config.
+# ============================================================================
+
+# --- Goal -------------------------------------------------------------------
+#
+# The north star, injected verbatim into every agent prompt AND used as the
+# retarget relevance filter. "Toward the heat" means "toward the heat as THIS
+# goal defines it." Override with --goal="...".
+#
+goal: "maximize verified novelty×risk surface until dry"
+
+# --- Weights ----------------------------------------------------------------
+#
+# Which derived term the per-round YIELD function boosts. Steers WHAT the loop
+# considers "spice" without changing the loop mechanics.
+#
+#   balanced   equal weight on novelty / risk / taste terms (daily default)
+#   risk-hunt  boost risk.product — for security/migration/prod-safety targets
+#   taste      boost |taste| — for design reviews, API surfaces, naming passes
+#   novelty    boost novelty — for "what are we NOT seeing?" exploration
+#
+weights: balanced
+
+# --- Loop bounds ------------------------------------------------------------
+#
+# Three independent HARD halts: DRY (yield -> 0), BUDGET (slots exhausted),
+# CEILING (max_rounds). min_rounds guards against one unlucky round quitting.
+#
+max_rounds: 4            # CEILING halt. Cap 6 (the engine refuses higher).
+min_rounds: 2            # never DRY-halt before this many rounds
+round_cost_floor: 3      # BUDGET halt when remaining slots < this
+diminishing_threshold: 1 # a round opening <= this many new qualifying clusters is DRY
+wide_threshold: 0.6      # STEER-WIDE only fires while novel_cluster_rate >= this
+
+# --- Budget -----------------------------------------------------------------
+#
+# Total AGENT SLOTS across the whole run (seed + all rounds + verifiers).
+# auto = derive from estimate-costs.sh + config/flux-drive/budget.yaml.
+# HARD CAP 30 regardless of config — an unbounded loop is the main cost risk.
+# FLUX_BUDGET_REMAINING env caps this exactly as flux-drive honors it.
+#
+budget: auto
+max_round_slots: 8       # most agents any single round may dispatch
+
+# --- Seed (round 0) ---------------------------------------------------------
+#
+# Deliberately small — the budget is for the ADAPTIVE rounds where it pays off.
+# A fat seed is just flux-review with extra steps.
+#
+seed:
+  adjacent: 3            # domain-expert lenses (flux-review Track A prompt, trimmed)
+  distant: 2             # cross-domain lenses (flux-review Track C prompt)
+
+# --- Fusion -----------------------------------------------------------------
+#
+# The mechanic the mode is named for. auto = <= 2 fusions/round. Depth-2
+# (fusing a fused lens) only on quality=max — no unbounded compounding.
+#
+fusion:
+  mode: auto             # auto | <int> | off
+  per_round_cap: 2
+  shared_heat_gate: 2    # a pair must clear this SHARED_HEAT to be fusable at all
+  allow_depth_2: false   # engine forces true only when quality=max
+
+# --- Verify -----------------------------------------------------------------
+#
+# CONDITIONAL by default (not a per-round tax). Fires only on findings that
+# could change the report. Only `upheld` findings count toward the DRY yield.
+#
+verify:
+  mode: auto             # auto (gated) | off | all
+  novelty_gate: 2        # verify if novelty >= this ...
+  risk_gate: 9           # ... OR risk.product >= this
+
+# --- Quality / model routing ------------------------------------------------
+#
+# economy = all Sonnet (+ skip taste). balanced = Opus on creative/judgment
+# steps (fused-lens design, taste, synthesis), Sonnet on lens application.
+# max = all Opus + depth-2 fusion. See references/budget-ladder.md for the
+# full per-step routing table.
+#
+quality: balanced
+
+# --- Interactive ------------------------------------------------------------
+#
+# Default auto-proceed (the loop is deterministic). --interactive restores the
+# per-round confirmation and the GOAL-MET soft-stop prompt.
+#
+interactive: false
+
+# ============================================================================
+# Cost reference (rough, ~per agent slot)
+#
+#   2-round economy:   ~8-10 slots   ~$1     (quick adaptive pass)
+#   3-round balanced:  ~15-18 slots  ~$5     (the daily driver)
+#   4-round balanced:  ~22-26 slots  ~$8     (design/architecture targets)
+#   to-dry max:        up to 30 cap  ~$15    (high-stakes, risk-hunt or taste)
+#
+# Cost is loop-shaped, not track-shaped: a target that goes DRY in 2 rounds
+# costs far less than max_rounds suggests. The budget cap is the ceiling, the
+# DRY halt is the usual exit.
+# ============================================================================

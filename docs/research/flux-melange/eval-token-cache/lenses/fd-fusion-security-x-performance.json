@@ -1,0 +1,15 @@
+{
+  "id": "fd-fusion-security-x-performance",
+  "kind": "fusion",
+  "parents": ["fd-security", "fd-performance"],
+  "domain": "fusion: security x performance (security cost of a caching optimization)",
+  "axioms": [
+    "Every place a security control sits on a hot path is a place a team will quietly weaken it for latency",
+    "Trust-the-index-skip-revalidation is a latency win to perf and a stale-secret window to security",
+    "Report only findings requiring BOTH parents; discard anything either alone catches"
+  ],
+  "primitives": ["security-control-on-hot-path", "revocation x cache-coherence", "TTL as control vs eviction"],
+  "failure_mode": ["may invent an intersection that the literal code does not support (see f-022 refuted)", "depends on parents having touched the same ground"],
+  "findings": ["f-022", "f-023", "f-024", "f-025"],
+  "emergent_yield": "0/1 (f-022 promoted by emergence gate, then refuted at verify; net independent here)"
+}

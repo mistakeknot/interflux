@@ -20,6 +20,12 @@ Uses existing agents only (core + any previously generated project agents). Chea
 ```
 Mines progressively more distant knowledge domains for structural isomorphisms. No review target — pure creative exploration.
 
+**If you want the deepest possible review — adaptive, goal-seeking, fusing lenses:**
+```
+/flux-melange <path> --goal="..."
+```
+The apex of the ladder. Instead of fanning out a fixed set of tracks once and synthesizing, it runs **adaptive rounds** that steer toward the heat (novelty / risk / disagreement) the previous round found, **fuses** high-tension lens pairs into hybrid intersection-detectors, scores findings on **Novelty / Risk / Taste**, and surfaces the spice — not just severity. Costs more (it loops), so reach for it on high-stakes targets, not routine PRs.
+
 ---
 
 ## All Commands
@@ -28,6 +34,7 @@ Mines progressively more distant knowledge domains for structural isomorphisms. 
 |---------|------|-------------|
 | **`/flux-review`** | **Primary entry point** — generate + review + synthesize | Reviewing anything significant |
 | `/flux-drive` | Quick review with existing agents | Routine PRs, repeat reviews, CI pipelines |
+| `/flux-melange` | **Apex** — goal-seeking adaptive loop, lens fusion, novelty/risk/taste | High-stakes deep review where a missed insight is costly |
 | `/flux-explore` | Domain exploration without a review target | Brainstorming, architectural inspiration |
 | `/flux-research` | Multi-agent research on a question | Answering research questions, not reviewing files |
 | `/flux-gen` | Generate agents only (no review) | Building agent libraries, customizing before review |
@@ -47,6 +54,13 @@ Most of the time, `/flux-review` is the right choice. Use the primitives when:
 - **No review target** — you want to explore what tidal dynamics or monastic scriptoria could teach you about your architecture, without reviewing specific code
 - **Pure brainstorming** — the goal is a synthesis document about domains and structural isomorphisms, not findings about your files
 - **Multi-round progressive distance** — you want 3+ rounds of increasingly distant domains with accumulated context between rounds (flux-review runs all tracks in parallel without inter-track context)
+
+### Use `/flux-melange` instead when:
+- **A missed insight is expensive** — security-sensitive code, migrations, architecture pivots, anything where you want the loop to *chase* the scary-but-unconfirmed finding rather than report it once and move on
+- **You have a goal, not just a target** — `--goal="find the data-loss path"` steers every round toward that goal; `--weights=risk-hunt` or `--weights=taste` tilts what counts as spice
+- **You want lenses that combine, not just stack** — flux-review's lenses only ever *agree* (convergence); melange *fuses* them to surface findings at their intersection that neither parent could see alone
+- **Severity is hiding the real risk** — a P2 rare-catastrophe (huge blast radius, low likelihood) leads the melange report but is buried by every other command
+- **NOT for routine PRs or CI** — it loops, so it costs more; use `/flux-drive` or `/flux-review` for those
 
 ### Use `/flux-gen` instead when:
 - **Building an agent library over time** — generate agents across sessions, customize them by hand
@@ -91,6 +105,8 @@ The commands build on each other. Running `/flux-review` once populates your pro
 | `/flux-review` (3 tracks, balanced) | ~$5 | Module/feature review |
 | `/flux-review` (4 tracks, balanced) | ~$7 | Design docs, PRDs |
 | `/flux-review --creative` | ~$12 | Maximum exploration + review |
+| `/flux-melange` (3 rounds, balanced) | ~$5 | Adaptive deep review, the daily melange driver |
+| `/flux-melange` (to-dry, max) | ~$15 | High-stakes; loops until DRY/BUDGET/CEILING (30-slot cap) |
 | `/flux-explore` (3 rounds) | ~$0.50 | Brainstorming (no review step) |
 | `/flux-gen` | ~$0.10 | Agent generation only |
 | `/flux-research` | ~$1-2 | Research questions |

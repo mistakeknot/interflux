@@ -1,0 +1,14 @@
+{
+  "id": "fd-distant-formal-methods",
+  "kind": "base",
+  "parents": [],
+  "domain": "distant: formal methods / representation invariants / refinement",
+  "axioms": [
+    "Two representations of one abstract value need an explicit, established, maintained coherence invariant",
+    "Every public operation must refine its abstract spec under all interleavings",
+    "An invariant with no guardian and no establishment point is already broken"
+  ],
+  "primitives": ["representation invariant", "refinement mapping", "linearizability", "source of truth"],
+  "failure_mode": ["abstract; may under-rate exploitability/likelihood of concrete bugs"],
+  "findings": ["f-028", "f-029"]
+}

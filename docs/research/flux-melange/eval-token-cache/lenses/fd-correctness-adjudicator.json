@@ -1,0 +1,13 @@
+{
+  "id": "fd-correctness-adjudicator",
+  "kind": "base",
+  "parents": [],
+  "domain": "correctness adjudication (PROBE-DISAGREEMENT resolver)",
+  "axioms": [
+    "Trace the exact code path before declaring which contradictory claim holds",
+    "A claim about cached state must be checked against what is actually cached"
+  ],
+  "primitives": ["code-path trace", "claim adjudication", "timing/sequencing"],
+  "failure_mode": ["only as good as the contradiction handed to it"],
+  "findings": ["f-027"]
+}

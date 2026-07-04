@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+"""Melange-aware scoring: measures the three capabilities flux-melange CLAIMS,
+not the severity-weighted recall FluxBench measures (which would under-measure
+melange by scoring it on the axis it deliberately rejects).
+
+Reuses the FluxBench finding-matcher (fuzzy location x description, Hungarian
+assignment) to align a melange run's findings to a heat-labeled gold set, then
+computes construct-valid metrics:
+
+  1. frontier_recall      — of gold findings on the novelty x risk frontier,
+                            how many did the run surface? (the core claim)
+  2. buried_recall        — did the run surface the buried-by-severity finding
+                            (low severity, high risk.product)? vs a severity-only
+                            baseline that would bury it.
+  3. fusion_emergent      — did a fusion finding match the gold finding tagged
+                            requires_fusion? (emergence detector worked)
+  4. taste_surfaced       — did the run surface the taste-tagged gold finding?
+  5. assayer_kappa-lite   — agreement between run novelty/risk scores and gold
+                            labels on matched pairs (validates the Assayer).
+  6. false_positive_rate  — run findings that match no gold finding.
+
+Usage:
+  _melange_score.py <run-ledger.jsonl> <ground-truth.json> [--json]
+
+The run ledger is heat-ledger.jsonl (one finding object per line, melange schema).
+Also accepts a flat {"findings":[...]} JSON (for scoring flux-review output against
+the same gold set in head-to-head experiments).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+# Reuse the FluxBench matcher — same dir.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _fluxbench_score import (  # noqa: E402
+    match_score as _fb_match_score,
+    hungarian_maximize,
+    MATCH_THRESHOLD,
+    _normalize_location,
+)
+from difflib import SequenceMatcher  # noqa: E402
+import re  # noqa: E402
+
+
+def _loc_range(loc: str) -> tuple[str, int | None, int | None]:
+    """Parse 'file.py:34-45' -> ('file.py', 34, 45); 'file.py:44' -> ('file.py', 44, 44)."""
+    norm = _normalize_location(loc)
+    parts = norm.split(":")
+    if len(parts) < 2:
+        return (norm, None, None)
+    m = re.match(r"(\d+)(?:-(\d+))?", parts[1])
+    if not m:
+        return (parts[0], None, None)
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else start
+    return (parts[0], start, end)
+
+
+def _range_location_score(m_loc: str, b_loc: str) -> float:
+    """Range-aware location score. FluxBench's location_score parses only the START of
+    a range, so a finding at line 44 scores 0 against a gold finding spanning 34-45 even
+    though 44 is INSIDE it (found in experiment E3 — melange cites ranges, flux-drive
+    cites single lines). This wrapper: 1.0 if the ranges overlap/contain, else fall back
+    to ±5 proximity between the nearest endpoints."""
+    mf, ms, me = _loc_range(m_loc)
+    bf, bs, be = _loc_range(b_loc)
+    if mf != bf:
+        return 0.0
+    if ms is None or bs is None:
+        return 0.5  # same file, no line info
+    if ms <= be and bs <= me:  # ranges overlap (includes containment)
+        return 1.0
+    gap = max(ms - be, bs - me)  # positive distance between the nearest endpoints
+    if gap <= 5:
+        return max(0.5, 1.0 - gap * 0.1)
+    return 0.0
+
+
+def match_score(m: dict[str, Any], b: dict[str, Any]) -> float:
+    """Range-aware re-implementation of FluxBench match_score: same description x location
+    combination, but with range-overlap location matching (see _range_location_score) and
+    an exact-location escape hatch.
+
+    The escape hatch (found necessary in experiment E3): when the location matches exactly
+    (overlapping line ranges → loc_s == 1.0), two findings are very likely the SAME bug even
+    if worded completely differently — `SequenceMatcher` scores paraphrases of one finding as
+    low as 0.14, which would drop a true match below the 0.20 threshold. So on an exact
+    location, floor the description contribution at 0.5 (still rewarding literal agreement
+    above that). This generalizes — any two reviewers describing the same line range in
+    different words — and does NOT lower the global threshold (which would create false matches
+    at non-matching locations)."""
+    desc_ratio = SequenceMatcher(
+        None, m.get("description", "").lower(), b.get("description", "").lower()
+    ).ratio()
+    loc_s = _range_location_score(m.get("location", ""), b.get("location", ""))
+    if loc_s >= 1.0:
+        return max(0.5, desc_ratio)  # exact location: same bug, regardless of wording
+    if loc_s > 0:
+        return loc_s * desc_ratio
+    if desc_ratio >= 0.60:
+        return 0.4 * desc_ratio
+    return 0.0
+
+
+def _risk_product(f: dict[str, Any]) -> int:
+    r = f.get("risk") or {}
+    if "product" in r:
+        return int(r["product"])
+    return int(r.get("blast_radius", 0)) * int(r.get("likelihood", 0))
+
+
+def _heat(f: dict[str, Any]) -> int:
+    """Steering/surfacing rank = novelty x risk.product (heat-scoring.md)."""
+    return int(f.get("novelty", 0)) * _risk_product(f)
+
+
+def _normalize_finding(f: dict[str, Any]) -> dict[str, Any]:
+    """The melange ledger names the finding text `claim` (ledger-schema.md), but the
+    FluxBench matcher keys on `description`. Map it so the fuzzy matcher works across
+    both schemas. (This interop gap was found during eval — the matcher silently
+    scored every claim-only finding as 0 description-similarity.)"""
+    if "description" not in f and "claim" in f:
+        f = dict(f)
+        f["description"] = f["claim"]
+    return f
+
+
+def _load_run(path: str) -> list[dict[str, Any]]:
+    """Load a melange ledger (jsonl) or a flat {findings:[...]} json."""
+    text = Path(path).read_text().strip()
+    if not text:
+        return []
+    raw: list[dict[str, Any]] = []
+    # Try flat json first.
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and "findings" in obj:
+            raw = obj["findings"]
+        elif isinstance(obj, list):
+            raw = obj
+    except json.JSONDecodeError:
+        # jsonl
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                raw.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return [_normalize_finding(f) for f in raw]
+
+
+def _pareto_front(findings: list[dict[str, Any]]) -> list[int]:
+    """Indices of gold findings on the (novelty, risk.product) Pareto front —
+    not dominated on BOTH axes by another finding. This is what melange's
+    synthesis view 1 is supposed to surface."""
+    front = []
+    for i, fi in enumerate(findings):
+        ni, ri = int(fi.get("novelty", 0)), _risk_product(fi)
+        dominated = False
+        for j, fj in enumerate(findings):
+            if i == j:
+                continue
+            nj, rj = int(fj.get("novelty", 0)), _risk_product(fj)
+            if (nj >= ni and rj >= ri) and (nj > ni or rj > ri):
+                dominated = True
+                break
+        if not dominated:
+            front.append(i)
+    return front
+
+
+def _match(run: list[dict[str, Any]], gold: list[dict[str, Any]]) -> dict[int, int]:
+    """gold_index -> run_index for matched pairs (>= MATCH_THRESHOLD)."""
+    if not run or not gold:
+        return {}
+    matrix = [[match_score(g, r) for r in run] for g in gold]
+    pairs = hungarian_maximize(matrix)
+    out = {}
+    for gi, ri in pairs:
+        if gi < len(gold) and ri < len(run) and matrix[gi][ri] >= MATCH_THRESHOLD:
+            out[gi] = ri
+    return out
+
+
+def score(run: list[dict[str, Any]], gold_doc: dict[str, Any]) -> dict[str, Any]:
+    gold = gold_doc["findings"]
+    matched = _match(run, gold)  # gold_idx -> run_idx
+
+    front_idxs = set(_pareto_front(gold))
+    front_total = len(front_idxs)
+    front_found = sum(1 for gi in matched if gi in front_idxs)
+
+    # buried finding (tagged buried_by_severity)
+    buried_idxs = [i for i, g in enumerate(gold) if g.get("buried_by_severity")]
+    buried_found = sum(1 for gi in matched if gi in buried_idxs)
+
+    # fusion-emergent: gold tagged requires_fusion AND the matching run finding
+    # is itself a fusion finding (source.kind == fusion).
+    fusion_gold = [i for i, g in enumerate(gold) if g.get("requires_fusion")]
+    fusion_emergent_hits = 0
+    for gi in fusion_gold:
+        if gi in matched:
+            rf = run[matched[gi]]
+            src = rf.get("source") or {}
+            if (
+                src.get("kind") == "fusion"
+                or rf.get("parent_lenses")
+                or src.get("parent_lenses")
+            ):
+                fusion_emergent_hits += 1
+
+    # taste: gold with |taste| >= 2 that got surfaced
+    taste_gold = [i for i, g in enumerate(gold) if abs(int(g.get("taste", 0))) >= 2]
+    taste_found = sum(1 for gi in matched if gi in taste_gold)
+
+    # assayer agreement (kappa-lite): fraction of matched pairs whose run novelty
+    # is within 1 of gold AND run risk.product within 2 of gold.
+    agree = 0
+    for gi, ri in matched.items():
+        g, r = gold[gi], run[ri]
+        nov_ok = abs(int(r.get("novelty", -9)) - int(g.get("novelty", 0))) <= 1
+        risk_ok = abs(_risk_product(r) - _risk_product(g)) <= 2
+        if nov_ok and risk_ok:
+            agree += 1
+    assayer_agreement = (agree / len(matched)) if matched else None
+
+    fp = len(run) - len(set(matched.values()))
+    fp_rate = (fp / len(run)) if run else 0.0
+
+    return {
+        "n_run_findings": len(run),
+        "n_gold_findings": len(gold),
+        "n_matched": len(matched),
+        "frontier_recall": round(front_found / front_total, 3) if front_total else None,
+        "frontier_found": front_found,
+        "frontier_total": front_total,
+        "buried_recall": round(buried_found / len(buried_idxs), 3)
+        if buried_idxs
+        else None,
+        "buried_finding_ids": [gold[i].get("id") for i in buried_idxs],
+        "buried_found": buried_found,
+        "fusion_emergent_recall": round(fusion_emergent_hits / len(fusion_gold), 3)
+        if fusion_gold
+        else None,
+        "fusion_emergent_hits": fusion_emergent_hits,
+        "fusion_gold_ids": [gold[i].get("id") for i in fusion_gold],
+        "taste_recall": round(taste_found / len(taste_gold), 3) if taste_gold else None,
+        "taste_found": taste_found,
+        "assayer_agreement": round(assayer_agreement, 3)
+        if assayer_agreement is not None
+        else None,
+        "false_positive_rate": round(fp_rate, 3),
+        "matched_pairs": {gold[gi].get("id", gi): matched[gi] for gi in matched},
+    }
+
+
+def _surfaced_view(run_path: str, run: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What the REPORT actually surfaced — the eval target — not the raw working
+    ledger. Two earlier definitions were both wrong (found in experiment E1):
+    scoring the raw ledger over-counts (it has raw/refuted/convergent rows never
+    shown to the user → inflated false-positive rate); a single Pareto front
+    under-counts (it discards the buried finding the *risk axis* surfaces and the
+    taste call the *Taste view* surfaces). The correct surfaced set is the UNION of
+    the synthesis's five views.
+
+    Preferred source: a `surfaced.jsonl` the synthesis phase emits next to the
+    ledger (the real output contract). Fallback for ledgers predating that contract:
+    status != refuted, then the union of (Pareto front) ∪ (top-risk) ∪ (|taste|>=2)
+    — an approximation of the five views. A flat baseline (no status/heat) is
+    returned unchanged."""
+    surfaced_path = Path(run_path).parent / "surfaced.jsonl"
+    if surfaced_path.exists():
+        return _load_run(str(surfaced_path))
+    kept = [f for f in run if f.get("status") != "refuted"]
+    if not kept:
+        return []
+    if not any("novelty" in f or "risk" in f for f in kept):
+        return kept  # flat baseline — no-op
+    idxs = set(_pareto_front(kept))
+    # risk axis: high-risk findings the novelty-dominated Pareto check may drop.
+    # Use a threshold (>=4), not just the max — the buried finding is precisely the
+    # one with MODERATE-high risk (high blast x low likelihood) that a max-only
+    # filter discards. This is a coarse fallback; the real surfaced set comes from
+    # the synthesis-emitted surfaced.jsonl.
+    idxs |= {i for i, f in enumerate(kept) if _risk_product(f) >= 4}
+    # taste view: anything with |taste| >= 2
+    idxs |= {i for i, f in enumerate(kept) if abs(int(f.get("taste", 0))) >= 2}
+    return [kept[i] for i in idxs]
+
+
+def main() -> int:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    as_json = "--json" in sys.argv
+    surfaced = "--surfaced" in sys.argv or "--frontier-only" in sys.argv
+    if len(args) != 2:
+        print(__doc__)
+        return 2
+    run = _load_run(args[0])
+    if surfaced:
+        run = _surfaced_view(args[0], run)
+    gold_doc = json.loads(Path(args[1]).read_text())
+    result = score(run, gold_doc)
+    result["scored_view"] = "surfaced" if surfaced else "full-ledger"
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"run findings:        {result['n_run_findings']}")
+        print(
+            f"gold findings:       {result['n_gold_findings']}  matched: {result['n_matched']}"
+        )
+        print(
+            f"frontier recall:     {result['frontier_recall']}  ({result['frontier_found']}/{result['frontier_total']})"
+        )
+        print(
+            f"buried recall:       {result['buried_recall']}  (the rare-catastrophe class severity buries)"
+        )
+        print(
+            f"fusion emergent:     {result['fusion_emergent_recall']}  ({result['fusion_emergent_hits']}/{len(result['fusion_gold_ids'])})"
+        )
+        print(f"taste surfaced:      {result['taste_recall']}")
+        print(
+            f"assayer agreement:   {result['assayer_agreement']}  (novelty±1 & risk±2 vs gold)"
+        )
+        print(f"false positive rate: {result['false_positive_rate']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
