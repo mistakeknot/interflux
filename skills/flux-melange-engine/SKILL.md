@@ -19,7 +19,7 @@ Run a **closed-loop** review. Where `/flux-review` fans out a fixed set of track
 
 ## Runtime contract (no new primitives)
 
-There is **no separate workflow binary** — the loop rides the exact primitives `flux-engine` / `flux-review-engine` already use:
+The loop is expressible in the exact primitives `flux-engine` / `flux-review-engine` already use — and inside Claude Code there is additionally a **workflow fast-path** (`workflow/melange-workflow.js`, dispatched per § Runtime dispatch below) that runs the same loop as a background Workflow script with the controller as literal code. The prose path rides these primitives:
 
 | Primitive | Realization |
 |-----------|-------------|
@@ -53,6 +53,30 @@ The loop is **Phase 3 → 4 → 5 → 6**, re-entering from 6 to 3 while `should
 **Read `phases/charter.md` now.** It owns argument parsing, config merge (flags > `{PROJECT_ROOT}/.claude/flux-melange.yaml` > `${CLAUDE_PLUGIN_ROOT}/config/flux-melange/defaults.yaml`), derivation of `SLUG`/`PROJECT_ROOT`/`TARGET_DESC`/`DATE`, ledger + state initialization, the initial budget computation, and the plan display.
 
 After charter, display the plan and (unless `--interactive`) auto-proceed — triage is deterministic.
+
+## Runtime dispatch: workflow fast-path vs prose loop
+
+After charter, choose the execution path. Use the **workflow path** when ALL of:
+
+1. The **Workflow tool is available** in this session (Claude Code main loop — it is absent under Codex and inside subagents);
+2. **Not `--interactive`** (scripts cannot AskUserQuestion — no per-round confirmation, no GOAL-MET prompt);
+3. **Not resuming a prose-mode run** (a non-empty `heat-ledger.jsonl` with no prior workflow run for this SLUG → finish on the prose path).
+
+Otherwise run the **prose path** (Steps 1–3 below). The phase files are the spec for both paths.
+
+**Workflow path:**
+
+1. Charter has already parsed args, merged config, derived identifiers, computed the budget, and created `OUTPUT_ROOT/` + `lenses/` + the empty ledger — all of that still happens here, in the orchestrator.
+2. Dispatch (invocation via `/flux-melange` satisfies the Workflow tool's explicit-opt-in requirement):
+   ```
+   Workflow({
+     scriptPath: "{this skill's base dir}/workflow/melange-workflow.js",
+     args: { ...charter contract — see references/workflow-args.md }
+   })
+   ```
+3. The workflow runs in the background (watch with /workflows). On completion, take the returned report object and render Phase 8 (§ Report below) from it. Verify the synthesis file exists before reporting success; if the report carries `caveats`, surface them verbatim.
+4. **Resume after a crash/kill:** `Workflow({scriptPath, resumeFromRunId: "<prior runId>"})` — completed agent calls replay from the journal cache. This replaces prose-mode resume detection.
+5. Divergences from the prose path (in-loop phase order, state-file substitution, batched verification, slot accounting) are documented in `references/workflow-args.md` — read it before dispatching or debugging a workflow run.
 
 ## Step 1: First taste (round 0)
 
