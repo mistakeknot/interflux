@@ -25,7 +25,8 @@ export const meta = {
 // resolves that (assay.md's "score.md (which also re-assays)" note).
 // ============================================================================
 
-const A = args
+// Some hosts deliver Workflow `args` as a JSON string rather than an object.
+const A = typeof args === 'string' ? JSON.parse(args) : args
 for (const k of ['inputPath', 'projectRoot', 'outputRoot', 'pluginRoot', 'slug', 'date', 'goal', 'weights', 'targetDesc', 'quality', 'budget', 'loop', 'seed', 'fusion', 'verify']) {
   if (!A || A[k] === undefined) throw new Error(`flux-melange workflow: missing charter arg "${k}" — dispatch via SKILL.md § Runtime dispatch`)
 }

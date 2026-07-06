@@ -22,7 +22,7 @@ Invocation via `/flux-melange` satisfies the Workflow tool's explicit-opt-in req
 
 ## Args contract (all required)
 
-Charter (Phase 0) resolves these exactly as for the prose path, then passes them verbatim. Pass real JSON values, not strings.
+Charter (Phase 0) resolves these exactly as for the prose path, then passes them verbatim. Pass real JSON values, not strings. (Defensive: the script also accepts the whole contract as a JSON-encoded string and parses it — some hosts deliver Workflow `args` stringified regardless of how they were passed.)
 
 ```json
 {
