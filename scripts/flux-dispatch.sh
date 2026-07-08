@@ -20,7 +20,16 @@
 #       terminal .md) appears, then release one slot. Exit 0 on appearance,
 #       1 on timeout (slot is still released so the cap cannot deadlock).
 #   flux-dispatch.sh reset <output_dir> [max]
-#       (Re)initialize the slot file to zero in-flight. Call once before a wave.
+#       (Re)initialize the slot file to zero in-flight and clear any congestion
+#       cap from a prior run. Call once before a wave.
+#   flux-dispatch.sh maxcap <output_dir> [max]
+#       Print the resolved BASE cap (ignoring the congestion cap). Used by
+#       scripts/flux-backoff.sh to seed the multiplicative-decrease cap.
+#
+# Backpressure (issue #9): scripts/flux-backoff.sh writes a congestion cap to
+# {OUTPUT_DIR}/.dispatch-cap on sustained 429s. `acquire` claims against the
+# EFFECTIVE cap = min(base_max, .dispatch-cap), so transient-failure backpressure
+# multiplicatively lowers the live slot ceiling. See flux-backoff.sh.
 #
 # Resolution order for <max> (highest precedence first):
 #   1. explicit <max> argument
@@ -79,6 +88,22 @@ resolve_max() {
 
 _slot_file() { echo "${1%/}/.dispatch-slots"; }
 _lock_file() { echo "${1%/}/.dispatch-slots.lock"; }
+_cap_file()  { echo "${1%/}/.dispatch-cap"; }   # congestion cap (issue #9 backpressure)
+
+# Effective cap = min(base_max, congestion_cap). The congestion cap is written by
+# flux-backoff.sh `decrease` on sustained 429s (issue #9), so a transient-failure
+# backpressure event lowers the slot ceiling for every subsequent acquire. When no
+# congestion cap is set, the effective cap equals the base resolved cap.
+effective_max() {
+    local output_dir="$1" base="$2" cap_file cur
+    cap_file="$(_cap_file "$output_dir")"
+    cur="$(cat "$cap_file" 2>/dev/null || true)"
+    if [[ "$cur" =~ ^[0-9]+$ ]] && (( cur > 0 )) && (( cur < base )); then
+        echo "$cur"
+    else
+        echo "$base"
+    fi
+}
 
 # Read the current count (0 if file missing/empty/garbage).
 _read_count() {
@@ -94,10 +119,11 @@ case "$cmd" in
   reset)
     output_dir="${1:?reset requires <output_dir>}"; shift || true
     mkdir -p "$output_dir"
-    slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"
+    slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"; cap="$(_cap_file "$output_dir")"
     (
       flock -x 204
       echo 0 > "$slot"
+      rm -f "$cap"   # clear any congestion cap left by a prior run (issue #9)
     ) 204>"$lock"
     echo "ok 0/$(resolve_max "${1:-}")"
     ;;
@@ -114,33 +140,45 @@ case "$cmd" in
 
   acquire)
     output_dir="${1:?acquire requires <output_dir>}"; shift || true
-    max="$(resolve_max "${1:-}")"; shift || true
+    base_max="$(resolve_max "${1:-}")"; shift || true
     timeout="${1:-$DEFAULT_TIMEOUT}"
     mkdir -p "$output_dir"
     slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"
     deadline=$(( $(date +%s) + timeout ))
     while :; do
         claimed=""
-        # Critical section: read count, claim a slot if one is free.
+        eff=""
+        # Critical section: re-read the effective (congestion-adjusted) cap and
+        # claim a slot if one is free. Re-reading inside the loop means a mid-run
+        # flux-backoff.sh `decrease` (issue #9) throttles pending acquires too.
         (
           flock -x 204
+          eff_local="$(effective_max "$output_dir" "$base_max")"
           cur="$(_read_count "$slot")"
-          if (( cur < max )); then
+          if (( cur < eff_local )); then
               echo $(( cur + 1 )) > "$slot"
               exit 0   # signal "claimed" to parent via subshell exit
           fi
           exit 10      # signal "full"
         ) 204>"$lock" && claimed=1 || claimed=""
+        eff="$(effective_max "$output_dir" "$base_max")"
         if [[ -n "$claimed" ]]; then
-            echo "ok $(_read_count "$slot")/$max"
+            echo "ok $(_read_count "$slot")/$eff"
             exit 0
         fi
         if (( $(date +%s) >= deadline )); then
-            echo "timeout $(_read_count "$slot")/$max" >&2
+            echo "timeout $(_read_count "$slot")/$eff" >&2
             exit 1
         fi
         sleep "$POLL_INTERVAL"
     done
+    ;;
+
+  maxcap)
+    # Print the resolved BASE cap (ignores the congestion cap). flux-backoff.sh
+    # `decrease`/`increase` call this to seed the congestion cap from the base.
+    output_dir="${1:?maxcap requires <output_dir>}"; shift || true
+    resolve_max "${1:-}"
     ;;
 
   release)
