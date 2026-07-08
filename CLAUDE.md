@@ -17,10 +17,10 @@ The flux-drive review protocol is documented in `docs/spec/` (flux-drive-spec 1.
 claude --plugin-dir /root/projects/Interverse/plugins/interflux
 
 # Validate structure
-ls skills/*/SKILL.md | wc -l          # Should be 2 (flux-drive engine + flux-review engine; flux-research skill removed in v0.2.61, flux-review extracted from command in BP-C4)
+ls skills/*/SKILL.md | wc -l          # Should be 3 (flux-engine, flux-melange-engine, flux-review-engine; flux-research skill removed in v0.2.61, flux-review extracted from command in BP-C4)
 ls agents/review/*.md | wc -l         # Should be 12
 ls agents/research/*.md | wc -l       # Should be 5
-ls commands/*.md | wc -l              # Should be 7
+ls commands/*.md | wc -l              # Should be 8
 python3 -c "import json; d=json.load(open('.claude-plugin/plugin.json')); print(list(d['mcpServers'].keys()))"  # ['exa']
 grep -l '## Research Directives' config/flux-drive/domains/*.md | wc -l  # Should be 11
 python3 -c "import json; json.load(open('.claude-plugin/plugin.json'))"  # Manifest check
