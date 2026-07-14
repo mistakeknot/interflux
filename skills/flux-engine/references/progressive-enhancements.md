@@ -25,6 +25,20 @@ For each selected agent, retrieve relevant knowledge entries:
        | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sanitize_untrusted.py" 2000 --source knowledge)
    ```
 
+**Graph context (additional, activates when the canongraph MCP is available):**
+Once per review (not per agent), resolve the project under review against the entity
+graph and prepend the result to every agent's knowledge context block:
+1. `mcp__canongraph__resolve` with `name` = the project directory basename, `entity_type: "project"` (fall back to `"plugin"` for interverse plugins). Skip silently on no match or error.
+2. On a hit: `mcp__canongraph__query` with `query_id: "decisions_for_project"` (`params: {name}`) — prior ratified decisions with rationale.
+3. Format (cap ~15 lines):
+   ```
+   ## Graph Context (CanonGraph)
+   {name} — {description} ({status})
+   Prior decisions on file:
+   - {title} ({decided_on}, by {made_by}): {rationale, 1 line}
+   ```
+Reviewers flag findings that would *contradict a prior ratified decision* as P1 with the decision title cited — relitigating a settled call is a process failure unless the document explicitly supersedes it.
+
 **Domain keywords by agent:**
 | Agent | Domain keywords |
 |-------|----------------|
