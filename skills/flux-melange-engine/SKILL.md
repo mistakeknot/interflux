@@ -44,7 +44,8 @@ The **heat ledger** is the only genuinely new object. See `references/ledger-sch
 | 5 — Verify | `phases/verify.md` | **Conditional** cheap-model pass: re-read cited locations for high-novelty / high-risk findings only; stamp `upheld` / `refuted`. |
 | 6 — Score + loop gate | `phases/score.md` | Assay the round, link convergence/disagreement refs across the whole ledger, decrement budget, evaluate the continue predicate → write `should_stop`. |
 | 7 — Synthesize | `phases/synthesize.md` | One Opus agent (the **eye of distance**) over the full ledger surfaces the five views + spice trail; write dated `synthesis.md`. |
-| 8 — Report | inline below | Print ledger + synthesis paths, the per-round hotspot/directive trail, halt reason, total cost, regeneration hints. |
+| 7.5 — Parley | `phases/parley.md` | Only with `--peers` (`references/peer-runtimes.md`): phases 1–7 also ran as independent mirrors on external runtimes (codex/hermes); per-runtime advocates now adversarially exchange concessions/challenges until a moderator detects the fixed point (**epistemic equilibrium**); residual contested topics go to the user for tie-break. |
+| 8 — Report | inline below | Print ledger + synthesis paths, the per-round hotspot/directive trail, halt reason, total cost, regeneration hints; with peers: the equilibrium verdict + contested-topic tie-break. |
 
 The loop is **Phase 3 → 4 → 5 → 6**, re-entering from 6 to 3 while `should_stop == false`.
 
@@ -63,6 +64,8 @@ After charter, choose the execution path. Use the **workflow path** when ALL of:
 3. **Not resuming a prose-mode run** (a non-empty `heat-ledger.jsonl` with no prior workflow run for this SLUG → finish on the prose path).
 
 Otherwise run the **prose path** (Steps 1–3 below). The phase files are the spec for both paths.
+
+**Peer mirrors require the workflow path.** When charter resolved `--peers` (see `phases/charter.md` § Resolve peer runtimes and `references/peer-runtimes.md`) but the prose path is forced (`--interactive`, no Workflow tool), warn and run the primary loop only — the mirror loops and Parley exist only in the script in v1.
 
 **Workflow path:**
 
@@ -127,10 +130,28 @@ To rerun the discovered lenses as a flat review: /flux-drive {INPUT_PATH}
 To regenerate a fused lens: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-fusion-{k}.json
 ```
 
+With `--peers`, append (from the report's `peers` + `equilibrium` fields):
+```
+Peer mirrors:
+  {runtime} ({model}): {rounds} rounds (halt {reason}), {upheld}/{total} upheld — synthesis: {path}
+  {or: "{runtime}: FAILED — {caveat}"}
+
+Parley: {rounds} exchange round(s) — equilibrium {REACHED | NOT REACHED (capped)}
+Consensus: {agreed_count} claims   Contested: {n} topics
+Equilibrium:    {OUTPUT_ROOT}/equilibrium.md
+Disagreements:  {OUTPUT_ROOT}/disagreements.jsonl
+```
+
+**Tie-break (orchestrator only — never inside the workflow):** if `equilibrium.contested` is
+non-empty, present the top topics by heat (≤ 4) via `AskUserQuestion` — one question per topic,
+each runtime's argument as an option (plus "both partially right" / "defer"), attributed by
+runtime. Append the rulings to `equilibrium.md` under `## Rulings` and mention any topics left
+unruled. In non-interactive contexts, list the contested table in the report instead of asking.
+
 ## Notes
 
 - **Crash-safety.** Every phase only *appends* findings or *rewrites status fields* — it never mutates a claim. A mid-loop crash leaves a replayable ledger; rerunning resumes from the last completed round.
 - **Three independent halts** plus an optional soft one: **DRY** (yield → 0), **BUDGET** (accumulator exhausted, hard), **CEILING** (`max_rounds`), and — only in `--interactive` — **GOAL-MET** (AskUserQuestion: keep spending?). `min_rounds = 2` guards against one unlucky round quitting the loop early.
 - **The steering signal is decoupled from raw novelty.** Heat = novelty × risk *yield-density*, not novelty alone — otherwise "go toward novelty" + "novelty = unexplored" manufactures a shallow-novel trickle that never lets DRY fire. `STEER-WIDE` is therefore a *reserved* directive, not forced every round.
-- **Degraded modes.** If `interlens` MCP tools (`combine_lenses` / `find_contrasting_lenses`) are unavailable, fusion falls back to controller heuristics over lens records — an accelerant, not a dependency. If a probe fails, its directive is dropped and the round proceeds with survivors (same graceful-degradation posture as flux-review tracks).
+- **Degraded modes.** If `interlens` MCP tools (`combine_lenses` / `find_contrasting_lenses`) are unavailable, fusion falls back to controller heuristics over lens records — an accelerant, not a dependency. If a probe fails, its directive is dropped and the round proceeds with survivors (same graceful-degradation posture as flux-review tracks). Peer mirrors extend this posture: an undetected runtime is skipped at charter, a dead mirror becomes a caveat (primary unaffected), and Parley is skipped below 2 surviving syntheses (`references/peer-runtimes.md` § Failure semantics).
 - **Relationship to convergence.** flux-review's cross-track convergence is preserved but *reframed and demoted*: high convergence = high confidence but LOW novelty (commodity you can trust but shouldn't be excited by). It is one synthesis section, no longer the headline.

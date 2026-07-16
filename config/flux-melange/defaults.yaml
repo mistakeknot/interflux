@@ -84,6 +84,30 @@ verify:
   novelty_gate: 2        # verify if novelty >= this ...
   risk_gate: 9           # ... OR risk.product >= this
 
+# --- Peer runtimes ------------------------------------------------------------
+#
+# Multi-runtime mirrors (references/peer-runtimes.md): run the SAME loop as
+# epistemically independent mirrors on external agent CLIs, then reconcile the
+# syntheses in the Parley phase (phases/parley.md) — adversarial exchange to
+# epistemic equilibrium, residual disagreements to the user for tie-break.
+# Cost multiplies: N mirrors ~= (N+1)x slots, plus external provider billing.
+#
+# mode: off | auto (detect via scripts/detect-runtimes.sh) | explicit flag list
+# invoke templates are CONFIG so CLI drift is fixable without engine changes;
+# {model} and {projectRoot} are resolved by charter, {promptfile} by the shim.
+#
+peers:
+  mode: off
+  runtimes:
+    codex:
+      model: gpt-5.6-sol
+      invoke: 'cd {projectRoot} && codex exec --full-auto --skip-git-repo-check -c model="{model}" - < {promptfile}'
+    hermes:
+      model: null          # null = the hermes CLI's configured default model
+      invoke: 'cd {projectRoot} && hermes -z "$(cat {promptfile})"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
+  exchange:
+    max_rounds: 3          # Parley cap; fixed point usually lands in 1-2
+
 # --- Quality / model routing ------------------------------------------------
 #
 # economy = all Sonnet (+ skip taste). balanced = Opus on creative/judgment
