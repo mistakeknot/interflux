@@ -16,6 +16,8 @@ Parse `$ARGUMENTS`:
 | `--quality=economy\|balanced\|max` | `balanced` | model routing (see `references/budget-ladder.md`) |
 | `--fusion=auto\|N\|off` | `auto` | fusions/round (auto = ≤ 2; depth-2 only on `--quality=max`) |
 | `--verify=auto\|off\|all` | `auto` | `auto` = gated on `novelty ≥ 2 OR risk.product ≥ 9` |
+| `--peers=off\|auto\|<rt>[:<model>],...` | `off` | multi-runtime mirrors + Parley (see § Resolve peer runtimes; `references/peer-runtimes.md`) |
+| `--exchange-rounds=N` | `3` | Parley exchange cap (fixed point usually lands earlier) |
 | `--interactive` | off | restores per-round confirmation + the GOAL-MET soft-stop prompt |
 
 If the argument is empty, use `AskUserQuestion` to get a target. If it is not a valid path on disk, treat it as inline text (`INPUT_TYPE = text`).
@@ -41,6 +43,28 @@ GOAL          = resolved --goal text
 WEIGHTS       = resolved --weights
 OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
 ```
+
+## Resolve peer runtimes (only when `--peers` ≠ off)
+
+1. Run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtimes.sh` (emits one JSON object; exit 0 always).
+2. `auto` → every detected runtime; explicit list → keep detected entries, log-and-skip the rest
+   (never an error). Claude is always the primary, never a peer.
+3. Per surviving runtime, resolve the model (flag `rt:model` > project yaml > plugin defaults)
+   and bake the invoke template: substitute `{model}`/`{model_flag}` and `{projectRoot}`, leaving
+   only `{promptfile}` for the shim. Result: `PEERS = [{kind, model, invoke}]`.
+   **Validate before baking** (the values land inside shell commands): runtime kind must match
+   `^[a-z][a-z0-9-]{1,15}$`, model must match `^[A-Za-z0-9._:-]{1,64}$` — REJECT the flag
+   otherwise (the workflow script re-validates at its chokepoint and will throw). Keep the
+   template's double quotes around `{projectRoot}` and `{promptfile}`.
+4. Create per-mirror artifact dirs: `OUTPUT_ROOT/mirrors/{kind}/lenses/` and an empty
+   `OUTPUT_ROOT/mirrors/{kind}/heat-ledger.jsonl` for each peer.
+5. Add to the plan display: `Peers: {kind (model), ...} — cost ~×(N+1) slots + external billing`
+   plus the trust warning: `⚠ peer mirrors run external CLIs with auto-approved tool use
+   (codex: workspace-write sandbox; hermes: unsandboxed)`. Pass `peers` + `exchange` through to
+   the workflow args (references/workflow-args.md).
+
+Peer mirrors REQUIRE the workflow fast-path: in `--interactive` (prose path) warn and run the
+primary loop only.
 
 ## Initialize ledger + state
 
