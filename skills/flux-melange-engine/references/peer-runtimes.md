@@ -85,6 +85,25 @@ here; shims are haiku-cheap). Parley adds ≤ `(runtimes + 1) × exchange.max_ro
 outside the slot pools. Charter multiplies the plan display accordingly; the 30-slot hard cap
 applies per loop, not to the sum.
 
+## Trust boundary
+
+Peer mirrors run external agents with **auto-approved tool use** — that is what makes headless
+mirrors possible, and it is a real permission decision, not an implementation detail:
+
+- `codex exec --full-auto` = workspace-write **sandbox scoped to projectRoot** + auto-approval.
+- `hermes --yolo` = auto-approval with **no sandbox**. Prefer codex-only `--peers` on repos you
+  do not fully trust; enable the hermes mirror only where an unsandboxed agent is acceptable.
+- Only enable `--peers` at all on targets/repos you trust: mirror probes read the target and
+  repo files and write findings artifacts, and prompt content includes prior agents' output.
+
+Injection hardening: `kind` and `model` are the only externally-influenced strings interpolated
+into shell command lines, and both are regex-validated twice — at charter
+(`^[a-z][a-z0-9-]{1,15}$` / `^[A-Za-z0-9._:-]{1,64}$`) and again at the workflow script's parse
+chokepoint (which throws). Templates keep `{projectRoot}`/`{promptfile}` double-quoted; the shim
+constrains prompt filenames to `[a-z0-9-]`. Invoke templates themselves are **trusted config**
+(plugin defaults or the project's own `flux-melange.yaml`) — a hostile project config is already
+outside this threat model, same as hooks.
+
 ## Failure semantics
 
 | Failure | Effect |

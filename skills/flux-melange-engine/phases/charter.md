@@ -52,10 +52,16 @@ OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
 3. Per surviving runtime, resolve the model (flag `rt:model` > project yaml > plugin defaults)
    and bake the invoke template: substitute `{model}`/`{model_flag}` and `{projectRoot}`, leaving
    only `{promptfile}` for the shim. Result: `PEERS = [{kind, model, invoke}]`.
+   **Validate before baking** (the values land inside shell commands): runtime kind must match
+   `^[a-z][a-z0-9-]{1,15}$`, model must match `^[A-Za-z0-9._:-]{1,64}$` — REJECT the flag
+   otherwise (the workflow script re-validates at its chokepoint and will throw). Keep the
+   template's double quotes around `{projectRoot}` and `{promptfile}`.
 4. Create per-mirror artifact dirs: `OUTPUT_ROOT/mirrors/{kind}/lenses/` and an empty
    `OUTPUT_ROOT/mirrors/{kind}/heat-ledger.jsonl` for each peer.
-5. Add to the plan display: `Peers: {kind (model), ...} — cost ~×(N+1) slots + external billing`,
-   and pass `peers` + `exchange` through to the workflow args (references/workflow-args.md).
+5. Add to the plan display: `Peers: {kind (model), ...} — cost ~×(N+1) slots + external billing`
+   plus the trust warning: `⚠ peer mirrors run external CLIs with auto-approved tool use
+   (codex: workspace-write sandbox; hermes: unsandboxed)`. Pass `peers` + `exchange` through to
+   the workflow args (references/workflow-args.md).
 
 Peer mirrors REQUIRE the workflow fast-path: in `--interactive` (prose path) warn and run the
 primary loop only.

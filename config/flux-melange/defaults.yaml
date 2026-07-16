@@ -96,15 +96,22 @@ verify:
 # invoke templates are CONFIG so CLI drift is fixable without engine changes;
 # {model} and {projectRoot} are resolved by charter, {promptfile} by the shim.
 #
+# TRUST BOUNDARY (peer-runtimes.md § Trust boundary): these templates run
+# external agents with AUTO-APPROVED tool use — codex --full-auto is sandboxed
+# to workspace-write in projectRoot; hermes --yolo is NOT sandboxed. Only
+# enable --peers on targets/repos you trust. {model} values are validated
+# (letters/digits/._:- only) at both charter and the workflow chokepoint
+# before substitution; paths stay double-quoted in the templates.
+#
 peers:
   mode: off
   runtimes:
     codex:
       model: gpt-5.6-sol
-      invoke: 'cd {projectRoot} && codex exec --full-auto --skip-git-repo-check -c model="{model}" - < {promptfile}'
+      invoke: 'cd "{projectRoot}" && codex exec --full-auto --skip-git-repo-check -c model="{model}" - < "{promptfile}"'
     hermes:
       model: null          # null = the hermes CLI's configured default model
-      invoke: 'cd {projectRoot} && hermes -z "$(cat {promptfile})"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
+      invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
   exchange:
     max_rounds: 3          # Parley cap; fixed point usually lands in 1-2
 

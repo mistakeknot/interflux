@@ -44,6 +44,19 @@ for (const k of ['inputPath', 'projectRoot', 'outputRoot', 'pluginRoot', 'slug',
 const PEERS = Array.isArray(A.peers) ? A.peers.filter((p) => p && p.kind && p.invoke) : []
 const EX = { maxRounds: 3, ...(A.exchange || {}) }
 
+// Peer contract hardening (references/peer-runtimes.md § Trust boundary):
+// kind and model are interpolated into shell command lines by the shim, so
+// they are validated HERE at the chokepoint — charter validation alone is
+// prose and can drift. invoke templates are trusted config by design, but
+// must at least carry the {promptfile} placeholder to be usable at all.
+const RT_KIND = /^[a-z][a-z0-9-]{1,15}$/
+const RT_MODEL = /^[A-Za-z0-9._:-]{1,64}$/
+for (const p of PEERS) {
+  if (!RT_KIND.test(p.kind)) throw new Error(`flux-melange: invalid peer runtime kind ${JSON.stringify(p.kind)}`)
+  if (p.model != null && !RT_MODEL.test(String(p.model))) throw new Error(`flux-melange: invalid peer model ${JSON.stringify(p.model)} — letters/digits/._:- only`)
+  if (!String(p.invoke).includes('{promptfile}')) throw new Error(`flux-melange: peer invoke template for ${p.kind} lacks {promptfile}`)
+}
+
 const Q = A.quality
 const MODEL = {
   designAdjacent: Q === 'max' ? 'opus' : 'sonnet',
@@ -107,7 +120,7 @@ function makeRun(rt) {
 function shimWrap(rt, inner, schema) {
   return `You are a TRANSPORT SHIM for the ${rt.kind} CLI${rt.model ? ` (model ${rt.model})` : ''}. You never answer the task yourself — the external model does ALL the thinking. Your only judgment is mechanical: run, extract, relay.
 
-1. mkdir -p ${A.outputRoot}/mirrors/${rt.kind}/tmp and write the task below (the text between <<<TASK and TASK>>>, exclusive) to a uniquely named .md file there. Append this exact final paragraph:
+1. mkdir -p ${A.outputRoot}/mirrors/${rt.kind}/tmp and write the task below (the text between <<<TASK and TASK>>>, exclusive) to a uniquely named .md file there (filename: lowercase letters, digits, hyphens only — it is substituted into a shell command). Append this exact final paragraph:
    "End your reply with a single JSON object (no code fence, no prose after it) matching this JSON Schema: ${JSON.stringify(schema)}"
 2. Execute it with ONE Bash call (timeout: 600000), substituting your prompt file path for {promptfile}:
    ${rt.invoke}
