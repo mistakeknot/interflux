@@ -34,7 +34,7 @@ the CLI's final message from that file instead of scraping stdout):
 
 | Runtime | Template (default) |
 |---------|--------------------|
-| codex | `codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -o "{outfile}" - < "{promptfile}"` |
+| codex | `codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="high" -o "{outfile}" - < "{promptfile}"` |
 | hermes | `cd {projectRoot} && hermes -z "$(cat {promptfile})" [-m {model}] --yolo` |
 
 Notes: `codex exec` (never bare `codex` — that opens interactive mode); `--full-auto` =
@@ -50,7 +50,10 @@ files; hermes has no `-o`/`{outfile}` equivalent, so its shim path scrapes stdou
 `service_tier="fast"` is codex fast mode (verified headless-compatible 2026-07-16): 1.5x
 output speed at 2.5x ChatGPT credit rate for GPT-5.6-class models — default-on because
 mirror latency sits directly on the Parley barrier; remove the flag in project config to
-trade wall clock for credits. Both templates are config, not code — fix CLI drift in
+trade wall clock for credits. `model_reasoning_effort="high"` pins probes below a global
+xhigh default: mirror tasks are scoped and numerous, so xhigh multiplies reasoning tokens
+(latency and cost both) for marginal depth at this task size — raise per-project if a
+mirror's misses look depth-shaped rather than coverage-shaped. Both templates are config, not code — fix CLI drift in
 `flux-melange.yaml` without touching the engine.
 
 ## The transport shim

@@ -115,7 +115,11 @@ peers:
       # service_tier=fast: 1.5x output speed at 2.5x credit rate (GPT-5.6-class). Mirrors sit
       # on the Parley barrier's critical path, so wall clock buys real latency here; drop the
       # flag in your project flux-melange.yaml if credit burn matters more than wall clock.
-      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -o "{outfile}" - < "{promptfile}"'
+      # model_reasoning_effort=high: pins mirror probes below a user's global default when
+      # that is xhigh — probe tasks are scoped and numerous, and xhigh multiplies reasoning
+      # tokens (wall clock AND cost) for marginal depth gain at this task size. Raise back
+      # to xhigh per-project if a mirror's misses look depth-shaped.
+      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="high" -o "{outfile}" - < "{promptfile}"'
     hermes:
       model: null          # null = the hermes CLI's configured default model
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
