@@ -24,7 +24,7 @@ Mines progressively more distant knowledge domains for structural isomorphisms. 
 ```
 /flux-melange <path> --goal="..."
 ```
-The apex of the ladder. Instead of fanning out a fixed set of tracks once and synthesizing, it runs **adaptive rounds** that steer toward the heat (novelty / risk / disagreement) the previous round found, **fuses** high-tension lens pairs into hybrid intersection-detectors, scores findings on **Novelty / Risk / Taste**, and surfaces the spice — not just severity. Costs more (it loops), so reach for it on high-stakes targets, not routine PRs.
+The apex of the ladder. Instead of fanning out a fixed set of tracks once and synthesizing, it runs **adaptive rounds** that steer toward the heat (novelty / risk / disagreement) the previous round found, **fuses** high-tension lens pairs into hybrid intersection-detectors, scores findings on **Novelty / Risk / Taste**, and surfaces the spice — not just severity. **This is the default for discovery-shaped work**: gap analyses ("what are we missing"), design-space and plan exploration, planning research, and any high-stakes analysis or review where a missed insight is expensive. Costs more (it loops), so routine PRs and CI stay on `/flux-drive`.
 
 ---
 
@@ -34,7 +34,7 @@ The apex of the ladder. Instead of fanning out a fixed set of tracks once and sy
 |---------|------|-------------|
 | **`/flux-review`** | **Primary entry point** — generate + review + synthesize | Reviewing anything significant |
 | `/flux-drive` | Quick review with existing agents | Routine PRs, repeat reviews, CI pipelines |
-| `/flux-melange` | **Apex** — goal-seeking adaptive loop, lens fusion, novelty/risk/taste | High-stakes deep review where a missed insight is costly |
+| `/flux-melange` | **Apex** — goal-seeking adaptive loop, lens fusion, novelty/risk/taste | **Default for open-ended analysis/planning/gap questions**; high-stakes review where a missed insight is costly |
 | `/flux-explore` | Domain exploration without a review target | Brainstorming, architectural inspiration |
 | `/flux-research` | Multi-agent research on a question | Answering research questions, not reviewing files |
 | `/flux-gen` | Generate agents only (no review) | Building agent libraries, customizing before review |
@@ -56,6 +56,8 @@ Most of the time, `/flux-review` is the right choice. Use the primitives when:
 - **Multi-round progressive distance** — you want 3+ rounds of increasingly distant domains with accumulated context between rounds (flux-review runs all tracks in parallel without inter-track context)
 
 ### Use `/flux-melange` instead when:
+- **The question is open-ended** — gap analysis, "what are we missing", design-space mapping, pre-mortems, planning research. Discovery-shaped questions are melange's home turf: adaptive rounds + lens fusion find seams a fixed one-shot fan-out can't. Proven on non-code targets — a sim gap-analysis run (shadow-work, 2026-07-15) produced 19 code-verified findings across 6 generated lenses, including from maximally distant domains (campanology, cathedral acoustics).
+- **You're analyzing or planning, not just reviewing code** — briefs, PRDs, design docs, research questions where the deliverable is discovery rather than verification. Phrase the goal as the question: `--goal="what world systems are we missing"`.
 - **A missed insight is expensive** — security-sensitive code, migrations, architecture pivots, anything where you want the loop to *chase* the scary-but-unconfirmed finding rather than report it once and move on
 - **You have a goal, not just a target** — `--goal="find the data-loss path"` steers every round toward that goal; `--weights=risk-hunt` or `--weights=taste` tilts what counts as spice
 - **You want lenses that combine, not just stack** — flux-review's lenses only ever *agree* (convergence); melange *fuses* them to surface findings at their intersection that neither parent could see alone
@@ -119,8 +121,8 @@ A: `/flux-review path` for the first review of a significant change. `/flux-driv
 **Q: Which command for a PR?**
 A: `/flux-drive`. PRs are routine — agents already exist, and flux-drive is what the quality-gates pipeline calls.
 
-**Q: Which command for a design brainstorm?**
-A: `/flux-explore "topic"` if you want domain inspiration without a specific target. `/flux-review doc.md --creative` if you want to review a design document with maximum creative depth.
+**Q: Which command for a design brainstorm, gap analysis, or planning research?**
+A: `/flux-melange <target> --goal="..."` whenever there is a target corpus and a discovery question — this is the default for open-ended analysis and planning work. `/flux-explore "topic"` for pure domain inspiration with no target. `/flux-review doc.md --creative` for a one-shot creative review of a document.
 
 **Q: Do I ever need to run `/flux-gen` directly?**
 A: Rarely. `/flux-review` and `/flux-explore` both call flux-gen internally. Run it directly only if you want agents without any review or synthesis step, or if you want to customize agents before reviewing.
