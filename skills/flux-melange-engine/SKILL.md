@@ -136,6 +136,8 @@ amendments the loop itself never applies), append:
 Prescriptions (apply to the target/brief before re-running or acting on this review):
   {id} [{status}] {location}: {prescription}
 ```
+Entries are sorted upheld-first; `[raw]` means the finding never cleared verification (below
+the verify gate or budget-clamped) — treat those as advisory, not verified.
 
 With `--peers`, append (from the report's `peers` + `equilibrium` fields):
 ```

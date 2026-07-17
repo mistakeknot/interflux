@@ -451,10 +451,19 @@ const severityRef =
 // Settled facts threaded into every probe prompt (mk-8wk fix b): verified
 // resolutions from earlier rounds are the loop's working memory — without
 // this, later rounds re-litigate what verify already settled.
-function settledFactsBlock(R) {
+function settledFactsBlock(R, directive) {
+  // f-013: never tell a probe "do not re-litigate X" when its directive says
+  // "adjudicate/confirm X" — exclude facts at the directive's own target region.
+  const targetKey =
+    directive && directive.target && directive.target.location
+      ? normKey(directive.target.location)
+      : null;
   const settled = R.allFindings
     .filter((f) => f.status === "upheld")
-    .sort((x, y) => heat(y) - heat(x))
+    .filter((f) => !targetKey || normKey(f.location) !== targetKey)
+    // f-005: deterministic tiebreak — heat ties must not reorder across
+    // resumes or the prompt text (and with it the resume cache key) churns.
+    .sort((x, y) => heat(y) - heat(x) || String(x.id).localeCompare(String(y.id)))
     .slice(0, 10);
   if (!settled.length) return "";
   return `
@@ -467,11 +476,14 @@ const remediationRef = `If your verdict implies amending the REVIEW TARGET/BRIEF
 
 function probePrompt(R, directive, k, round) {
   const dir = `${R.base}/round-${round}/probe-${k}`;
+  // f-007: STEER-WIDE is exploratory — target/brief amendment instructions
+  // don't apply to findings from regions the brief hasn't framed yet.
+  const remediationLine =
+    directive.type === "STEER-WIDE" ? "" : `${remediationRef}\n`;
   const base = `Run a focused lens-based review probe. Goal (north star): "${A.goal}".
 Target: ${A.inputPath}
 ${severityRef}
-${remediationRef}
-${settledFactsBlock(R)}Output dir for findings files: ${dir}
+${remediationLine}${settledFactsBlock(R, directive)}Output dir for findings files: ${dir}
 ${FINDINGS_FILE_CONTRACT}`;
   if (directive.type === "DEEPEN") {
     return `${base}
@@ -677,20 +689,30 @@ Return the structured output (findings array with scores + disagreements).`,
     );
     return [];
   }
-  const scored = assay.findings.map((f, i) => ({
-    ...f,
-    round,
-    status: "raw",
-    claim: f.claim || (rawFindings[i] ? rawFindings[i].claim : f.slug),
-    intersection_justification: rawFindings[i]
-      ? rawFindings[i].intersection_justification || null
-      : null,
-    // mk-8wk: the assayer scores; it doesn't relay prose fields — rescue
-    // the probe's remediation (target/brief amendment) and suggestion from
-    // the raw finding so they survive into the ledger state and report.
-    suggestion: f.suggestion || (rawFindings[i] ? rawFindings[i].suggestion : null) || null,
-    remediation: f.remediation || (rawFindings[i] ? rawFindings[i].remediation : null) || null,
-  }));
+  // f-006: index alignment with rawFindings is the assayer CONTRACT, but it
+  // degrades silently if the assayer drops/merges — prefer slug match, fall
+  // back to position, and make any length mismatch loud.
+  if (assay.findings.length !== rawFindings.length)
+    log(
+      `${R.pfx}round ${round}: assayer returned ${assay.findings.length} findings for ${rawFindings.length} raw — index alignment degraded, matching by slug`,
+    );
+  const scored = assay.findings.map((f, i) => {
+    const raw = rawFindings.find((r) => r.slug === f.slug) || rawFindings[i] || null;
+    return {
+      ...f,
+      round,
+      status: "raw",
+      claim: f.claim || (raw ? raw.claim : f.slug),
+      intersection_justification: raw
+        ? raw.intersection_justification || null
+        : null,
+      // mk-8wk: the assayer scores; it doesn't relay prose fields — rescue
+      // the probe's remediation (target/brief amendment) and suggestion from
+      // the raw finding so they survive into the ledger state and report.
+      suggestion: f.suggestion || (raw ? raw.suggestion : null) || null,
+      remediation: f.remediation || (raw ? raw.remediation : null) || null,
+    };
+  });
   for (const f of scored) {
     R.nextFindingNum += 1;
     R.allFindings.push(f);
@@ -716,14 +738,19 @@ Return the structured output (findings array with scores + disagreements).`,
 
 async function verifyRound(R, round, scored) {
   if (A.verify.mode === "off") return;
-  const gated = scored.filter(
-    (f) =>
-      f.status === "raw" &&
-      (A.verify.mode === "all" ||
-        f.emergent === true ||
-        f.novelty >= A.verify.noveltyGate ||
-        f.risk_product >= A.verify.riskGate),
-  );
+  // f-014: heat-order before chunking — the slot clamp drops TAIL chunks, so
+  // without this a high-risk cluster can be starved off verification by
+  // array position and re-qualify as an unconfirmed DEEPEN candidate.
+  const gated = scored
+    .filter(
+      (f) =>
+        f.status === "raw" &&
+        (A.verify.mode === "all" ||
+          f.emergent === true ||
+          f.novelty >= A.verify.noveltyGate ||
+          f.risk_product >= A.verify.riskGate),
+    )
+    .sort((x, y) => heat(y) - heat(x) || String(x.id).localeCompare(String(y.id)));
   if (!gated.length) return;
   const chunks = [];
   for (let i = 0; i < gated.length; i += 5) chunks.push(gated.slice(i, i + 5));
@@ -1014,7 +1041,17 @@ then write the lens record to ${R.lensesDir}/{name}.json. Return the structured 
     });
     if (d.type === "PROBE-DISAGREEMENT")
       R.resolvedDisagreements.add(normKey(d.target.location));
-    if (res && d.type === "DEEPEN" && d.target && d.target.cluster_id)
+    // f-002/f-009: only a dispatch that actually RETURNED findings counts as
+    // the cluster's one confirm-or-refute answer — an empty/failed probe must
+    // not permanently close the cluster for DEEPEN.
+    if (
+      res &&
+      Array.isArray(res.findings) &&
+      res.findings.length > 0 &&
+      d.type === "DEEPEN" &&
+      d.target &&
+      d.target.cluster_id
+    )
       R.deepenedClusters.add(d.target.cluster_id);
     return res ? { directive: d, findings: res.findings } : null;
   });
@@ -1359,7 +1396,15 @@ const prescriptionsOf = (R) =>
       location: f.location,
       status: f.status,
       prescription: f.remediation,
-    }));
+    }))
+    // f-001/f-011: raw (unverified — below the verify gate or clamped) stays
+    // included but visibly ranked below verified; consumers treat raw as
+    // advisory. Every entry carries `status` as the label.
+    .sort(
+      (x, y) =>
+        (x.status === "upheld" ? 0 : 1) - (y.status === "upheld" ? 0 : 1) ||
+        String(x.id).localeCompare(String(y.id)),
+    );
 
 const runReport = (R) => ({
   runtime: R.rt.kind,

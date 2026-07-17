@@ -30,6 +30,17 @@ Spawn an adjacent lens at the **exact location** of a high-risk, low-convergence
   `raw` forever, and was re-DEEPENed two rounds running — both probes merely
   re-confirming the already-settled neighbor. The controller logs
   `settled-cluster gate closed <cids> for DEEPEN` when the gate fires.
+  Deliberate coarseness: clause (c) matches on `normKey` (line-ranges stripped —
+  whole-file/section granularity) and closures are one-way. That CAN close a
+  genuinely distinct finding that shares a file with a settled one — accepted,
+  because the original misfire was precisely cross-cluster (requiring a shared
+  cluster_id would have let it through), and a DEEPEN probe reads the whole
+  region anyway. Clause (b) counts only dispatches that RETURNED findings (an
+  empty/failed probe doesn't close the cluster) and is in-run state: the
+  workflow path rebuilds it on resume via journal replay; prose-mode resume
+  degrades to clauses (a)+(c) only. Note: settled-facts threading and clause
+  (a)/(c) all depend on `status: upheld`, so under `--verify=off` the gate
+  reduces to clause (b) and settled-facts threading is inert.
 
 ### FUSE — toward a lens intersection
 Construct a fused lens from the two hottest non-redundant lenses (per `fusion.md`) and probe their intersection.
