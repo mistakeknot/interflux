@@ -187,7 +187,7 @@ function shimWrap(rt, inner, schema) {
     : `Take the FINAL JSON object from stdout (the CLI may print logs first).`;
   return `You are a TRANSPORT SHIM for the ${rt.kind} CLI${rt.model ? ` (model ${rt.model})` : ""}. You never answer the task yourself — the external model does ALL the thinking. Your only judgment is mechanical: run, extract, relay.
 
-1. mkdir -p ${A.outputRoot}/mirrors/${rt.kind}/tmp and write the task below (the text between <<<TASK and TASK>>>, exclusive) to a uniquely named .md file there (filename: lowercase letters, digits, hyphens only — it is substituted into a shell command). Append this exact final paragraph:
+1. Create a PRIVATE staging dir with ONE Bash call — \`mkdir -p "${A.outputRoot}/mirrors/${rt.kind}/tmp" && mktemp -d "${A.outputRoot}/mirrors/${rt.kind}/tmp/shim-XXXXXX"\` — and write the task below (the text between <<<TASK and TASK>>>, exclusive) to a file named task.md INSIDE that dir. Never write task files directly in tmp/ — concurrent shims collide there; mktemp is what guarantees uniqueness, not your filename choice. Append this exact final paragraph to the task file:
    "End your reply with a single JSON object (no code fence, no prose after it) matching this JSON Schema: ${JSON.stringify(schema)}"
 2. Execute it with ONE Bash call (timeout: 600000), substituting your prompt file path for {promptfile}${substNote}:
    ${rt.invoke}

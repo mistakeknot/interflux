@@ -56,10 +56,14 @@ Workflow scripts can only spawn Claude agents, so each mirror call is relayed by
 haiku agent whose entire charter is *run the task on the external CLI and relay the structured
 output verbatim*. Rules the shim enforces:
 
-1. Writes the task prompt to `{outputRoot}/mirrors/{kind}/tmp/` and appends the JSON Schema the
-   external model must satisfy (the same schema the native path validates against).
+1. Stages the task prompt in a private `mktemp -d` dir under `{outputRoot}/mirrors/{kind}/tmp/`
+   (`shim-XXXXXX/task.md` — mktemp, not filename choice, is what makes concurrent shims
+   collision-proof) and appends the JSON Schema the external model must satisfy (the same
+   schema the native path validates against).
 2. One Bash call, 600s timeout, using the invocation template.
-3. Extracts the FINAL JSON object from stdout; on parse failure re-asks the external CLI once.
+3. Extracts the FINAL JSON object — from the `{outfile}` final-message file when the template
+   carries that placeholder, otherwise from stdout; on parse failure re-asks the external CLI
+   once.
 4. Relays verbatim — the shim never adds, drops, merges, rescores, or rewords. Shim model is
    haiku *by construction*: transport must stay too dumb to contaminate the mirror's
    independence.
