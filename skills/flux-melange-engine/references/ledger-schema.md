@@ -54,6 +54,7 @@ Field contract:
 | `disagreement_refs` | string[] | score phase | ids of findings that *contradict* this one (same location, opposite verdict) |
 | `intersection_justification` | string\|null | fused probe | required for `fusion` findings; why BOTH parents were needed |
 | `evidence` | string | reviewer | the concrete artifact citation backing the claim |
+| `remediation` | string (optional) | reviewer | ONE imperative sentence amending the review TARGET/BRIEF itself (mk-8wk) — routed to the report's `prescriptions`; distinct from `suggestion` (ordinary fix) |
 | `status` | `raw` \| `upheld` \| `refuted` | verify phase | `raw` until verified or below the verify threshold |
 
 ## `melange-state.json` — rewritten each round (the controller's working memory)

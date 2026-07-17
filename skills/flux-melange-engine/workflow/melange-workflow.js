@@ -155,6 +155,7 @@ function makeRun(rt) {
     lensRecords: {},
     fusedPairs: [],
     resolvedDisagreements: new Set(),
+    deepenedClusters: new Set(),
     gainHistory: [],
     spiceTrail: [],
     coverageKeys: new Set(),
@@ -253,6 +254,7 @@ const PROBE_SCHEMA = {
           location: { type: "string" },
           evidence: { type: "string" },
           suggestion: { type: "string" },
+          remediation: { type: "string" },
           taste_flag: { type: "boolean" },
           intersection_justification: { type: ["string", "null"] },
         },
@@ -446,12 +448,30 @@ actual repo files the target cites) score higher than speculation.`;
 const severityRef =
   "Severity: P0 = would corrupt/block the whole design; P1 = must fix before implementing; P2 = degrades quality; P3 = polish.";
 
+// Settled facts threaded into every probe prompt (mk-8wk fix b): verified
+// resolutions from earlier rounds are the loop's working memory — without
+// this, later rounds re-litigate what verify already settled.
+function settledFactsBlock(R) {
+  const settled = R.allFindings
+    .filter((f) => f.status === "upheld")
+    .sort((x, y) => heat(y) - heat(x))
+    .slice(0, 10);
+  if (!settled.length) return "";
+  return `
+SETTLED FACTS — already verified this run. Do NOT re-litigate, re-confirm, or spend findings on these; build on them:
+${settled.map((f) => `- ${f.claim} (${f.location})`).join("\n")}
+`;
+}
+
+const remediationRef = `If your verdict implies amending the REVIEW TARGET/BRIEF itself (a settled fact the brief contradicts, a framing to drop, a question to add), put that amendment as ONE imperative sentence in the finding's "remediation" field — it is routed to the final report's prescriptions. Use "suggestion" for ordinary code/design fixes; "remediation" only for target/brief amendments.`;
+
 function probePrompt(R, directive, k, round) {
   const dir = `${R.base}/round-${round}/probe-${k}`;
   const base = `Run a focused lens-based review probe. Goal (north star): "${A.goal}".
 Target: ${A.inputPath}
 ${severityRef}
-Output dir for findings files: ${dir}
+${remediationRef}
+${settledFactsBlock(R)}Output dir for findings files: ${dir}
 ${FINDINGS_FILE_CONTRACT}`;
   if (directive.type === "DEEPEN") {
     return `${base}
@@ -665,6 +685,11 @@ Return the structured output (findings array with scores + disagreements).`,
     intersection_justification: rawFindings[i]
       ? rawFindings[i].intersection_justification || null
       : null,
+    // mk-8wk: the assayer scores; it doesn't relay prose fields — rescue
+    // the probe's remediation (target/brief amendment) and suggestion from
+    // the raw finding so they survive into the ledger state and report.
+    suggestion: f.suggestion || (rawFindings[i] ? rawFindings[i].suggestion : null) || null,
+    remediation: f.remediation || (rawFindings[i] ? rawFindings[i].remediation : null) || null,
   }));
   for (const f of scored) {
     R.nextFindingNum += 1;
@@ -828,7 +853,19 @@ function buildHeatMapAndDirectives(R, round) {
         budget_weight: 0.2,
       });
   }
-  const unconfirmed = Object.entries(R.clusters)
+  // Settled-cluster gate (mk-8wk): DEEPEN exists to confirm-or-refute. A
+  // cluster is closed for DEEPEN when (a) any member is upheld (existing
+  // rule), (b) it was already DEEPENed this run — one confirm-or-refute
+  // dispatch per cluster, whatever the verify gate later does with the
+  // yield — or (c) its locations overlap a settled cluster's region:
+  // probing the same code region re-litigates the settled thing (live-run
+  // evidence: c-commitsha-duplicated stayed raw below the verify gates and
+  // was re-DEEPENed in rounds 1 AND 2, both probes re-confirming the
+  // already-settled sibling c-commitsha-env-unreachable).
+  const settledRegions = new Set();
+  for (const f of R.allFindings)
+    if (f.status === "upheld") settledRegions.add(normKey(f.location));
+  const deepenCandidates = Object.entries(R.clusters)
     .map(([cid, ids]) => {
       const members = ids
         .map((id) => R.allFindings.find((f) => f.id === id))
@@ -836,9 +873,19 @@ function buildHeatMapAndDirectives(R, round) {
       const maxRisk = Math.max(...members.map((f) => f.risk_product));
       const confirmed = members.some((f) => f.status === "upheld");
       const distinctLenses = new Set(members.flatMap((f) => f.agents)).size;
-      return { cid, members, maxRisk, confirmed, distinctLenses };
+      const gated =
+        R.deepenedClusters.has(cid) ||
+        members.some((f) => settledRegions.has(normKey(f.location)));
+      return { cid, members, maxRisk, confirmed, distinctLenses, gated };
     })
-    .filter((c) => !c.confirmed && c.maxRisk >= 6 && c.distinctLenses < 3)
+    .filter((c) => !c.confirmed && c.maxRisk >= 6 && c.distinctLenses < 3);
+  const gatedOut = deepenCandidates.filter((c) => c.gated);
+  if (gatedOut.length)
+    log(
+      `${R.pfx}round ${round}: settled-cluster gate closed ${gatedOut.map((c) => c.cid).join(", ")} for DEEPEN`,
+    );
+  const unconfirmed = deepenCandidates
+    .filter((c) => !c.gated)
     .sort((x, y) => y.maxRisk - x.maxRisk);
   for (const c of unconfirmed.slice(0, 2 - directives.length > 0 ? 2 : 1)) {
     const top = c.members.sort((x, y) => heat(y) - heat(x))[0];
@@ -967,6 +1014,8 @@ then write the lens record to ${R.lensesDir}/{name}.json. Return the structured 
     });
     if (d.type === "PROBE-DISAGREEMENT")
       R.resolvedDisagreements.add(normKey(d.target.location));
+    if (res && d.type === "DEEPEN" && d.target && d.target.cluster_id)
+      R.deepenedClusters.add(d.target.cluster_id);
     return res ? { directive: d, findings: res.findings } : null;
   });
   const results = (await parallel(thunks)).filter(Boolean);
@@ -1298,6 +1347,20 @@ Return the structured output.`,
 }
 
 // ---- report ---------------------------------------------------------------------
+// mk-8wk: mid-run remediation directives get an explicit routing — every
+// non-refuted finding carrying a `remediation` (a target/brief amendment,
+// distinct from ordinary fix suggestions) surfaces here as a prescription
+// for the orchestrator/user to apply. The loop never edits its own target.
+const prescriptionsOf = (R) =>
+  R.allFindings
+    .filter((f) => f.remediation && f.status !== "refuted")
+    .map((f) => ({
+      id: f.id,
+      location: f.location,
+      status: f.status,
+      prescription: f.remediation,
+    }));
+
 const runReport = (R) => ({
   runtime: R.rt.kind,
   model: R.rt.model || null,
@@ -1311,6 +1374,7 @@ const runReport = (R) => ({
   fusions: R.fusionStats || { attempted: R.fusedPairs.length, emergent: 0 },
   synthesis_path: R.synth ? R.synth.synthesis_path : null,
   ledger_path: R.ledger,
+  prescriptions: prescriptionsOf(R),
 });
 
 return {
@@ -1339,6 +1403,7 @@ return {
     ...mirrorCaveats,
   ],
   ledger_path: primary.ledger,
+  prescriptions: prescriptionsOf(primary),
   peers: PEERS.length ? runs.slice(1).map(runReport) : undefined,
   equilibrium,
 };

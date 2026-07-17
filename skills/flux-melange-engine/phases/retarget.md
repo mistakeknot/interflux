@@ -19,7 +19,7 @@ Also recompute `gain_history` for the last round: `yield` (count of verified, ne
 Apply the selection priority from `references/directive-vocabulary.md`, filtered by the `GOAL` as a relevance test ("does pursuing this directive serve the stated goal?"):
 
 1. **PROBE-DISAGREEMENT** for each open high-value `disagreement_flag`.
-2. **DEEPEN** the top unconfirmed high-risk clusters (`risk.product` high, `convergence_refs == []`, `status != upheld`).
+2. **DEEPEN** the top unconfirmed high-risk clusters (`risk.product` high, `convergence_refs == []`, `status != upheld`) — subject to the **settled-cluster gate** (mk-8wk, see directive-vocabulary.md): skip clusters already DEEPENed this run and clusters whose locations overlap a settled (upheld) region; log the cids the gate closes.
 3. **FUSE** the top non-redundant lens pairs above the SHARED_HEAT gate (≤ fusion budget; depth-2 only on `--quality=max`).
 4. **STEER-WIDE** *iff* last round's `novel_cluster_rate ≥ wide_threshold` (default 0.6) — else **skip and reallocate its weight**.
 

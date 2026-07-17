@@ -130,6 +130,13 @@ To rerun the discovered lenses as a flat review: /flux-drive {INPUT_PATH}
 To regenerate a fused lens: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-fusion-{k}.json
 ```
 
+If the report carries non-empty `prescriptions` (mk-8wk: mid-run remediations — target/brief
+amendments the loop itself never applies), append:
+```
+Prescriptions (apply to the target/brief before re-running or acting on this review):
+  {id} [{status}] {location}: {prescription}
+```
+
 With `--peers`, append (from the report's `peers` + `equilibrium` fields):
 ```
 Peer mirrors:

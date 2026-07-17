@@ -20,6 +20,16 @@ Each directive in `round-N-directives.json`:
 Spawn an adjacent lens at the **exact location** of a high-risk, low-convergence cluster (found once, scary, unconfirmed) to confirm or refute it.
 - **Fires when:** a cluster has high `risk.product` but `convergence_refs == []` and `status != upheld`.
 - **Effect:** narrows compute onto a known-hot point. The opposite of flux-explore's outward drift.
+- **Settled-cluster gate (mk-8wk).** A cluster is CLOSED for DEEPEN when any of:
+  (a) any member is `upheld` (the existing rule); (b) it has already received one
+  DEEPEN this run — DEEPEN is confirm-or-refute, one dispatch answers it, whatever
+  the verify gate later does with the yield; (c) any member's normalized location
+  overlaps a settled (upheld) cluster's region — probing the same code region
+  re-litigates the settled thing. Live-run evidence (gsvdotcom-interstate-migration,
+  2026-07-16): a low-novelty sibling cluster sat below the verify gates, stayed
+  `raw` forever, and was re-DEEPENed two rounds running — both probes merely
+  re-confirming the already-settled neighbor. The controller logs
+  `settled-cluster gate closed <cids> for DEEPEN` when the gate fires.
 
 ### FUSE — toward a lens intersection
 Construct a fused lens from the two hottest non-redundant lenses (per `fusion.md`) and probe their intersection.
