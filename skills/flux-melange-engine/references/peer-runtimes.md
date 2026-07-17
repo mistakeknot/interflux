@@ -27,19 +27,28 @@ The orchestrator (charter) runs detection — the workflow script never does its
 
 ## Invocation templates (config: `peers.runtimes.*.invoke`)
 
-Resolved by charter (model and cwd baked in), passed to the workflow in `args.peers[].invoke`
-with a single `{promptfile}` placeholder that the shim substitutes:
+Resolved by charter (model and cwd baked in), passed to the workflow in `args.peers[].invoke`.
+Placeholders the shim substitutes: `{promptfile}` (required — validation throws without it)
+and `{outfile}` (optional — when present, the shim substitutes `<promptfile>.out` and reads
+the CLI's final message from that file instead of scraping stdout):
 
 | Runtime | Template (default) |
 |---------|--------------------|
-| codex | `cd {projectRoot} && codex exec --full-auto --skip-git-repo-check -c model="{model}" - < {promptfile}` |
+| codex | `codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -o "{outfile}" - < "{promptfile}"` |
 | hermes | `cd {projectRoot} && hermes -z "$(cat {promptfile})" [-m {model}] --yolo` |
 
 Notes: `codex exec` (never bare `codex` — that opens interactive mode); `--full-auto` =
 workspace-write sandbox + auto-approval; `--skip-git-repo-check` because melange targets are
-not always inside a git repo. Hermes `-z` is the headless one-shot; `--yolo` auto-accepts tool
-use so mirror probes can write findings files. Both templates are config, not code — fix CLI
-drift in `flux-melange.yaml` without touching the engine.
+not always inside a git repo; `--ephemeral` keeps dozens of probe sessions out of codex's
+session store; `-o` writes ONLY the final agent message to `{outfile}` — verified 2026-07-16
+(26-byte clean JSON vs 4.7KB event noise on stdout). `--output-schema` was evaluated and
+REJECTED: it demands OpenAI strict mode (`additionalProperties: false` + all-required at
+every object level, HTTP 400 otherwise), incompatible with melange's loose schemas — the
+"end your reply with a single JSON object" contract + shim-side extraction stays. Hermes `-z`
+is the headless one-shot; `--yolo` auto-accepts tool use so mirror probes can write findings
+files; hermes has no `-o`/`{outfile}` equivalent, so its shim path scrapes stdout. Both
+templates are config, not code — fix CLI drift in `flux-melange.yaml` without touching the
+engine.
 
 ## The transport shim
 

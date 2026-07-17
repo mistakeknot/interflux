@@ -42,14 +42,16 @@ Charter (Phase 0) resolves these exactly as for the prose path, then passes them
   "fusion": { "perRoundCap": 2, "sharedHeatGate": 2 },
   "verify": { "mode": "auto | off | all", "noveltyGate": 2, "riskGate": 9 },
 
-  "peers": [ { "kind": "codex", "model": "gpt-5.6-sol", "invoke": "cd /abs/project && codex exec --full-auto --skip-git-repo-check -c model=\"gpt-5.6-sol\" - < {promptfile}" } ],
+  "peers": [ { "kind": "codex", "model": "gpt-5.6-sol", "invoke": "codex exec --full-auto --skip-git-repo-check --ephemeral -C \"/abs/project\" -m \"gpt-5.6-sol\" -o \"{outfile}\" - < \"{promptfile}\"" } ],
   "exchange": { "maxRounds": 3 }
 }
 ```
 
 `peers` and `exchange` are OPTIONAL (all other keys are required): omit both for a classic
 single-runtime run. When present, `peers[].invoke` must be fully resolved except the
-`{promptfile}` placeholder (the shim substitutes it), and charter must pre-create
+`{promptfile}` placeholder (required) and optional `{outfile}` (both substituted by the
+shim — `{outfile}` switches result extraction from stdout-scrape to reading the CLI's
+final-message file), and charter must pre-create
 `OUTPUT_ROOT/mirrors/{kind}/lenses/` + each mirror's empty `heat-ledger.jsonl`. See
 `references/peer-runtimes.md` for detection, isolation, and failure semantics, and
 `phases/parley.md` for the exchange the script runs after the mirror syntheses.

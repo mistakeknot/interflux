@@ -51,7 +51,8 @@ OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
    (never an error). Claude is always the primary, never a peer.
 3. Per surviving runtime, resolve the model (flag `rt:model` > project yaml > plugin defaults)
    and bake the invoke template: substitute `{model}`/`{model_flag}` and `{projectRoot}`, leaving
-   only `{promptfile}` for the shim. Result: `PEERS = [{kind, model, invoke}]`.
+   only `{promptfile}` (and `{outfile}`, if the template carries it) for the shim.
+   Result: `PEERS = [{kind, model, invoke}]`.
    **Validate before baking** (the values land inside shell commands): runtime kind must match
    `^[a-z][a-z0-9-]{1,15}$`, model must match `^[A-Za-z0-9._:-]{1,64}$` — REJECT the flag
    otherwise (the workflow script re-validates at its chokepoint and will throw). Keep the
