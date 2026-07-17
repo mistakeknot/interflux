@@ -112,7 +112,10 @@ peers:
       # instead of scraping the JSONL event stream on stdout. --output-schema was evaluated
       # and rejected (2026-07-16): it demands OpenAI strict mode (additionalProperties:false,
       # all-required at every level), incompatible with melange's loose schemas.
-      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -o "{outfile}" - < "{promptfile}"'
+      # service_tier=fast: 1.5x output speed at 2.5x credit rate (GPT-5.6-class). Mirrors sit
+      # on the Parley barrier's critical path, so wall clock buys real latency here; drop the
+      # flag in your project flux-melange.yaml if credit burn matters more than wall clock.
+      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -o "{outfile}" - < "{promptfile}"'
     hermes:
       model: null          # null = the hermes CLI's configured default model
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
