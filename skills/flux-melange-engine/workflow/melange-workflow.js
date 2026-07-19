@@ -96,12 +96,17 @@ for (const p of PEERS) {
 }
 
 const Q = A.quality;
+// This table MUST match references/budget-ladder.md § Quality → model routing
+// (pinned by tests/structural/test_melange_model_routing.py). The assayer is
+// sonnet below max: its prompt embeds the round's full findings JSON (10s of
+// KB), and opus-scale thinking on that payload can exceed the host's
+// no-progress watchdog before the first token lands (Sylveste-kp9).
 const MODEL = {
   designAdjacent: Q === "max" ? "opus" : "sonnet",
   designDistant: Q === "economy" ? "sonnet" : "opus",
   probe: Q === "max" ? "opus" : "sonnet",
   fusedDesign: Q === "economy" ? "sonnet" : "opus",
-  assay: Q === "economy" ? "sonnet" : "opus",
+  assay: Q === "max" ? "opus" : "sonnet",
   verify: Q === "economy" ? "haiku" : "sonnet",
   synthesis: Q === "economy" ? "sonnet" : "opus",
   shim: "haiku", // transport only — the external model does the thinking
@@ -205,14 +210,30 @@ TASK>>>`;
 
 // Every agent call in the loop flows through here: the primary dispatches
 // natively; mirrors relay through the shim with the SAME schema.
-function dispatch(R, prompt, opts) {
-  if (R.isPrimary) return agent(prompt, opts);
-  return agent(shimWrap(R.rt, prompt, opts.schema), {
-    schema: opts.schema,
-    label: `${R.rt.kind}:${opts.label}`,
-    phase: opts.phase,
-    model: MODEL.shim,
-  });
+//
+// Throws from agent() (stall-watchdog exhaustion, harness budget ceiling) are
+// caught and degraded to null — the same value agent() returns for a skipped
+// or API-dead agent — so they flow into the loop's existing degradation paths
+// (probes: dropped directive; assay: findings kept unscored; synthesis:
+// null-tolerant report) instead of killing the whole run at primary.failed.
+// A survivable single-agent failure must never destroy a multi-hour ledger
+// (Sylveste-kp9). Deliberate hard floors remain at the call sites (e.g. the
+// both-seed-probes-failed throw).
+async function dispatch(R, prompt, opts) {
+  try {
+    if (R.isPrimary) return await agent(prompt, opts);
+    return await agent(shimWrap(R.rt, prompt, opts.schema), {
+      schema: opts.schema,
+      label: `${R.rt.kind}:${opts.label}`,
+      phase: opts.phase,
+      model: MODEL.shim,
+    });
+  } catch (e) {
+    log(
+      `${R.pfx}agent ${opts.label || "(unlabeled)"} failed — degrading to null: ${String((e && e.message) || e).slice(0, 160)}`,
+    );
+    return null;
+  }
 }
 
 // ---- schemas ---------------------------------------------------------------
