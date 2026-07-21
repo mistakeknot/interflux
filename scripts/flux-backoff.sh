@@ -43,6 +43,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUDGET_CONFIG="${BUDGET_CONFIG:-${SCRIPT_DIR}/../config/flux-drive/budget.yaml}"
 
+# Hybrid flock/mkdir locking (Sylveste-9cs) — see lib-lock.sh.
+# shellcheck source=lib-lock.sh
+source "$SCRIPT_DIR/lib-lock.sh"
+
 # --- Tunables (env > budget.yaml > default) -------------------------------
 # Backoff base/cap are in seconds. Jitter is "full jitter": the actual delay is
 # a uniform random pick in [0, exp_delay], which decorrelates retries across the
@@ -185,20 +189,20 @@ decrease() {
         base_max="$(bash "$SCRIPT_DIR/flux-dispatch.sh" maxcap "$output_dir" 2>/dev/null || echo 6)"
     fi
 
-    local new cur
-    # Hold the shared dispatch lock for the read-modify-write. Open fd 204 on the
-    # lock for this whole function (subshell-with-redirect can't return a value via
-    # $()), then flock it.
-    exec 204>"$lock"
-    flock -x 204
+    # Hold the shared dispatch lock for the read-modify-write; the critical
+    # section echoes the new cap, captured through $() (lib-lock.sh contract).
+    _with_lock_ex "$lock" _decrease_locked
+}
+
+# Runs under the fd-204 lock; sees decrease()'s locals via dynamic scoping.
+_decrease_locked() {
+    local cur new
     cur="$(_read_cap "$cap_file")"
     [[ -z "$cur" ]] && cur="$base_max"
     # ceil division so an odd cap doesn't collapse a step early
     new=$(( (cur + DECREASE_FACTOR - 1) / DECREASE_FACTOR ))
     (( new < MIN_EFFECTIVE_CAP )) && new="$MIN_EFFECTIVE_CAP"
     echo "$new" > "$cap_file"
-    flock -u 204
-    exec 204>&-
     echo "$new"
 }
 
@@ -217,9 +221,12 @@ increase() {
         base_max="$(bash "$SCRIPT_DIR/flux-dispatch.sh" maxcap "$output_dir" 2>/dev/null || echo 6)"
     fi
 
-    local out cur n
-    exec 204>"$lock"
-    flock -x 204
+    _with_lock_ex "$lock" _increase_locked
+}
+
+# Runs under the fd-204 lock; sees increase()'s locals via dynamic scoping.
+_increase_locked() {
+    local cur n out
     cur="$(_read_cap "$cap_file")"
     if [[ -z "$cur" ]]; then
         out="$base_max"   # already at base; nothing throttled
@@ -233,8 +240,6 @@ increase() {
             out="$n"
         fi
     fi
-    flock -u 204
-    exec 204>&-
     echo "$out"
 }
 

@@ -44,6 +44,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUDGET_CONFIG="${BUDGET_CONFIG:-${SCRIPT_DIR}/../config/flux-drive/budget.yaml}"
 
+# Hybrid flock/mkdir locking (Sylveste-9cs) — see lib-lock.sh.
+# shellcheck source=lib-lock.sh
+source "$SCRIPT_DIR/lib-lock.sh"
+
 DEFAULT_MAX=6
 POLL_INTERVAL=1     # seconds between slot-availability retries
 DEFAULT_TIMEOUT=600 # seconds an acquire will block before giving up
@@ -112,6 +116,34 @@ _read_count() {
     [[ "$v" =~ ^[0-9]+$ ]] && echo "$v" || echo 0
 }
 
+# --- fd-204 critical sections (run via _with_lock_ex/_with_lock_sh) --------
+# These read the globals set in the case arms below ($slot, $cap,
+# $output_dir, $base_max). They execute in a subshell on both lock paths, so
+# they communicate via files, stdout, and exit status only.
+_reset_locked() {
+    echo 0 > "$slot"
+    rm -f "$cap"   # clear any congestion cap left by a prior run (issue #9)
+}
+_acquire_locked() {
+    local eff_local cur
+    eff_local="$(effective_max "$output_dir" "$base_max")"
+    cur="$(_read_count "$slot")"
+    if (( cur < eff_local )); then
+        echo $(( cur + 1 )) > "$slot"
+        return 0   # claimed
+    fi
+    return 10      # full
+}
+_release_locked() {
+    local cur
+    cur="$(_read_count "$slot")"
+    if (( cur > 0 )); then
+        echo $(( cur - 1 )) > "$slot"
+    else
+        echo 0 > "$slot"
+    fi
+}
+
 cmd="${1:?Usage: flux-dispatch.sh <acquire|release|count|wait|reset> <output_dir> ...}"
 shift || true
 
@@ -120,11 +152,7 @@ case "$cmd" in
     output_dir="${1:?reset requires <output_dir>}"; shift || true
     mkdir -p "$output_dir"
     slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"; cap="$(_cap_file "$output_dir")"
-    (
-      flock -x 204
-      echo 0 > "$slot"
-      rm -f "$cap"   # clear any congestion cap left by a prior run (issue #9)
-    ) 204>"$lock"
+    _with_lock_ex "$lock" _reset_locked
     echo "ok 0/$(resolve_max "${1:-}")"
     ;;
 
@@ -132,10 +160,7 @@ case "$cmd" in
     output_dir="${1:?count requires <output_dir>}"
     slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"
     mkdir -p "$output_dir"
-    (
-      flock -s 204
-      _read_count "$slot"
-    ) 204>"$lock"
+    _with_lock_sh "$lock" _read_count "$slot"
     ;;
 
   acquire)
@@ -151,16 +176,7 @@ case "$cmd" in
         # Critical section: re-read the effective (congestion-adjusted) cap and
         # claim a slot if one is free. Re-reading inside the loop means a mid-run
         # flux-backoff.sh `decrease` (issue #9) throttles pending acquires too.
-        (
-          flock -x 204
-          eff_local="$(effective_max "$output_dir" "$base_max")"
-          cur="$(_read_count "$slot")"
-          if (( cur < eff_local )); then
-              echo $(( cur + 1 )) > "$slot"
-              exit 0   # signal "claimed" to parent via subshell exit
-          fi
-          exit 10      # signal "full"
-        ) 204>"$lock" && claimed=1 || claimed=""
+        _with_lock_ex "$lock" _acquire_locked && claimed=1 || claimed=""
         eff="$(effective_max "$output_dir" "$base_max")"
         if [[ -n "$claimed" ]]; then
             echo "ok $(_read_count "$slot")/$eff"
@@ -185,15 +201,7 @@ case "$cmd" in
     output_dir="${1:?release requires <output_dir>}"
     slot="$(_slot_file "$output_dir")"; lock="$(_lock_file "$output_dir")"
     mkdir -p "$output_dir"
-    (
-      flock -x 204
-      cur="$(_read_count "$slot")"
-      if (( cur > 0 )); then
-          echo $(( cur - 1 )) > "$slot"
-      else
-          echo 0 > "$slot"
-      fi
-    ) 204>"$lock"
+    _with_lock_ex "$lock" _release_locked
     echo "ok $(_read_count "$slot")"
     ;;
 
