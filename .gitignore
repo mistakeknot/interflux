@@ -29,3 +29,6 @@ docs/research/flux-drive/
 *.lock
 # Keep lockfiles for supply chain safety — this negation MUST come after *.lock above.
 !/mcp-servers/*/package-lock.json
+
+# Human-approval marker for agent-mutated publishes (local-only)
+.publish-approved
