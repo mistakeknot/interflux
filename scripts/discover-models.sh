@@ -32,6 +32,28 @@ for cmd in jq yq; do
     fi
 done
 
+# Parse a date (plain %Y-%m-%d, e.g. last_discovery in model-registry.yaml) to
+# epoch seconds, portably. GNU `date -d` first (defaults missing time-of-day
+# to midnight UTC-relative). BSD `date -j -u -f` fallback: fractional-second/
+# timezone suffixes normalized (this site's input is date-only, but stay
+# consistent with the shared pattern), and time-of-day is anchored to
+# midnight explicitly — BSD `date -j -f` otherwise fills missing H/M/S with
+# the *current* time-of-day rather than zero, which would make this
+# non-deterministic. Echoes empty on failure (Sylveste-a3a).
+_discover_models_date_to_epoch() {
+    local ts="${1:-}"
+    [[ -z "$ts" ]] && { echo ""; return 0; }
+    local epoch
+    epoch=$(date -d "$ts" +%s 2>/dev/null) || epoch=""
+    if [[ -z "$epoch" ]]; then
+        local norm="${ts%%.*}"
+        norm="${norm%+00:00}"
+        norm="${norm%Z}"
+        epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "${norm}T00:00:00" +%s 2>/dev/null) || epoch=""
+    fi
+    echo "$epoch"
+}
+
 # Check refresh interval
 if [[ "$FORCE" != true && -f "$MODEL_REGISTRY" ]]; then
     last_discovery=$(yq -r '.last_discovery // ""' "$MODEL_REGISTRY" 2>/dev/null)
@@ -42,7 +64,8 @@ if [[ "$FORCE" != true && -f "$MODEL_REGISTRY" ]]; then
             weekly) max_age=604800 ;;
             *)      echo "discover-models: refresh_interval=$interval, use --force to override" >&2; exit 0 ;;
         esac
-        last_epoch=$(date -d "$last_discovery" +%s 2>/dev/null || echo 0)
+        last_epoch=$(_discover_models_date_to_epoch "$last_discovery")
+        [[ -z "$last_epoch" ]] && last_epoch=0
         now_epoch=$(date +%s)
         age=$((now_epoch - last_epoch))
         if [[ "$age" -lt "$max_age" ]]; then
