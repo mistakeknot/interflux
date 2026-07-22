@@ -1,0 +1,52 @@
+{
+  "name": "interflux",
+  "version": "0.2.82",
+  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 8 commands (incl. flux-melange — a goal-seeking adaptive review loop with lens fusion and novelty/risk/taste scoring), 3 skills (flux-engine, flux-review-engine, flux-melange-engine), 2 MCP servers (exa, openrouter-dispatch). Companion plugin for Clavain.",
+  "license": "MIT",
+  "keywords": [
+    "review",
+    "research",
+    "multi-agent",
+    "flux-drive",
+    "flux-melange",
+    "flux-research",
+    "domain-detection",
+    "triage",
+    "code-review",
+    "document-review",
+    "exa"
+  ],
+  "author": "mistakeknot",
+  "interface": {
+    "displayName": "interflux",
+    "shortDescription": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing,..."
+  },
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "mcpServers": {
+    "exa": {
+      "command": "./scripts/launch-exa.sh",
+      "env": {
+        "EXA_API_KEY": "${EXA_API_KEY}"
+      }
+    },
+    "openrouter-dispatch": {
+      "command": "./scripts/launch-openrouter.sh",
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
+        "OPENROUTER_RATE_LIMIT": "20",
+        "OPENROUTER_SPEND_CEILING_USD": "1.00"
+      }
+    }
+  },
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "bash ${KIMI_PLUGIN_ROOT}/hooks/session-start.sh"
+    },
+    {
+      "event": "SessionStart",
+      "command": "bash ${KIMI_PLUGIN_ROOT}/hooks/write-capabilities.sh"
+    }
+  ]
+}
