@@ -123,6 +123,18 @@ peers:
     hermes:
       model: null          # null = the hermes CLI's configured default model
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
+    kimi:
+      model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
+      # kimi has NO CLI — it is an HTTP runtime. Its invoke template calls the
+      # scripts/kimi-peer-invoke.sh wrapper, which POSTs {promptfile} to the Kimi
+      # coding endpoint and writes ONLY the final assistant message to {outfile}
+      # (same file-extraction contract as codex's -o, so the shim path is identical).
+      # Creds (KIMI_API_KEY / KIMI_BASE_URL) are read from env / ~/.hermes/.env by
+      # the wrapper — never interpolated into this template. K3 requires
+      # temperature=1 and no max_tokens cap; both are baked into the wrapper.
+      # Trust: HTTP egress (no local sandbox concern like hermes), but prompt
+      # content IS sent to an external API — same data-egress class as codex/hermes.
+      invoke: '{pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"'
   exchange:
     max_rounds: 3          # Parley cap; fixed point usually lands in 1-2
 

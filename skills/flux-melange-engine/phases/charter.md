@@ -50,13 +50,17 @@ OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
 2. `auto` → every detected runtime; explicit list → keep detected entries, log-and-skip the rest
    (never an error). Claude is always the primary, never a peer.
 3. Per surviving runtime, resolve the model (flag `rt:model` > project yaml > plugin defaults)
-   and bake the invoke template: substitute `{model}`/`{model_flag}` and `{projectRoot}`, leaving
-   only `{promptfile}` (and `{outfile}`, if the template carries it) for the shim.
+   and bake the invoke template: substitute `{model}`/`{model_flag}`, `{projectRoot}`, and
+   `{pluginRoot}` (= `${CLAUDE_PLUGIN_ROOT}`), leaving only `{promptfile}` (and `{outfile}`, if
+   the template carries it) for the shim. `{pluginRoot}` lets a **no-CLI HTTP runtime** (e.g.
+   `kimi`) point its invoke at a plugin-shipped wrapper script instead of a PATH binary — the
+   wrapper POSTs `{promptfile}` to an API and writes the final message to `{outfile}`, so the
+   shim's file-extraction path is identical to codex's `-o`.
    Result: `PEERS = [{kind, model, invoke}]`.
    **Validate before baking** (the values land inside shell commands): runtime kind must match
    `^[a-z][a-z0-9-]{1,15}$`, model must match `^[A-Za-z0-9._:-]{1,64}$` — REJECT the flag
    otherwise (the workflow script re-validates at its chokepoint and will throw). Keep the
-   template's double quotes around `{projectRoot}` and `{promptfile}`.
+   template's double quotes around `{projectRoot}`, `{pluginRoot}`, and `{promptfile}`.
 4. Create per-mirror artifact dirs: `OUTPUT_ROOT/mirrors/{kind}/lenses/` and an empty
    `OUTPUT_ROOT/mirrors/{kind}/heat-ledger.jsonl` for each peer.
 5. Add to the plan display: `Peers: {kind (model), ...} — cost ~×(N+1) slots + external billing`
