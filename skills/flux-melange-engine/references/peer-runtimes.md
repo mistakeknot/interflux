@@ -36,18 +36,33 @@ the CLI's final message from that file instead of scraping stdout):
 |---------|--------------------|
 | codex | `codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="high" -o "{outfile}" - < "{promptfile}"` |
 | hermes | `cd {projectRoot} && hermes -z "$(cat {promptfile})" [-m {model}] --yolo` |
-| kimi | `{pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"` |
+| kimi | `cd "{projectRoot}" && {pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"` |
 
-**`kimi` is the no-CLI HTTP runtime.** Unlike codex/hermes it has no PATH binary — its
-"template" is a plugin-shipped wrapper (`scripts/kimi-peer-invoke.sh`) that POSTs `{promptfile}`
-to the Kimi coding endpoint (OpenAI-compatible `/chat/completions`) and writes ONLY the final
-assistant message to `{outfile}`, so the shim's file-extraction path is byte-identical to
-codex's `-o`. Charter substitutes `{pluginRoot}` (= `${CLAUDE_PLUGIN_ROOT}`) so the wrapper is
-found regardless of CWD. Detection (`detect-runtimes.sh`) probes for `KIMI_API_KEY` presence
-instead of `command -v` — there is no binary to answer `--version`. Credentials
+**`kimi` is a dual-lane runtime** behind a plugin-shipped wrapper
+(`scripts/kimi-peer-invoke.sh`); both lanes write ONLY the final assistant message to
+`{outfile}`, so the shim's file-extraction path is byte-identical to codex's `-o`. Charter
+substitutes `{pluginRoot}` (= `${CLAUDE_PLUGIN_ROOT}`) so the wrapper is found regardless of
+CWD, and `{projectRoot}` pins the CLI lane's workspace.
+
+- **Lane 1 (preferred): the Kimi Code CLI on subscription OAuth.** Headless
+  `kimi --output-format stream-json -p <prompt>` — no API key; the final message is the LAST
+  `role=assistant` JSONL row (earlier assistant rows carry the user's hook dumps). Verified
+  2026-07-27 (mk-2xg5): `-p` auto-approves regular tool calls (a probe-shaped file-read ran
+  with no approval hang) and rejects `--auto`/`--yolo` as conflicting. The CLI model ALIAS is
+  `kimi-code/k3` — the `/` would fail the peer-model regex, so the wrapper owns the
+  `k3 → kimi-code/k3` mapping (`KIMI_CLI_MODEL` overrides) and config keeps `model: k3`.
+- **Lane 2 (fallback): HTTP POST** to the Kimi coding endpoint (OpenAI-compatible
+  `/chat/completions`), gated on `KIMI_API_KEY`. No local execution.
+
+Detection (`detect-runtimes.sh:probe_kimi`) applies the same preference order — CLI iff the
+binary exists (PATH, else `~/.kimi-code/bin/kimi`, a known `.zshrc`-only PATH entry) AND
+`~/.kimi-code/credentials` is a non-empty dir; else HTTP iff `KIMI_API_KEY` is set — so probe
+and invoke always agree on the lane (`KIMI_PEER_LANE=cli|http` forces one). Credentials
 (`KIMI_API_KEY`, `KIMI_BASE_URL`, `NTSMR_KIMI_MODEL`) are read from env / `~/.hermes/.env` by
 the wrapper and are NEVER interpolated into the template. K3 specifics (temperature=1, no
-max_tokens cap) are baked into the wrapper, not the template.
+max_tokens cap, the CLI alias mapping) are baked into the wrapper, not the template.
+Wall-clock: K3 measured **7.7× slower** than gpt-5.6-luna on a sealed parity eval (FLUXrig
+typed_edges, 2026-07-23) — a kimi mirror can dominate the Parley barrier.
 
 Notes: `codex exec` (never bare `codex` — that opens interactive mode); `--full-auto` =
 workspace-write sandbox + auto-approval; `--skip-git-repo-check` because melange targets are
@@ -124,11 +139,15 @@ mirrors possible, and it is a real permission decision, not an implementation de
 - `codex exec --full-auto` = workspace-write **sandbox scoped to projectRoot** + auto-approval.
 - `hermes --yolo` = auto-approval with **no sandbox**. Prefer codex-only `--peers` on repos you
   do not fully trust; enable the hermes mirror only where an unsandboxed agent is acceptable.
-- `kimi` = **no local execution at all** — the wrapper runs no agent tools; it only POSTs the
-  prompt to an external API and reads back text. So there is no sandbox/tool-use concern like
-  the CLIs, but the prompt content (which includes the target and prior agents' output) IS sent
-  to Kimi's servers — a **data-egress** decision equivalent to codex/hermes external billing.
-  Enable the kimi mirror only where sending the target content to that API is acceptable.
+- `kimi` = **lane-dependent**. The CLI lane (preferred when the Kimi Code CLI + OAuth
+  credentials are present) runs a **tool-enabled agent with NO sandbox** — `-p` mode
+  auto-approves regular tool calls, so treat it exactly like `hermes --yolo`; the user's kimi
+  hooks also fire inside the run and inject their context into the mirror. The HTTP lane
+  (`KIMI_API_KEY` fallback) runs **no agent tools at all** — it only POSTs the prompt and reads
+  back text. Both lanes send the prompt content (which includes the target and prior agents'
+  output) to Kimi's servers — a **data-egress** decision equivalent to codex/hermes external
+  billing. Force a lane with `KIMI_PEER_LANE=http` when the no-local-execution posture matters
+  more than the subscription's flat fee.
 - Only enable `--peers` at all on targets/repos you trust: mirror probes read the target and
   repo files and write findings artifacts, and prompt content includes prior agents' output.
 

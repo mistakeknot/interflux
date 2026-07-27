@@ -6,18 +6,23 @@
 #   {"claude":{"available":true,"host":true},
 #    "codex":{"available":true,"version":"codex-cli 0.144.4"},
 #    "hermes":{"available":false,"version":null},
-#    "kimi":{"available":true,"version":"kimi-http k3"}}
+#    "kimi":{"available":true,"version":"kimi-cli 1.2.3"}}   (or "kimi-http k3")
 #
 # For CLI runtimes (codex, hermes) "available" means the binary is on PATH and
 # answers --version. Auth state is NOT probed (auth prompts can hang a headless
 # check); an unauthenticated CLI surfaces at probe time and the mirror degrades
 # gracefully via the shim's SHIM-FAILURE contract.
 #
-# kimi is an HTTP runtime with NO CLI binary — it POSTs to the Kimi coding
-# endpoint via scripts/kimi-peer-invoke.sh. It has no `--version` to answer, so
-# its probe checks for a credential (KIMI_API_KEY) instead of `command -v`.
-# Same posture as the CLIs: presence of the key is data, not proof of auth; a
-# bad/expired key surfaces at invoke time as a SHIM-FAILURE.
+# kimi is a DUAL-LANE runtime, and scripts/kimi-peer-invoke.sh applies the same
+# preference order at invoke time so probe and invoke always agree on the lane:
+#   lane 1 (preferred) — the Kimi Code CLI on subscription OAuth: binary on
+#     PATH (or at ~/.kimi-code/bin/kimi — installed outside PATH for
+#     non-interactive shells, a known .zshrc-only PATH entry) plus a non-empty
+#     ~/.kimi-code/credentials dir;
+#   lane 2 (fallback) — HTTP POST to the Kimi coding endpoint, gated on
+#     KIMI_API_KEY.
+# Presence is data, not proof of auth; a bad/expired credential in either lane
+# surfaces at invoke time as a SHIM-FAILURE.
 #
 # Exit code is always 0 — absence is data, not an error.
 set -uo pipefail
@@ -42,9 +47,21 @@ probe() {
   fi
 }
 
-# probe_kimi — HTTP runtime, no binary. Available iff a credential is present.
+# probe_kimi — dual-lane. CLI lane wins when the binary AND the OAuth
+# credentials dir are both present; HTTP lane needs only KIMI_API_KEY.
 probe_kimi() {
-  if [[ -n "${KIMI_API_KEY:-}" ]]; then
+  local bin=""
+  if command -v kimi >/dev/null 2>&1; then
+    bin="kimi"
+  elif [[ -x "${HOME}/.kimi-code/bin/kimi" ]]; then
+    bin="${HOME}/.kimi-code/bin/kimi"
+  fi
+  if [[ -n "$bin" && -d "${HOME}/.kimi-code/credentials" ]] \
+     && [[ -n "$(ls -A "${HOME}/.kimi-code/credentials" 2>/dev/null)" ]]; then
+    local ver
+    ver="$("$bin" --version 2>/dev/null | head -1 | tr -d '"' || true)"
+    printf '{"available":true,"version":"kimi-cli %s"}' "${ver:-unknown}"
+  elif [[ -n "${KIMI_API_KEY:-}" ]]; then
     printf '{"available":true,"version":"kimi-http %s"}' "${NTSMR_KIMI_MODEL:-k3}"
   else
     printf '{"available":false,"version":null}'

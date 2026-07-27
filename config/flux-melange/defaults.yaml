@@ -125,16 +125,26 @@ peers:
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
     kimi:
       model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
-      # kimi has NO CLI — it is an HTTP runtime. Its invoke template calls the
-      # scripts/kimi-peer-invoke.sh wrapper, which POSTs {promptfile} to the Kimi
-      # coding endpoint and writes ONLY the final assistant message to {outfile}
-      # (same file-extraction contract as codex's -o, so the shim path is identical).
-      # Creds (KIMI_API_KEY / KIMI_BASE_URL) are read from env / ~/.hermes/.env by
-      # the wrapper — never interpolated into this template. K3 requires
-      # temperature=1 and no max_tokens cap; both are baked into the wrapper.
-      # Trust: HTTP egress (no local sandbox concern like hermes), but prompt
-      # content IS sent to an external API — same data-egress class as codex/hermes.
-      invoke: '{pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"'
+      # kimi is a DUAL-LANE runtime; the scripts/kimi-peer-invoke.sh wrapper and
+      # detect-runtimes.sh apply the same preference order, and both lanes write
+      # ONLY the final assistant message to {outfile} (same file-extraction
+      # contract as codex's -o, so the shim path is identical):
+      #   lane 1 (preferred) — Kimi Code CLI on subscription OAuth, headless
+      #     `kimi --output-format stream-json -p ...` (no API key). The CLI
+      #     model ALIAS is kimi-code/k3 — its '/' would fail the peer-model
+      #     regex (^[A-Za-z0-9._:-]{1,64}$), so the k3 -> kimi-code/k3 mapping
+      #     lives in the wrapper (KIMI_CLI_MODEL overrides) and `model:` here
+      #     stays the regex-safe id. TRUST: -p auto-approves regular tool
+      #     calls, so this lane runs a tool-enabled agent in {projectRoot},
+      #     UNSANDBOXED (hermes-class), and the user's kimi hooks fire in-run.
+      #   lane 2 (fallback) — HTTP POST to the Kimi coding endpoint with
+      #     KIMI_API_KEY (env / ~/.hermes/.env): no local execution, pure
+      #     data egress. K3 requires temperature=1 and no max_tokens cap;
+      #     baked into the wrapper. Creds never interpolated into this template.
+      # Wall-clock: K3 measured 7.7x slower than gpt-5.6-luna on a sealed parity
+      # eval (FLUXrig typed_edges, 2026-07-23) — a kimi mirror can dominate the
+      # Parley barrier; watch mirror latency before making it a default peer.
+      invoke: 'cd "{projectRoot}" && {pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"'
   exchange:
     max_rounds: 3          # Parley cap; fixed point usually lands in 1-2
 
