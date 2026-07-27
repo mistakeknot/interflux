@@ -1,6 +1,6 @@
 {
   "name": "interflux",
-  "version": "0.2.82",
+  "version": "0.2.85",
   "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 8 commands (incl. flux-melange — a goal-seeking adaptive review loop with lens fusion and novelty/risk/taste scoring), 3 skills (flux-engine, flux-review-engine, flux-melange-engine), 2 MCP servers (exa, openrouter-dispatch). Companion plugin for Clavain.",
   "license": "MIT",
   "keywords": [
@@ -42,11 +42,11 @@
   "hooks": [
     {
       "event": "SessionStart",
-      "command": "bash ${KIMI_PLUGIN_ROOT}/hooks/session-start.sh"
+      "command": "bash"
     },
     {
       "event": "SessionStart",
-      "command": "bash ${KIMI_PLUGIN_ROOT}/hooks/write-capabilities.sh"
+      "command": "bash"
     }
   ]
 }
