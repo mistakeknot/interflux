@@ -22,19 +22,16 @@ name: Routing Drift Audit
 #
 # No untrusted GitHub event inputs are used in run: steps.
 
+# No `paths:` filter, deliberately.
+#
+# This job is a REQUIRED status check on main. A path-filtered workflow does not
+# run on a commit that misses the filter, and GitHub does not treat "did not run"
+# as "passed" — the required context stays pending forever and the branch is
+# frozen. The filter and the requirement are mutually exclusive; the requirement
+# is worth more.
 on:
   push:
-    paths:
-      - "config/flux-drive/agent-roles.yaml"
-      - "agents/**/*.md"
-      - "scripts/verify_frontmatter.py"
-      - ".github/workflows/routing-drift.yml"
   pull_request:
-    paths:
-      - "config/flux-drive/agent-roles.yaml"
-      - "agents/**/*.md"
-      - "scripts/verify_frontmatter.py"
-      - ".github/workflows/routing-drift.yml"
 
 jobs:
   audit:
