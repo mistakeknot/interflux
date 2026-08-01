@@ -1,4 +1,15 @@
 #!/usr/bin/env sh
+# --- BEGIN SHARED PRE-COMMIT DISPATCHER ---
+# Managed by dotfiles/cloud/compose-hook.py. Runs the shared secret scanner.
+#
+# Placed FIRST, ahead of this repo's own checks: a credential that reaches the
+# remote cannot be recalled, so it is the one failure worth checking before any
+# other. $HOME-relative with a presence check so this file stays committable on
+# machines that have no dotfiles checkout.
+if [ -x "$HOME/projects/dotfiles/cloud/pre-commit.sh" ]; then
+  "$HOME/projects/dotfiles/cloud/pre-commit.sh" "$@" || exit $?
+fi
+# --- END SHARED PRE-COMMIT DISPATCHER ---
 # interflux pre-commit hook — routing frontmatter drift gate (Sylveste-10p)
 #
 # Light gate that complements the GitHub Actions drift audit
@@ -51,17 +62,9 @@ if ! "$PY" "$repo_root/scripts/verify_frontmatter.py" \
 fi
 
 exit 0
-
-# --- BEGIN SHARED PRE-COMMIT DISPATCHER ---
-# Call the shared secret scanner / config-invariant checks. Kept as a call from
-# this tracked hook rather than letting the installer symlink over it: that
-# displaced this file (a tracked typechange) and left a pre-commit.bak-* behind
-# for the dispatcher to chain back to, so the repo could never be clean and the
-# untracked .bak was load-bearing.
-#
-# $HOME-relative with a presence check, so this stays committable and is a
-# no-op on any machine without the dotfiles checkout.
-if [ -x "$HOME/projects/dotfiles/cloud/pre-commit.sh" ]; then
-  "$HOME/projects/dotfiles/cloud/pre-commit.sh" "$@" || exit $?
-fi
-# --- END SHARED PRE-COMMIT DISPATCHER ---
+# The shared dispatcher block used to sit HERE, below this exit 0, where it was
+# unreachable -- the secret scan had never once run in this repo. Appending a
+# check to the end of a hook that exits unconditionally is indistinguishable
+# from not adding it, and reading the file shows a scan that is plainly there.
+# It is now at the top, ahead of every early exit. Found 2026-07-31 by running
+# the hook against a planted credential rather than by reading it.
