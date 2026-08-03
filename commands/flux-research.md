@@ -4,6 +4,7 @@ description: "Multi-agent research — triages agents, dispatches in parallel, s
 user-invocable: true
 codex-aliases: [flux-research]
 argument-hint: "[research question]"
+disable-model-invocation: true
 ---
 
 Use the `interflux:flux-engine` skill with `mode=research` to research the question specified by the user. Pass the research question as context.
