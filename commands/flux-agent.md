@@ -3,6 +3,7 @@ name: flux-agent
 description: "Manage flux agent registry — index/backfill/stats/prune/promote/record. Lifecycle for review agents with quality tiers + domain indexing."
 user-invocable: true
 argument-hint: "<index|backfill|stats|prune|promote|record> [options]"
+disable-model-invocation: true
 ---
 
 # Flux-Agent — Agent Lifecycle Manager

@@ -4,6 +4,7 @@ description: "Multi-track deep review — agents across semantic distance (adjac
 user-invocable: true
 codex-aliases: [flux-review]
 argument-hint: "<path, topic, or inline text> [--tracks=auto|2|3|4] [--creative] [--quality=balanced|economy|max] [--interactive]"
+disable-model-invocation: true
 ---
 
 Use the `interflux:flux-review-engine` skill to run a multi-track deep review of the target. Pass `$ARGUMENTS` through verbatim. The skill handles per-track agent design across semantic-distance tiers, parallel flux-drive review dispatch, cross-track synthesis, and the final report.

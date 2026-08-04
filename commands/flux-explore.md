@@ -4,6 +4,7 @@ description: Autonomous multi-round semantic exploration — agents from progres
 user-invocable: true
 codex-aliases: [flux-explore]
 argument-hint: "<target description> [--rounds=3] [--agents-per-round=5] [--teams]"
+disable-model-invocation: true
 ---
 
 # Flux-Explore — Autonomous Semantic Space Exploration

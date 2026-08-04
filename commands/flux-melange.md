@@ -4,6 +4,7 @@ description: "Goal-seeking spice loop — adaptive review rounds steer toward th
 user-invocable: true
 codex-aliases: [flux-melange]
 argument-hint: "<path, dir, or inline text> [--goal=\"...\"] [--weights=balanced|risk-hunt|taste|novelty] [--max-rounds=N] [--budget=N] [--quality=economy|balanced|max] [--fusion=auto|N|off] [--verify=auto|off|all] [--peers=off|auto|codex[:model],hermes[:model]] [--exchange-rounds=N] [--interactive]"
+disable-model-invocation: true
 ---
 
 Use the `interflux:flux-melange-engine` skill to run a goal-seeking, multi-round deep review of the target. Pass `$ARGUMENTS` through verbatim. The skill owns charter parsing, the seed round, the heat-ledger control loop (assay → retarget → probe → verify → score → loop gate), runtime lens fusion, and the surfacing-first synthesis.
