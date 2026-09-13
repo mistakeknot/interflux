@@ -65,5 +65,9 @@ The verify phase is **not** a per-round tax. It fires only on findings with `nov
 | Taste annotation | — (skipped) | **opus** | opus |
 | Verify | haiku/sonnet (cheap) | sonnet (cheap) | sonnet |
 | Synthesis (eye of distance) | sonnet | **opus** | opus |
+| Surfacing (`surfaced.jsonl` from the finished report) | sonnet | sonnet | sonnet |
+| Manifest scribe (`run-manifest.json`) | haiku | haiku | haiku |
 
 Rationale mirrors flux-review's: creative steps (fused-lens design, synthesis) and deep-reasoning steps need Opus; lens *application* and routine scoring are Sonnet-adequate. Taste is Opus-only by construction (annotation, not axis).
+
+The last two rows are the synthesis phase's **companion artifacts**, split off the synthesis agent so nothing rides behind a 30 KB write (see `workflow-args.md` divergence 2). Surfacing reads an already-written report and tabulates it — judgment-free, Sonnet at every tier. The manifest scribe only transcribes JSON the controller already computed, so it gets the cheapest model. Neither is a budget slot; both are overhead, like the assayer.
