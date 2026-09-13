@@ -32,3 +32,18 @@ docs/research/flux-drive/
 
 # Human-approval marker for agent-mutated publishes (local-only)
 .publish-approved
+
+# interwatch scan output (generated, machine-local).
+#
+# drift.json is the current drift score per watchable and last-scan.json is the
+# baseline it compares against; both are rewritten by every interwatch-drift
+# run. watchables.yaml above them is hand-authored config and stays tracked.
+#
+# They were never deliberately committed. The only commit that has ever touched
+# them is f8621e8 "chore(sync): auto-commit .interwatch/..." -- swept in by the
+# `git add -A` autosync that the current allowlist (2026-07-27) exists to
+# replace. Since then the scheduled scan has rewritten them, autosync has
+# correctly refused to commit paths that are not on that allowlist, and
+# git-autosync-repair has reported NEEDS-HUMAN on this repo on every run.
+.interwatch/drift.json
+.interwatch/last-scan.json
