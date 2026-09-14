@@ -109,6 +109,11 @@ const MODEL = {
   assay: Q === "max" ? "opus" : "sonnet",
   verify: Q === "economy" ? "haiku" : "sonnet",
   synthesis: Q === "economy" ? "sonnet" : "opus",
+  // surfaced.jsonl extraction is a read-and-tabulate job over an already-written
+  // report, not an act of judgment — sonnet at every tier. run-manifest.json is
+  // pure transcription of script-computed JSON, so it gets the cheapest model.
+  surface: "sonnet",
+  scribe: "haiku",
   shim: "haiku", // transport only — the external model does the thinking
   advocate: Q === "economy" ? "sonnet" : "opus",
   moderator: Q === "economy" ? "sonnet" : "opus",
@@ -123,6 +128,81 @@ const normKey = (loc) =>
     .replace(/^brainstorm\s+/, "")
     .replace(/:\d+(-\d+)?$/, "")
     .trim();
+
+// ---- BEGIN testable: location regions ---------------------------------------
+// (sliced and executed by tests/structural/test_melange_fusion_pairing.py —
+// keep this block self-contained and dependency-free except normKey.)
+//
+// normKey() collapses a finding's whole `location` string to ONE identity key.
+// That is right for dedupe (is this the same spot as that spot?) and wrong for
+// region membership, because a probe's `location` is free-form prose that names
+// several places at once:
+//
+//   "docs/brainstorms/...-brainstorm.md L13, L33, L41 (decision 3);
+//    crates/city-build/src/lib.rs:16,62; ravenous/.../footprints.rs"
+//
+// fusion.md defines SHARED_HEAT as "both lenses fired findings on the same file
+// / section / line-range", so membership is a SET, not a string. Comparing
+// normKey()s made SHARED_HEAT an exact-string equality test between two prose
+// sentences written by two different agents — it scored 0 for every pair of
+// every run, the fusion gate never opened, and FUSE could not fire at all
+// (live-run evidence: orthophoto-pass-and-address-gauge, 10 lenses / 33
+// findings / 45 candidate pairs, max SHARED_HEAT 0).
+//
+// locationKeys() walks the string left to right. A file token sets the current
+// file; every line/decision anchor after it is attributed to that file, so
+// `lib.rs:16` and `brainstorm.md L16` never collide. The target file itself is
+// NOT emitted as a key — every lens reviews the same target, so crediting it
+// would hand every pair a free point — but its anchors are, which is where the
+// real signal lives (two lenses both firing on decision 9).
+const REGION_TOKEN =
+  /([a-z0-9_.\-/]*[a-z0-9_-]+\.[a-z0-9]{1,6})(?![a-z0-9])|\b(?:lines?|l)\s*\.?\s*(\d{1,5})|\b(?:decisions?|sections?)\s*#?\s*(\d{1,5})|:(\d{1,5})(?:-(\d{1,5}))?/g;
+const isPathToken = (t) => t.includes("/") || /\.[a-z]{2,6}$/.test(t);
+
+function locationKeys(loc, targetPath) {
+  const s = String(loc || "").toLowerCase();
+  const target = String(targetPath || "").toLowerCase();
+  const keys = new Set();
+  let cur = target || "target";
+  let m;
+  REGION_TOKEN.lastIndex = 0;
+  while ((m = REGION_TOKEN.exec(s)) !== null) {
+    if (m[1]) {
+      if (!isPathToken(m[1])) continue; // "e.g", "1.5" — not a path
+      const p = m[1];
+      // Probes routinely elide the long target path ("docs/brainstorms/
+      // ...-brainstorm.md"); fold those aliases back onto the target so its
+      // anchors land in one namespace instead of two.
+      const tail = p.includes("...") ? p.slice(p.lastIndexOf("...") + 3) : p;
+      const isTarget =
+        !!target &&
+        (p === target || target.endsWith(p) || (!!tail && target.endsWith(tail)));
+      cur = isTarget ? target : p;
+      if (!isTarget) keys.add(`f:${cur}`);
+    } else if (m[2]) keys.add(`${cur}#l${m[2]}`);
+    else if (m[3]) keys.add(`${cur}#d${m[3]}`);
+    else if (m[4]) {
+      keys.add(`${cur}#l${m[4]}`);
+      if (m[5]) keys.add(`${cur}#l${m[5]}`);
+    }
+  }
+  // A location that names no file and no anchor is still a region — fall back
+  // to its identity key so it can only match an identical location.
+  if (!keys.size) keys.add(`raw:${normKey(loc)}`);
+  return keys;
+}
+
+// SHARED_HEAT(A, B) — how many distinct regions both lenses fired on.
+function sharedRegionCount(fa, fb, targetPath) {
+  const keysA = new Set(
+    fa.flatMap((f) => [...locationKeys(f.location, targetPath)]),
+  );
+  const keysB = new Set(
+    fb.flatMap((f) => [...locationKeys(f.location, targetPath)]),
+  );
+  return [...keysB].filter((k) => keysA.has(k)).length;
+}
+// ---- END testable: location regions -----------------------------------------
 
 // Yield qualification, boosted by --weights (score.md § Step 2; triage-grade).
 const qualifies = (f) => {
@@ -170,6 +250,9 @@ function makeRun(rt) {
     haltReason: null,
     round: 0,
     synth: null,
+    synthesisPath: null,
+    surfacedCount: null,
+    artifactCaveats: [],
     failed: null,
   };
 }
@@ -372,15 +455,40 @@ const VERIFY_SCHEMA = {
   },
 };
 
+// The synthesis agent now writes ONE artifact and returns ONE required field.
+// It used to be asked for the 30+ KB markdown AND surfaced.jsonl AND
+// run-manifest.json AND a three-field structured return, all in a single turn,
+// largest artifact first. A live run stalled mid-turn right after the big Write
+// and never reached the trailing instructions: the markdown landed, the two
+// machine-readable artifacts did not, no structured output was ever emitted,
+// and the workflow sat waiting on an agent that was neither making progress nor
+// throwing (Sylveste-kp9 family). `synthesis_path` is script-known and
+// `surfaced_count` now comes from the surfacing agent, so neither belongs here.
 const SYNTH_SCHEMA = {
   type: "object",
-  required: ["synthesis_path", "surfaced_count", "top_finding"],
+  required: ["top_finding"],
   properties: {
-    synthesis_path: { type: "string" },
-    surfaced_count: { type: "integer" },
     top_finding: { type: "string" },
     caveats: { type: "array", items: { type: "string" } },
   },
+};
+
+const SURFACED_SCHEMA = {
+  type: "object",
+  required: ["report_found", "surfaced_count"],
+  properties: {
+    report_found: { type: "boolean" },
+    surfaced_count: { type: "integer" },
+    views_covered: { type: "array", items: { type: "string" } },
+  },
+};
+
+// Pure transcription: the script already holds every manifest field, so the
+// agent's only job is to put bytes on disk.
+const WRITE_SCHEMA = {
+  type: "object",
+  required: ["written"],
+  properties: { written: { type: "boolean" }, note: { type: "string" } },
 };
 
 const ADVOCATE_SCHEMA = {
@@ -848,19 +956,19 @@ function buildHeatMapAndDirectives(R, round) {
       ),
     );
   const pairs = [];
+  let maxSharedHeat = 0;
   for (let i = 0; i < lensIds.length; i++)
     for (let j = i + 1; j < lensIds.length; j++) {
       const [a, b] = [lensIds[i], lensIds[j]];
       if (R.fusedPairs.some((p) => p.includes(a) && p.includes(b))) continue;
       const fa = findingsByLens[a] || [],
         fb = findingsByLens[b] || [];
-      const keysA = new Set(fa.map((f) => normKey(f.location)));
-      const sharedHeat = [
-        ...new Set(fb.map((f) => normKey(f.location))),
-      ].filter((k) => keysA.has(k)).length;
+      const sharedHeat = sharedRegionCount(fa, fb, A.inputPath);
+      maxSharedHeat = Math.max(maxSharedHeat, sharedHeat);
       if (sharedHeat < A.fusion.sharedHeatGate) continue;
       const ra = R.lensRecords[a],
         rb = R.lensRecords[b];
+      if (!ra || !rb) continue;
       const overlap = (xs, ys) => {
         const t = tokenSet(ys);
         return [...tokenSet(xs)].filter((w) => t.has(w)).length > 0 ? 1 : 0;
@@ -883,6 +991,12 @@ function buildHeatMapAndDirectives(R, round) {
         });
     }
   pairs.sort((x, y) => y.score - x.score);
+  // No silent caps: FUSE is the mode's namesake mechanic, so a round that can
+  // offer no eligible pair says so with the numbers that closed the gate.
+  if (!pairs.length && lensIds.length > 1)
+    log(
+      `${R.pfx}round ${round}: no FUSE candidate — ${(lensIds.length * (lensIds.length - 1)) / 2} pairs examined, best shared_heat ${maxSharedHeat} vs gate ${A.fusion.sharedHeatGate}`,
+    );
 
   // directive selection (priority: PROBE-DISAGREEMENT > DEEPEN > FUSE > STEER-WIDE)
   const directives = [];
@@ -1135,6 +1249,18 @@ function scoreRound(R, round, scored) {
 }
 
 // ---- Phase 7: synthesize (per run) --------------------------------------------
+// THREE calls, cheapest-and-most-mechanical first, so no artifact rides behind
+// the long-form report (phases/synthesize.md § Output; workflow-args.md
+// divergence 2):
+//   1. run-manifest.json  — script-derived JSON, transcribed by a haiku scribe.
+//                           Independent of the synthesis agent entirely, so it
+//                           survives a synthesis that fails or stalls.
+//   2. {date}-synthesis.md — the eye of distance; ONE artifact, tiny return.
+//   3. surfaced.jsonl     — the eval target for scripts/_melange_score.py,
+//                           tabulated from the finished report by its own agent.
+// Every stage goes through dispatch(), so a throw degrades to null and the run
+// finishes with a partial report plus a named caveat instead of dying or
+// hanging. None of the three is a budget slot (budget-ladder.md: overhead).
 async function synthesizeRun(R) {
   const frontier = R.allFindings
     .filter((f) => f.status !== "refuted")
@@ -1158,6 +1284,68 @@ async function synthesizeRun(R) {
     ).length,
   };
 
+  const synthesisPath = `${R.base}/${A.date}-synthesis.md`;
+  const surfacedPath = `${R.base}/surfaced.jsonl`;
+  const manifestPath = `${R.base}/run-manifest.json`;
+  R.artifactCaveats = [];
+
+  // --- 1. run-manifest.json, derived from controller state ----------------------
+  // The script holds every field already; asking the synthesis agent to
+  // re-derive them from a prompt dump was both redundant and the reason the
+  // audit trail was lost when that agent stalled.
+  const manifestJson = JSON.stringify(
+    {
+      runtime: R.rt.kind,
+      model: R.rt.model || null,
+      rounds: R.round + 1,
+      halt_reason: R.haltReason,
+      slots_spent: A.budget.totalSlots - R.slotsRemaining,
+      slots_total: A.budget.totalSlots,
+      findings_total: R.allFindings.length,
+      upheld: R.allFindings.filter((f) => f.status === "upheld").length,
+      refuted: R.allFindings.filter((f) => f.status === "refuted").length,
+      fusions: fusionStats,
+      gain_history: R.gainHistory,
+      spice_trail: R.spiceTrail,
+      directive_history: R.spiceTrail
+        .filter((e) => e.event === "probe")
+        .flatMap((e) =>
+          (e.directives || []).map((d) => ({ round: e.round, ...d })),
+        ),
+      synthesis_path: synthesisPath,
+      surfaced_path: surfacedPath,
+      ledger_path: R.ledger,
+    },
+    null,
+    2,
+  );
+  const wroteManifest = await dispatch(
+    R,
+    `Transcription task — you are a scribe, not an author. Write the EXACT bytes below to
+${manifestPath} using the Write tool, then return {"written": true}.
+
+Do not reformat, re-indent, reorder keys, summarize, truncate, pretty-print differently, add
+fields, or "fix" anything. The content is already valid JSON produced by the controller; any
+edit you make is a defect. Write it verbatim.
+
+<<<CONTENT
+${manifestJson}
+CONTENT>>>`,
+    {
+      label: "run-manifest",
+      phase: `${R.pfx}Synthesize`,
+      model: MODEL.scribe,
+      schema: WRITE_SCHEMA,
+    },
+  );
+  if (!wroteManifest || wroteManifest.written !== true) {
+    log(`${R.pfx}run-manifest.json was not written — audit trail incomplete`);
+    R.artifactCaveats.push(
+      `run-manifest.json missing — manifest scribe failed; regenerate from the workflow journal`,
+    );
+  }
+
+  // --- 2. the synthesis markdown, and nothing else ------------------------------
   const synth = await dispatch(
     R,
     `You are writing the synthesis for a flux-melange spice-loop review — the eye of distance.
@@ -1209,19 +1397,17 @@ Optionally a single "If you read one thing" = argmax(heat), |taste| tiebreaker.
 
 Write direct technical prose. Name lenses when attributing. Rank by HEAT (novelty × risk).
 
-Write the report to ${R.base}/${A.date}-synthesis.md with YAML frontmatter:
+Write the report to ${synthesisPath} with YAML frontmatter:
 artifact_type: melange-synthesis / method: flux-melange / target / target_description / goal /
 weights / rounds_run: ${R.round + 1} / halt_reason: ${R.haltReason} / total_fusions: ${fusionStats.attempted} /
 emergent_findings: ${fusionStats.emergent} / runtime: ${R.rt.kind} / date: ${A.date}
-Include caveats (failed probes, budget-clamped verification, regions never reached).
+Include a "Caveats" section (failed probes, budget-clamped verification, regions never reached).
 
-ALSO write ${R.base}/surfaced.jsonl — one JSON line per finding appearing in ANY of the
-five views: {"id","views":[subset of frontier|fusion|taste|convergence|disagreement|if-you-read-one-thing],"novelty","risk":{"product"},"taste","claim","location","status"}. The surfaced set is the UNION
-of the five views; refuted findings never appear.
-
-AND write ${R.base}/run-manifest.json: {"runtime":"${R.rt.kind}","rounds","halt_reason","gain_history","spice_trail","slots_spent":${A.budget.totalSlots - R.slotsRemaining},"directive_history"} from the controller state above.
-
-Return the structured output.`,
+SCOPE — this is your ONLY artifact. Write that one file, then IMMEDIATELY return the structured
+output: top_finding (the "if you read one thing" line, "f-NNN: claim") and caveats (the same
+caveats, one string each). Do not write surfaced.jsonl, do not write run-manifest.json, do not
+re-read the report you just wrote, do not summarize it back — separate agents own those. Budget
+your output for the report; the structured return must never be the thing you run out of room for.`,
     {
       label: "synthesis",
       phase: `${R.pfx}Synthesize`,
@@ -1232,6 +1418,70 @@ Return the structured output.`,
   R.synth = synth;
   R.frontierTop = frontier[0] || null;
   R.fusionStats = fusionStats;
+  if (!synth)
+    log(
+      `${R.pfx}synthesis agent returned nothing — ledger and manifest are intact`,
+    );
+
+  // --- 3. surfaced.jsonl — the eval target, extracted from the finished report ----
+  // Small, mechanical, and behind nothing: a run without this file cannot be
+  // scored by scripts/_melange_score.py at all, so it never again shares a turn
+  // with a 30 KB write.
+  //
+  // Run this even when the synthesis agent returned nothing: writing the report
+  // and returning from it are now separate failures, and a report that landed on
+  // disk before its agent died is still a complete, scoreable run. The surfacing
+  // agent reads the file, so it — not the script — is the authority on whether
+  // the report exists.
+  R.surfacedCount = null;
+  const surfaced = await dispatch(
+    R,
+    `Extract the machine-readable surfacing record for a finished flux-melange run.
+
+Read the synthesis report at ${synthesisPath} and the ledger at ${R.ledger}.
+If that report does not exist or has no view sections, write nothing and return
+report_found=false with surfaced_count=0 — do not write the report yourself, and do not
+reconstruct the views from the ledger.
+
+The report contains five views — Novelty×Risk Frontier, Top Fusions, Taste Calls, Convergence
+Spine, Live Disagreements — plus an optional "If you read one thing". Write ${surfacedPath}:
+one JSON line per finding that appears in ANY of them (the UNION of the views, not one Pareto
+front), shaped:
+{"id","views":[subset of frontier|fusion|taste|convergence|disagreement|if-you-read-one-thing],"novelty","risk":{"product"},"taste","claim","location","status"}
+
+Rules: take novelty / risk.product / taste from the report's RE-SCORE where it states one,
+otherwise from the ledger row. Refuted findings never appear, whatever the report says. A
+finding cited in two views gets one line with both view tags. Do not invent findings that carry
+no f-NNN id. Then return report_found, surfaced_count (lines written) and views_covered.`,
+    {
+      label: "surfaced",
+      phase: `${R.pfx}Synthesize`,
+      model: MODEL.surface,
+      schema: SURFACED_SCHEMA,
+    },
+  );
+  const reportOnDisk = !!(surfaced && surfaced.report_found);
+  R.synthesisPath = synth || reportOnDisk ? synthesisPath : null;
+  if (surfaced && reportOnDisk) R.surfacedCount = surfaced.surfaced_count;
+
+  if (!synth && reportOnDisk)
+    R.artifactCaveats.push(
+      `synthesis agent returned no structured output, but ${synthesisPath} is on disk — top_finding and the report's own caveats are missing from this summary; read the report`,
+    );
+  else if (!synth)
+    R.artifactCaveats.push(
+      `synthesis failed — ${synthesisPath} was never written; the ledger at ${R.ledger} is intact and synthesis can be rerun from it`,
+    );
+  if (!surfaced || !reportOnDisk) {
+    log(
+      `${R.pfx}surfaced.jsonl was not written — this run cannot be scored by _melange_score.py`,
+    );
+    R.artifactCaveats.push(
+      surfaced
+        ? `surfaced.jsonl not written — no synthesis report to extract it from; the run is unscoreable`
+        : `surfaced.jsonl missing — the surfacing agent failed; regenerate it from ${synthesisPath} or the run stays unscoreable`,
+    );
+  }
 }
 
 // ---- full loop for one runtime ------------------------------------------------
@@ -1302,7 +1552,7 @@ const mirrorCaveats = runs
 // returned for user tie-break (the orchestrator owns AskUserQuestion).
 let equilibrium = null;
 const parties = runs.filter(
-  (R) => !R.failed && R.synth && R.synth.synthesis_path,
+  (R) => !R.failed && R.synthesisPath,
 );
 if (runs.length > 1 && parties.length > 1) {
   phase("Parley");
@@ -1319,8 +1569,8 @@ if (runs.length > 1 && parties.length > 1) {
           const others = parties.filter((x) => x !== R);
           const prompt = `You are the ${R.rt.kind} ADVOCATE in an adversarial synthesis exchange (round ${exRound} of at most ${EX.maxRounds}).
 Independent review loops examined the same target; each produced its own synthesis.
-Your synthesis (your prior positions): ${R.synth.synthesis_path}
-Peer syntheses: ${others.map((x) => `${x.rt.kind}: ${x.synth.synthesis_path}`).join("; ")}
+Your synthesis (your prior positions): ${R.synthesisPath}
+Peer syntheses: ${others.map((x) => `${x.rt.kind}: ${x.synthesisPath}`).join("; ")}
 Target under review: ${A.inputPath} (read it and any repo files needed to ground arguments).
 Prior consensus table from the moderator: ${table ? JSON.stringify(table) : "none — first exchange round"}
 
@@ -1353,7 +1603,7 @@ Set changed_mind=true iff this round you conceded anything, introduced new evide
 You merge positions; you never invent arguments or take sides.
 This round's advocate positions (JSON): ${JSON.stringify(positions)}
 Prior consensus table: ${table ? JSON.stringify(table) : "none — first round"}
-Syntheses for reference: ${parties.map((x) => `${x.rt.kind}: ${x.synth.synthesis_path}`).join("; ")}
+Syntheses for reference: ${parties.map((x) => `${x.rt.kind}: ${x.synthesisPath}`).join("; ")}
 
 1. AGREED: claims all advocates now hold (including via concession this round). Merge into one
    statement each; record holders.
@@ -1438,9 +1688,11 @@ const runReport = (R) => ({
   upheld: R.allFindings.filter((f) => f.status === "upheld").length,
   refuted: R.allFindings.filter((f) => f.status === "refuted").length,
   fusions: R.fusionStats || { attempted: R.fusedPairs.length, emergent: 0 },
-  synthesis_path: R.synth ? R.synth.synthesis_path : null,
+  synthesis_path: R.synthesisPath || null,
+  surfaced_count: R.surfacedCount,
   ledger_path: R.ledger,
   prescriptions: prescriptionsOf(R),
+  caveats: R.artifactCaveats || [],
 });
 
 return {
@@ -1458,14 +1710,13 @@ return {
     : primary.frontierTop
       ? `${primary.frontierTop.id}: ${primary.frontierTop.claim}`
       : null,
-  synthesis_path: primary.synth ? primary.synth.synthesis_path : null,
-  surfaced_count: primary.synth ? primary.synth.surfaced_count : 0,
+  synthesis_path: primary.synthesisPath || null,
+  // null (not 0) when surfaced.jsonl was never produced — "unknown" and "the
+  // report surfaced nothing" are different facts and the caveats say which.
+  surfaced_count: primary.surfacedCount,
   caveats: [
-    ...(primary.synth
-      ? primary.synth.caveats || []
-      : [
-          "synthesis agent failed — ledger is intact; rerun synthesis from heat-ledger.jsonl",
-        ]),
+    ...((primary.synth && primary.synth.caveats) || []),
+    ...(primary.artifactCaveats || []),
     ...mirrorCaveats,
   ],
   ledger_path: primary.ledger,

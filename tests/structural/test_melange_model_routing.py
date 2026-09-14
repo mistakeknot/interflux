@@ -33,6 +33,8 @@ EXPECTED = {
     "assay": {"economy": "sonnet", "balanced": "sonnet", "max": "opus"},
     "verify": {"economy": "haiku", "balanced": "sonnet", "max": "sonnet"},
     "synthesis": {"economy": "sonnet", "balanced": "opus", "max": "opus"},
+    "surface": {"economy": "sonnet", "balanced": "sonnet", "max": "sonnet"},
+    "scribe": {"economy": "haiku", "balanced": "haiku", "max": "haiku"},
     "shim": {"economy": "haiku", "balanced": "haiku", "max": "haiku"},
     "advocate": {"economy": "sonnet", "balanced": "opus", "max": "opus"},
     "moderator": {"economy": "sonnet", "balanced": "opus", "max": "opus"},

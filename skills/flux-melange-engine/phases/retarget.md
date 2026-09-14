@@ -9,7 +9,7 @@ This phase is deterministic enough to run **inline** (no subagent) — it is ari
 From the full `heat-ledger.jsonl`, compute and write `melange-state.json:heat_map`:
 
 - **`regions[]`** — group findings by file/section. For each: `yield_density` = Σ `heat` of *new-cluster* findings ÷ probes spent there (see `references/heat-scoring.md`); `max_risk`; `disagreement_flags` count. Rank descending by `yield_density`.
-- **`lens_pairs[]`** — for every unordered pair of run lenses, compute `SHARED_HEAT`, `COMPLEMENTARITY`, `REDUNDANCY`, `score = shared_heat + complementarity − redundancy` (`references/fusion.md`). Keep only pairs above the SHARED_HEAT gate. Rank by score.
+- **`lens_pairs[]`** — for every unordered pair of run lenses, compute `SHARED_HEAT`, `COMPLEMENTARITY`, `REDUNDANCY`, `score = shared_heat + complementarity − redundancy` (`references/fusion.md`). Keep only pairs above the SHARED_HEAT gate. Rank by score. SHARED_HEAT counts *regions* the two lenses have in common (file, or a line/section anchor scoped to its file, excluding the review target's own path) — never string-equality between two whole `location` sentences, which scores 0 for everything and silently kills FUSE. If no pair clears the gate, **log pairs examined, best SHARED_HEAT, and the gate value** — a dead namesake mechanic must not be a silent omission.
 - **`disagreement_flags[]`** — locations where two findings have opposite verdicts (same `location`, contradictory claims). Carry their `finding_ids`.
 
 Also recompute `gain_history` for the last round: `yield` (count of verified, new-cluster findings meeting the `--weights`-boosted threshold) and `novel_cluster_rate` (new clusters ÷ total findings this round).

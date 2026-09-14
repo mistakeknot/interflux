@@ -33,7 +33,11 @@ The judge panel cut a decorative four-term score. The kept formula over unordere
 fusion_score(A, B) = SHARED_HEAT(A, B) + COMPLEMENTARITY(A, B) − REDUNDANCY(A, B)
 ```
 
-- **SHARED_HEAT** — both lenses fired findings on the same file / section / line-range. The strongest evidence a hidden interaction lives there. **Hard gate:** a pair must clear a SHARED_HEAT threshold to be eligible at all — we never fuse two lenses that merely agree in the abstract or never touched the same ground.
+- **SHARED_HEAT** — both lenses fired findings on the same file / section / line-range. The strongest evidence a hidden interaction lives there. **Hard gate:** a pair must clear a SHARED_HEAT threshold (default 2) to be eligible at all — we never fuse two lenses that merely agree in the abstract or never touched the same ground.
+
+  **A finding's region is a SET, not a string.** A probe writes `location` as free-form prose that names several places at once — `"…brainstorm.md L13, L33, L41 (decision 3); crates/city-build/src/lib.rs:16,62"`. SHARED_HEAT counts how many *regions* the two lenses have in common, where a region is a file, or a line/decision anchor scoped to the file it was named under (`lib.rs:16` and `brainstorm.md L16` are different regions). Two rules keep the count honest: the **review target's own path is not a region** — every lens reads it, so crediting it would hand every pair a free point, though its anchors still count — and a location naming no file and no anchor falls back to matching only an identical location.
+
+  Comparing whole location strings instead is the failure this rule exists to prevent: two lenses that both fired on decision 9 write two different sentences about it, so equality scores 0, the gate never opens, and FUSE silently never runs. It went undetected for a full 10-lens, 3-round, 33-finding run (`orthophoto-pass-and-address-gauge`, 2026-09-13: 45 candidate pairs, max SHARED_HEAT 0, zero FUSE directives). A round that can offer no eligible pair must therefore **log the numbers that closed the gate** — pairs examined, best SHARED_HEAT, the threshold — rather than passing over FUSE in silence.
 - **COMPLEMENTARITY** — one lens's `primitives` fall inside the other's `failure_mode` (each sees the other's blind spot). Computed from the lens records.
 - **REDUNDANCY** — penalty for pairs that already *co-converged* on the same `cluster_id`. Fusing agreers yields nothing; this kills those pairs.
 
