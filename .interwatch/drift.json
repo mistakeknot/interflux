@@ -1,25 +1,25 @@
 {
-  "scan_date": "2026-08-17T03:22:35",
+  "scan_date": "2026-08-17T03:22:59",
   "watchables": {
     "skill-compact": {
-      "path": "skills/flux-drive/SKILL-compact.md",
-      "exists": false,
-      "score": 0,
-      "confidence": "Green",
-      "stale": false,
+      "path": "skills/flux-engine/SKILL-compact.md",
+      "exists": true,
+      "score": 7,
+      "confidence": "High",
+      "stale": true,
       "signals": {
         "commits_since_update": {
-          "count": 0,
+          "count": 1,
           "weight": 3,
-          "score": 0
+          "score": 3
         },
         "file_created": {
-          "count": 0,
+          "count": 2,
           "weight": 2,
-          "score": 0
+          "score": 4
         }
       },
-      "recommended_action": "none",
+      "recommended_action": "auto-refresh",
       "generator": "null",
       "generator_args": {}
     }
