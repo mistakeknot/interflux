@@ -29,7 +29,7 @@ def peer_codex() -> dict:
 # Bulk mirrors and consequential validation are different jobs that briefly
 # shared a table. A mirror has no producer to be separated from, so its model is
 # whatever `peers.runtimes` says; only validation needs the producer-relative
-# chain. When `routes.bulk` still pointed at `sol-bulk`, this selector and
+# chain. When `routes.bulk` still pointed at the Sol profile, this selector and
 # `peers.runtimes.codex` answered the same question differently and nothing in
 # the run output revealed which rule an orchestrator had applied.
 
@@ -60,15 +60,24 @@ def test_bulk_mirror_needs_no_producer_identity():
 
 
 def test_sol_remains_the_terminal_validation_fallback():
-    """Guards the tempting wrong fix: editing sol-bulk's model in place.
+    """Guards the tempting wrong fix: editing the Sol profile's model in place.
 
-    `sol-bulk` ends all three validation chains, including the Astra-producer
-    chain that must never resolve back to Astra. Retargeting it to satisfy the
-    mirror ruling would have silently changed reviewer separation.
+    It ends all three validation chains, including the Astra-producer chain that
+    must never resolve back to Astra. Retargeting it to satisfy the mirror
+    ruling would have silently changed reviewer separation. The profile is named
+    `sol-fallback` for that role — it was `sol-bulk` while it also backed the
+    mirror lane, and the stale name is half of why the two got conflated.
     """
     for producer in ("claude/fable", "kimi/k3", "codex/gpt-6-astra"):
-        chain = [item["model"] for item in resolve("validation", producer)["candidates"]]
-        assert chain[-1] == "gpt-5.6-sol", producer
+        chain = resolve("validation", producer)["candidates"]
+        assert chain[-1]["model"] == "gpt-5.6-sol", producer
+        assert chain[-1]["profile"] == "sol-fallback", producer
+
+
+def test_no_profile_name_still_claims_the_bulk_lane():
+    """A profile named *-bulk would re-invite the conflation this fixed."""
+    profiles = yaml.safe_load(DEFAULTS.read_text())["reviewer_routing"]["profiles"]
+    assert not [name for name in profiles if "bulk" in name], sorted(profiles)
 
 
 def test_claude_producer_selects_astra_high_standard():

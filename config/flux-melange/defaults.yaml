@@ -192,12 +192,13 @@ peers:
 # instead of reconstructing this policy in prose.
 #
 # These two jobs briefly shared one table via a `routes.bulk` entry pointing at
-# `sol-bulk`, which made mk's 2026-09-19 mirror ruling reachable by one code
-# path and not the other (Sylveste-5nk). `routes` now covers validation only.
-# `sol-bulk` keeps its name because it is still every validation chain's
-# terminal fallback — including the Astra-producer chain, which must never
-# resolve back to Astra. Retargeting its model to satisfy a mirror ruling would
-# silently change reviewer separation.
+# the profile then named `sol-bulk`, which made mk's 2026-09-19 mirror ruling
+# reachable by one code path and not the other (Sylveste-5nk). `routes` now
+# covers validation only, and the profile is named `sol-fallback` for what it
+# actually is: the terminal fallback of every validation chain, including the
+# Astra-producer chain, which must never resolve back to Astra. Retargeting its
+# model to satisfy a mirror ruling would silently change reviewer separation —
+# the old name invited exactly that, which is why it is gone.
 #
 reviewer_routing:
   model_aliases:
@@ -206,7 +207,7 @@ reviewer_routing:
     k3: kimi-code/k3
     kimi/k3: kimi-code/k3
   profiles:
-    sol-bulk:
+    sol-fallback:
       kind: codex
       model: gpt-5.6-sol
       reasoning_effort: high
@@ -234,11 +235,11 @@ reviewer_routing:
   routes:
     validation:
       producer_model:
-        gpt-6-astra: [fable-review, kimi-review, sol-bulk]
+        gpt-6-astra: [fable-review, kimi-review, sol-fallback]
       producer_kind:
-        claude: [astra-review, sol-bulk]
-        kimi: [astra-review, sol-bulk]
-      default: [fable-review, kimi-review, sol-bulk]
+        claude: [astra-review, sol-fallback]
+        kimi: [astra-review, sol-fallback]
+      default: [fable-review, kimi-review, sol-fallback]
 
 # --- Quality / model routing ------------------------------------------------
 #
