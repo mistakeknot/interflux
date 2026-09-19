@@ -18,6 +18,15 @@ detection contract, the shim contract, isolation rules, and cost math.
   logged and skipped (the run proceeds; never an error).
 - `--exchange-rounds=N` (default 3) caps the Parley exchange.
 
+**Default mirror models** (mk 2026-09-19, `config/flux-melange/defaults.yaml`): codex mirrors on
+**Astra at medium** reasoning (Fast tier), hermes on **DeepSeek v4.1 Flash** via OpenRouter, kimi on
+**K3**. Medium on Astra is deliberate — a mirror earns its keep through independent coverage, not
+depth, and mirrors sit on the Parley barrier where wall clock is the scarce resource. Hermes's
+model is pinned inside its invoke template rather than in `model:`, because the provider-prefixed
+id contains a `/` that fails the peer-model regex; the same constraint is why kimi's `k3` alias
+maps to `kimi-code/k3` in its wrapper. Note that K3 measured 7.7x slower than gpt-5.6-luna on a
+sealed parity eval, so a kimi mirror can dominate the barrier — watch mirror latency.
+
 ## Producer-relative reviewer routing
 
 The ordinary bulk mirror remains `gpt-5.6-sol` at high reasoning on Fast. For
