@@ -44,9 +44,14 @@ sealed parity eval, so a kimi mirror can dominate the barrier — watch mirror l
 
 ## Producer-relative reviewer routing
 
-The ordinary bulk mirror remains `gpt-5.6-sol` at high reasoning on Fast. For
-consequential validation, pass `--producer=<kind>/<model>` and resolve the
-ordered chain with `scripts/select-review-route.py`:
+The ordinary bulk mirror is not routed at all: its model comes from
+`peers.runtimes` (flag > project yaml > plugin defaults), and
+`select-review-route.py --purpose bulk` reads that same table if you want it
+resolved on the command line. A mirror has no producer to be separated from, so
+there is nothing for a routing policy to decide. For consequential validation
+there is — the reviewer must differ from the producer — so pass
+`--producer=<kind>/<model>` and resolve the ordered chain with
+`scripts/select-review-route.py`:
 
 | Producer | Reviewer preference |
 |----------|---------------------|
@@ -55,7 +60,9 @@ ordered chain with `scripts/select-review-route.py`:
 | Other | Claude/Fable, Kimi/K3, then Sol |
 
 Astra requires Codex 0.153.1 or newer. Here “Standard” is represented by
-Codex's `service_tier="default"`; Fast remains confined to the Sol bulk mirror.
+Codex's `service_tier="default"`; Fast belongs to the mirror lane, whose invoke
+template pins `service_tier` and `model_reasoning_effort` explicitly so a
+mirror's economics never drift with the caller's global Codex default.
 The selector filters out the producer model and rejects validation requests
 without an explicit producer identity. Review first-pass findings are sealed
 until both sides have independently completed their initial pass.
@@ -216,7 +223,26 @@ outside this threat model, same as hooks.
 | Mirror loop dies (seed produces no lenses, both seed probes fail) | mirror reported `failed`, caveat added; primary unaffected |
 | Primary loop dies | whole workflow errors (unchanged from classic behavior) |
 | Shim double-failure on one call | that call degrades exactly like a native probe failure (survivors proceed) |
+| CLI times out | no retry (a second full window cannot help); shim reports `SHIM-FAILURE`, call degrades as above |
 | < 2 syntheses at Parley | phase skipped with caveat |
+
+Every shim result carries a required `shim_status` — `"ok"`, or `"SHIM-FAILURE: <reason>"`.
+A non-ok status becomes `null` at the dispatch chokepoint, which is the value the loop
+already treats as a failed call. This exists because a shim CANNOT signal failure through
+the payload: eight of the ten schemas have no required string field, so a degraded object
+on those is just `{"findings": []}` — byte-identical to a probe that ran and found nothing.
+`runProbes` counts null as failed but anything truthy as a success, so before `shim_status`
+a dead mirror scored `roundYield 0`, tripped the DRY halt, and reported a convergence it
+never earned, which Parley then reconciled as an independent opinion (Sylveste-cg1).
+
+A shim must therefore never fabricate content to satisfy a schema. An empty array or a
+placeholder lens is indistinguishable from a real result once it reaches the ledger.
+
+Per-runtime `timeout_ms` (config `peers.runtimes.<kind>.timeout_ms`) sizes the window to the
+runtime rather than sharing one constant. Measured 2026-09-19 on a 61k-LOC target: hermes on
+a flash-tier model answered a trivial prompt in 7.4s but expired every 600s window doing
+multi-turn agentic exploration, and K3 — documented at 7.7x gpt-5.6-luna — returned empty
+probes throughout. Neither runtime was broken; the window was.
 
 ## Relationship to interpeer
 

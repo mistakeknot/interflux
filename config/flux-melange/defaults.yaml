@@ -127,6 +127,15 @@ peers:
   runtimes:
     codex:
       model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror
+      # This block is the ONE source of truth for the bulk codex mirror.
+      # select-review-route.py --purpose bulk reads it rather than the
+      # reviewer_routing profiles below, which exist for producer-relative
+      # VALIDATION only — a mirror has no producer to be separated from.
+      # effort/tier are restated here because they are otherwise only
+      # discoverable by reading the shell template; tests assert they agree.
+      reasoning_effort: medium
+      service_tier: fast
+      timeout_ms: 600000     # the shim's wall-clock window for ONE invocation
       # -o {outfile}: codex writes ONLY the final agent message there — the shim reads it
       # instead of scraping the JSONL event stream on stdout. --output-schema was evaluated
       # and rejected (2026-07-16): it demands OpenAI strict mode (additionalProperties:false,
@@ -148,9 +157,20 @@ peers:
       # carrying any deepseek model (checked against ~/.hermes/provider_models_cache.json);
       # without it hermes silently falls back to its own configured default.
       model: null
+      # 900s, not 600s: a flash-tier model doing MULTI-TURN agentic exploration
+      # of a repo-scale target needs more wall clock than its per-call latency
+      # suggests. Measured 2026-09-19: the same invocation answers a trivial
+      # prompt in 7.4s, but every 600s window on a 61k-LOC Rust tree expired
+      # without output (Sylveste-cg1). If a hermes mirror still starves here,
+      # the fix is a narrower target, not a bigger number.
+      timeout_ms: 900000
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
     kimi:
       model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
+      # K3 is measured below at 7.7x gpt-5.6-luna on a sealed parity eval, so a
+      # 600s window was never sized for it — the observed result was probes
+      # returning bare {"findings": []}, scored as honest empty results.
+      timeout_ms: 1800000
       # kimi is a DUAL-LANE runtime; the scripts/kimi-peer-invoke.sh wrapper and
       # detect-runtimes.sh apply the same preference order, and both lanes write
       # ONLY the final assistant message to {outfile} (same file-extraction
@@ -176,11 +196,21 @@ peers:
 
 # --- Reviewer routing -------------------------------------------------------
 #
-# `peers` above remains the economical, high-volume mirror lane. This separate
-# table resolves a consequential validation reviewer relative to the producer:
-# Claude/Fable or Kimi output is reviewed by Astra; Astra output is reviewed by
-# an external model first, with Sol as the final fallback. The charter invokes
-# scripts/select-review-route.py instead of reconstructing this policy in prose.
+# `peers` above remains the economical, high-volume mirror lane, and owns the
+# bulk mirror's model outright. This separate table resolves a consequential
+# validation reviewer RELATIVE TO THE PRODUCER: Claude/Fable or Kimi output is
+# reviewed by Astra; Astra output is reviewed by an external model first, with
+# Sol as the final fallback. The charter invokes scripts/select-review-route.py
+# instead of reconstructing this policy in prose.
+#
+# These two jobs briefly shared one table via a `routes.bulk` entry pointing at
+# the profile then named `sol-bulk`, which made mk's 2026-09-19 mirror ruling
+# reachable by one code path and not the other (Sylveste-5nk). `routes` now
+# covers validation only, and the profile is named `sol-fallback` for what it
+# actually is: the terminal fallback of every validation chain, including the
+# Astra-producer chain, which must never resolve back to Astra. Retargeting its
+# model to satisfy a mirror ruling would silently change reviewer separation —
+# the old name invited exactly that, which is why it is gone.
 #
 reviewer_routing:
   model_aliases:
@@ -189,7 +219,7 @@ reviewer_routing:
     k3: kimi-code/k3
     kimi/k3: kimi-code/k3
   profiles:
-    sol-bulk:
+    sol-fallback:
       kind: codex
       model: gpt-5.6-sol
       reasoning_effort: high
@@ -215,14 +245,13 @@ reviewer_routing:
       service_tier: standard
       invoke: 'cd "{projectRoot}" && env NTSMR_KIMI_MODEL="{model}" KIMI_CLI_MODEL="kimi-code/{model}" {pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"'
   routes:
-    bulk: [sol-bulk]
     validation:
       producer_model:
-        gpt-6-astra: [fable-review, kimi-review, sol-bulk]
+        gpt-6-astra: [fable-review, kimi-review, sol-fallback]
       producer_kind:
-        claude: [astra-review, sol-bulk]
-        kimi: [astra-review, sol-bulk]
-      default: [fable-review, kimi-review, sol-bulk]
+        claude: [astra-review, sol-fallback]
+        kimi: [astra-review, sol-fallback]
+      default: [fable-review, kimi-review, sol-fallback]
 
 # --- Quality / model routing ------------------------------------------------
 #

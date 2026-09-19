@@ -49,8 +49,18 @@ OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
 
 ### Select the route before detecting it
 
-Bulk mirrors retain the configured GPT-5.6 Sol/high/Fast profile. When
-`--producer` is present, resolve a consequential validation chain instead:
+**Bulk mirrors and consequential validation resolve from different tables, and
+only one of them is a routing decision.** A mirror is an independent second
+opinion with no producer to be separated from, so its model is simply whatever
+`peers.runtimes` resolves to in step 3 below (flag > project yaml > plugin
+defaults), with `detect-runtimes.sh` supplying what this environment can
+actually reach. Never name a mirror model in prose — it goes stale the moment
+the config is re-ruled, and the plan display prints only the resolved value, so
+the substitution would be invisible in the run output.
+
+When `--producer` is present, resolve a consequential validation chain instead
+— that IS a routing decision, because the reviewer must differ from the
+producer:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select-review-route.py" \
@@ -68,8 +78,12 @@ candidate only for explicit model unavailability, account-access absence, or
 insufficient Codex version. Policy/misalignment 403s and other configuration
 4xx errors are terminal; retry 429s on the same model with a bounded retry.
 
-Without `--producer`, resolve the ordinary bulk mirror explicitly so its
-economics do not drift with the caller's global Codex default:
+Without `--producer` there is no chain to resolve: go straight to detection.
+The mirror's economics still must not drift with the caller's global Codex
+default, but that is handled by the invoke template pinning `service_tier` and
+`model_reasoning_effort` explicitly — not by routing. `--purpose bulk` remains
+available and reads `peers.runtimes.codex`, the same table step 3 uses, so the
+two paths cannot disagree:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select-review-route.py" --purpose bulk
@@ -107,7 +121,9 @@ guess it from the current host.
    `OUTPUT_ROOT/mirrors/{kind}/heat-ledger.jsonl` for each peer.
 5. Add to the plan display: `Peers: {kind (model), ...} — cost ~×(N+1) slots + external billing`
    plus the trust warning: `⚠ peer mirrors run external CLIs with auto-approved tool use
-   (codex: workspace-write sandbox; hermes: unsandboxed)`. Pass `peers` + `exchange` through to
+   (codex: workspace-write sandbox; hermes and the kimi CLI lane: UNSANDBOXED in the project
+   root)`. Name every unsandboxed lane — this warning is the only place a user sees it before
+   the run starts, so an omission reads as an assurance. Pass `peers` + `exchange` through to
    the workflow args (references/workflow-args.md).
 
 Peer mirrors REQUIRE the workflow fast-path: in `--interactive` (prose path) warn and run the

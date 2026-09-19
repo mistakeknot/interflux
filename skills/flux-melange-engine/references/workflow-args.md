@@ -42,7 +42,7 @@ Charter (Phase 0) resolves these exactly as for the prose path, then passes them
   "fusion": { "perRoundCap": 2, "sharedHeatGate": 2 },
   "verify": { "mode": "auto | off | all", "noveltyGate": 2, "riskGate": 9 },
 
-  "peers": [ { "kind": "codex", "model": "gpt-5.6-sol", "invoke": "codex exec --full-auto --skip-git-repo-check --ephemeral -C \"/abs/project\" -m \"gpt-5.6-sol\" -o \"{outfile}\" - < \"{promptfile}\"" } ],
+  "peers": [ { "kind": "codex", "model": "gpt-6-astra", "timeout_ms": 600000, "invoke": "codex exec --full-auto --skip-git-repo-check --ephemeral -C \"/abs/project\" -m \"gpt-6-astra\" -o \"{outfile}\" - < \"{promptfile}\"" } ],
   "exchange": { "maxRounds": 3 }
 }
 ```
@@ -55,6 +55,11 @@ final-message file), and charter must pre-create
 `OUTPUT_ROOT/mirrors/{kind}/lenses/` + each mirror's empty `heat-ledger.jsonl`. See
 `references/peer-runtimes.md` for detection, isolation, and failure semantics, and
 `phases/parley.md` for the exchange the script runs after the mirror syntheses.
+
+`peers[].timeout_ms` is OPTIONAL (default 600000, clamped to 60s–60min): the wall-clock
+window the shim gives ONE invocation of that runtime. Size it to the runtime, not to the
+task — a runtime measured several times slower than the others starves under a shared
+window, and the starvation is silent unless `shim_status` reaches the loop (Sylveste-cg1).
 
 `date` and `slug` MUST come from the charter — Workflow scripts cannot call `Date.now()` / `new Date()`.
 
