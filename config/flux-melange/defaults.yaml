@@ -105,24 +105,50 @@ verify:
 #
 peers:
   mode: off
+  # ADAPTIVE DEFAULTS (mk 2026-09-19). The `model:` values below are the PREFERENCE.
+  # scripts/detect-runtimes.sh resolves what this environment can actually reach and
+  # reports "model" + "model_reason" per runtime; charter prefers that over the static
+  # value. Codex falls back Astra -> Sol when the CLI predates 0.153.1; hermes falls back
+  # to its own CLI default when no configured provider carries the deepseek model. The
+  # ladder lives in the script beside kimi's lane selection, so probe and invoke can
+  # never disagree — change the two together.
+  consent:
+    # detect-runtimes.sh reports "sandboxed" per runtime. codex --full-auto is
+    # workspace-write inside projectRoot and the kimi HTTP lane executes nothing
+    # locally; hermes --yolo and the kimi CLI lane run a tool-enabled agent in your
+    # project UNSANDBOXED, with your hooks firing in-run.
+    #   true  — `--peers=auto` mirrors on every detected runtime.
+    #   false — `auto` mirrors only on sandboxed runtimes; unsandboxed ones are still
+    #           detected and listed in the plan, but run only when NAMED explicitly
+    #           (`--peers=hermes,kimi`), which is itself consent.
+    # Default true preserves the three configured mirrors; set false on targets whose
+    # contents you would not hand an unsandboxed agent.
+    auto_includes_unsandboxed: true
   runtimes:
     codex:
-      model: gpt-5.6-sol
+      model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror
       # -o {outfile}: codex writes ONLY the final agent message there — the shim reads it
       # instead of scraping the JSONL event stream on stdout. --output-schema was evaluated
       # and rejected (2026-07-16): it demands OpenAI strict mode (additionalProperties:false,
       # all-required at every level), incompatible with melange's loose schemas.
-      # service_tier=fast: 1.5x output speed at 2.5x credit rate (GPT-5.6-class). Mirrors sit
-      # on the Parley barrier's critical path, so wall clock buys real latency here; drop the
-      # flag in your project flux-melange.yaml if credit burn matters more than wall clock.
-      # model_reasoning_effort=high: pins mirror probes below a user's global default when
-      # that is xhigh — probe tasks are scoped and numerous, and xhigh multiplies reasoning
-      # tokens (wall clock AND cost) for marginal depth gain at this task size. Raise back
-      # to xhigh per-project if a mirror's misses look depth-shaped.
-      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="high" -o "{outfile}" - < "{promptfile}"'
+      # service_tier=fast: 1.5x output speed at 2.5x credit rate. Mirrors sit on the Parley
+      # barrier's critical path, so wall clock buys real latency here; drop the flag in your
+      # project flux-melange.yaml if credit burn matters more than wall clock.
+      # model_reasoning_effort=medium (mk 2026-09-19): a mirror's job is independent coverage,
+      # not depth — probe tasks are scoped and numerous, and Astra's reasoning tokens multiply
+      # wall clock and cost fast. Medium is a deliberate floor for a mirror, not a degraded
+      # setting. Raise per-project only if a mirror's misses look depth-shaped.
+      invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="medium" -o "{outfile}" - < "{promptfile}"'
     hermes:
-      model: null          # null = the hermes CLI's configured default model
-      invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")"{model_flag} --yolo'   # {model_flag} = " -m {model}" when model set, else ""
+      # mk 2026-09-19: DeepSeek v4.1 Flash is the default hermes mirror. Its canonical id is
+      # provider-prefixed (deepseek/deepseek-v4.1-flash) and that '/' fails the peer-model
+      # regex (^[A-Za-z0-9._:-]{1,64}$) — so, exactly as kimi documents below, the real id
+      # lives in the invoke template and `model:` stays null, leaving {model_flag} empty.
+      # --provider openrouter is pinned because openrouter is the only configured provider
+      # carrying any deepseek model (checked against ~/.hermes/provider_models_cache.json);
+      # without it hermes silently falls back to its own configured default.
+      model: null
+      invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
     kimi:
       model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
       # kimi is a DUAL-LANE runtime; the scripts/kimi-peer-invoke.sh wrapper and

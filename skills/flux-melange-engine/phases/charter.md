@@ -80,6 +80,13 @@ and final report. Validation without a producer identity is invalid; do not
 guess it from the current host.
 
 1. Run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtimes.sh` (emits one JSON object; exit 0 always).
+   Each runtime reports `model` + `model_reason` (what this environment can actually reach) and
+   `sandboxed`. **Consent gate:** when `peers.consent.auto_includes_unsandboxed` is false, `auto`
+   keeps only `sandboxed: true` runtimes — unsandboxed ones are still listed in the plan, marked
+   skipped-for-consent, and run only when the user NAMES them in `--peers`. Naming is consent; an
+   explicit list is never filtered by this gate. Always surface each mirror's resolved model and
+   `sandboxed` state in the plan display, so a downgrade is visible before the run rather than
+   discovered in the report.
 2. For bulk review, `auto` → every detected external runtime and explicit list → keep detected
    entries, log-and-skip the rest (never an error). For consequential validation, use the
    producer-relative candidate chain above; Claude/Fable may be the reviewer when the host or
