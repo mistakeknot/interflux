@@ -135,6 +135,7 @@ peers:
       # discoverable by reading the shell template; tests assert they agree.
       reasoning_effort: medium
       service_tier: fast
+      timeout_ms: 600000     # the shim's wall-clock window for ONE invocation
       # -o {outfile}: codex writes ONLY the final agent message there — the shim reads it
       # instead of scraping the JSONL event stream on stdout. --output-schema was evaluated
       # and rejected (2026-07-16): it demands OpenAI strict mode (additionalProperties:false,
@@ -156,9 +157,20 @@ peers:
       # carrying any deepseek model (checked against ~/.hermes/provider_models_cache.json);
       # without it hermes silently falls back to its own configured default.
       model: null
+      # 900s, not 600s: a flash-tier model doing MULTI-TURN agentic exploration
+      # of a repo-scale target needs more wall clock than its per-call latency
+      # suggests. Measured 2026-09-19: the same invocation answers a trivial
+      # prompt in 7.4s, but every 600s window on a 61k-LOC Rust tree expired
+      # without output (Sylveste-cg1). If a hermes mirror still starves here,
+      # the fix is a narrower target, not a bigger number.
+      timeout_ms: 900000
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
     kimi:
       model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
+      # K3 is measured below at 7.7x gpt-5.6-luna on a sealed parity eval, so a
+      # 600s window was never sized for it — the observed result was probes
+      # returning bare {"findings": []}, scored as honest empty results.
+      timeout_ms: 1800000
       # kimi is a DUAL-LANE runtime; the scripts/kimi-peer-invoke.sh wrapper and
       # detect-runtimes.sh apply the same preference order, and both lanes write
       # ONLY the final assistant message to {outfile} (same file-extraction

@@ -80,6 +80,7 @@ const EX = { maxRounds: 3, ...(A.exchange || {}) };
 // must at least carry the {promptfile} placeholder to be usable at all.
 const RT_KIND = /^[a-z][a-z0-9-]{1,15}$/;
 const RT_MODEL = /^[A-Za-z0-9._:-]{1,64}$/;
+const SHIM_TIMEOUT_DEFAULT_MS = 600_000;
 for (const p of PEERS) {
   if (!RT_KIND.test(p.kind))
     throw new Error(
@@ -93,6 +94,15 @@ for (const p of PEERS) {
     throw new Error(
       `flux-melange: peer invoke template for ${p.kind} lacks {promptfile}`,
     );
+  // Per-runtime wall-clock window. One flat constant cannot serve a fast
+  // mirror and a 7.7x-slower one (K3) on both a one-file and a repo-scale
+  // target: too short silently starves the slow runtime, too long makes every
+  // dead runtime maximally expensive. Clamped because it lands in a prose
+  // instruction the shim executes.
+  const t = Number(p.timeout_ms ?? p.timeoutMs ?? SHIM_TIMEOUT_DEFAULT_MS);
+  p.timeoutMs = Number.isFinite(t)
+    ? Math.min(Math.max(Math.round(t), 60_000), 3_600_000)
+    : SHIM_TIMEOUT_DEFAULT_MS;
 }
 
 const Q = A.quality;
@@ -278,11 +288,11 @@ function shimWrap(rt, inner, schema) {
 
 1. Create a PRIVATE staging dir with ONE Bash call — \`mkdir -p "${A.outputRoot}/mirrors/${rt.kind}/tmp" && mktemp -d "${A.outputRoot}/mirrors/${rt.kind}/tmp/shim-XXXXXX"\` — and write the task below (the text between <<<TASK and TASK>>>, exclusive) to a file named task.md INSIDE that dir. Never write task files directly in tmp/ — concurrent shims collide there; mktemp is what guarantees uniqueness, not your filename choice. Append this exact final paragraph to the task file:
    "End your reply with a single JSON object (no code fence, no prose after it) matching this JSON Schema: ${JSON.stringify(schema)}"
-2. Execute it with ONE Bash call (timeout: 600000), substituting your prompt file path for {promptfile}${substNote}:
+2. Execute it with ONE Bash call (timeout: ${rt.timeoutMs}), substituting your prompt file path for {promptfile}${substNote}:
    ${rt.invoke}
-3. ${extractStep} If it does not parse or misses required fields, re-run ONCE with this appended to the prompt file: "Previous output was not parseable. Reply with ONLY the JSON object."
-4. Return that JSON verbatim as your structured output. Do not add, drop, merge, rescore, or reword anything in it.
-5. If the CLI is missing, fails twice, or times out: return a minimally valid object for the schema (empty arrays; any required string field = "SHIM-FAILURE: <one-line reason>") so the loop degrades gracefully.
+3. ${extractStep} If it does not parse or misses required fields, re-run ONCE with this appended to the prompt file: "Previous output was not parseable. Reply with ONLY the JSON object." Do NOT re-run if the FIRST attempt hit the timeout — a second full window cannot help and doubles the wall clock a dead runtime costs; go straight to step 5.
+4. Return that JSON verbatim as your structured output, plus "shim_status": "ok". Do not add, drop, merge, rescore, or reword anything else in it.
+5. If the CLI is missing, fails, or times out: return "shim_status": "SHIM-FAILURE: <one-line reason>" with every other field empty or omitted. Do NOT fabricate content to satisfy the schema — an empty findings array or a placeholder lens is indistinguishable from a real result, and the loop will score it as one. shim_status is the ONLY thing that tells the loop this mirror did not run.
 
 The external agent has filesystem access under ${A.projectRoot} and the task MAY ask it to write files there — that is expected; do not do the writing for it.
 
@@ -302,15 +312,64 @@ TASK>>>`;
 // A survivable single-agent failure must never destroy a multi-hour ledger
 // (Sylveste-kp9). Deliberate hard floors remain at the call sites (e.g. the
 // both-seed-probes-failed throw).
+// A mirror's failure must be REPRESENTABLE. The shim contract asks a failed
+// shim to return "a minimally valid object ... any required string field =
+// SHIM-FAILURE", but 8 of 10 top-level schemas have no required string field —
+// on those the degraded object is `{"findings": []}`, which is byte-identical
+// to an honest empty result. runProbes treats null as failed and anything
+// truthy as a success, so a dead mirror scored roundYield 0 and halted the
+// loop DRY, reporting a convergence it never earned (Sylveste-cg1).
+//
+// mirrorSchema adds a REQUIRED shim_status to the schema the shim itself must
+// satisfy (never the base schema the external agent sees), and dispatch maps
+// any non-ok status back to null — the value the loop already handles.
+function mirrorSchema(base) {
+  const required = [...((base && base.required) || [])];
+  if (!required.includes("shim_status")) required.push("shim_status");
+  return {
+    ...base,
+    required,
+    properties: {
+      ...((base && base.properties) || {}),
+      shim_status: {
+        type: "string",
+        description: '"ok", or "SHIM-FAILURE: <one-line reason>"',
+      },
+    },
+  };
+}
+
+// Returns a reason string when the relayed result is not a trustworthy mirror
+// result, else null. A missing shim_status counts as failure on purpose: an
+// unverifiable mirror result is precisely the bug being fixed, so the absent
+// case must fail closed rather than pass as an empty success.
+function shimFailureReason(out) {
+  if (!out || typeof out !== "object") return "shim returned no object";
+  const status = out.shim_status;
+  if (typeof status !== "string" || !status.trim())
+    return "shim omitted shim_status";
+  if (status.trim().toLowerCase().startsWith("shim-failure")) return status.trim();
+  return null;
+}
+
 async function dispatch(R, prompt, opts) {
   try {
     if (R.isPrimary) return await agent(prompt, opts);
-    return await agent(shimWrap(R.rt, prompt, opts.schema), {
-      schema: opts.schema,
+    const out = await agent(shimWrap(R.rt, prompt, opts.schema), {
+      schema: mirrorSchema(opts.schema),
       label: `${R.rt.kind}:${opts.label}`,
       phase: opts.phase,
       model: MODEL.shim,
     });
+    const reason = shimFailureReason(out);
+    if (reason) {
+      log(
+        `${R.pfx}mirror ${opts.label || "(unlabeled)"} did not produce a usable result — ${reason.slice(0, 160)}`,
+      );
+      return null;
+    }
+    const { shim_status, ...payload } = out;
+    return payload;
   } catch (e) {
     log(
       `${R.pfx}agent ${opts.label || "(unlabeled)"} failed — degrading to null: ${String((e && e.message) || e).slice(0, 160)}`,
