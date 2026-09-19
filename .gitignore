@@ -47,3 +47,16 @@ docs/research/flux-drive/
 # git-autosync-repair has reported NEEDS-HUMAN on this repo on every run.
 .interwatch/drift.json
 .interwatch/last-scan.json
+
+# interlock-installed coordination hooks and the backups it makes of tracked
+# hooks — machine-local tooling, not project source (.githooks/pre-commit IS tracked)
+.githooks/post-commit
+.githooks/*.interlock-backup
+
+# beads embedded database: local state. A tracked export (.beads/*.jsonl) stays allowed,
+# matching how sibling repos commit the export but never the dolt store.
+.beads/*
+# Only the canonical export is re-includable; interactions.jsonl and friends are
+# local telemetry, not a project artifact.
+!.beads/beads.jsonl
+!.beads/issues.jsonl
