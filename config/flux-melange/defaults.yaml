@@ -127,6 +127,14 @@ peers:
   runtimes:
     codex:
       model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror
+      # This block is the ONE source of truth for the bulk codex mirror.
+      # select-review-route.py --purpose bulk reads it rather than the
+      # reviewer_routing profiles below, which exist for producer-relative
+      # VALIDATION only — a mirror has no producer to be separated from.
+      # effort/tier are restated here because they are otherwise only
+      # discoverable by reading the shell template; tests assert they agree.
+      reasoning_effort: medium
+      service_tier: fast
       # -o {outfile}: codex writes ONLY the final agent message there — the shim reads it
       # instead of scraping the JSONL event stream on stdout. --output-schema was evaluated
       # and rejected (2026-07-16): it demands OpenAI strict mode (additionalProperties:false,
@@ -176,11 +184,20 @@ peers:
 
 # --- Reviewer routing -------------------------------------------------------
 #
-# `peers` above remains the economical, high-volume mirror lane. This separate
-# table resolves a consequential validation reviewer relative to the producer:
-# Claude/Fable or Kimi output is reviewed by Astra; Astra output is reviewed by
-# an external model first, with Sol as the final fallback. The charter invokes
-# scripts/select-review-route.py instead of reconstructing this policy in prose.
+# `peers` above remains the economical, high-volume mirror lane, and owns the
+# bulk mirror's model outright. This separate table resolves a consequential
+# validation reviewer RELATIVE TO THE PRODUCER: Claude/Fable or Kimi output is
+# reviewed by Astra; Astra output is reviewed by an external model first, with
+# Sol as the final fallback. The charter invokes scripts/select-review-route.py
+# instead of reconstructing this policy in prose.
+#
+# These two jobs briefly shared one table via a `routes.bulk` entry pointing at
+# `sol-bulk`, which made mk's 2026-09-19 mirror ruling reachable by one code
+# path and not the other (Sylveste-5nk). `routes` now covers validation only.
+# `sol-bulk` keeps its name because it is still every validation chain's
+# terminal fallback — including the Astra-producer chain, which must never
+# resolve back to Astra. Retargeting its model to satisfy a mirror ruling would
+# silently change reviewer separation.
 #
 reviewer_routing:
   model_aliases:
@@ -215,7 +232,6 @@ reviewer_routing:
       service_tier: standard
       invoke: 'cd "{projectRoot}" && env NTSMR_KIMI_MODEL="{model}" KIMI_CLI_MODEL="kimi-code/{model}" {pluginRoot}/scripts/kimi-peer-invoke.sh "{promptfile}" "{outfile}"'
   routes:
-    bulk: [sol-bulk]
     validation:
       producer_model:
         gpt-6-astra: [fable-review, kimi-review, sol-bulk]

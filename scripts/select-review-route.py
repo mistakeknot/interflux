@@ -50,37 +50,59 @@ def model_identity(model: str, aliases: dict[str, str]) -> str:
     return model
 
 
+BULK_PROFILE = "peers.runtimes.codex"
+
+
+def resolve_bulk(config: dict) -> dict:
+    """Bulk mirrors resolve from the peer table, not the reviewer profiles.
+
+    A mirror is an independent second opinion with no producer to be separated
+    from, so producer-relative routing has nothing to say about it. Reading
+    `peers.runtimes` here keeps this selector and the charter's own resolution
+    (flag > project yaml > plugin defaults) from answering the same question
+    differently.
+    """
+    runtime = dict(config["peers"]["runtimes"]["codex"])
+    if not runtime.get("model") or not runtime.get("invoke"):
+        raise ValueError("peers.runtimes.codex must define both model and invoke")
+    return {
+        "purpose": "bulk",
+        "producer_identity": None,
+        "candidates": [{"profile": BULK_PROFILE, "kind": "codex", **runtime}],
+        "excluded": [],
+        "validator_relationship": None,
+    }
+
+
 def resolve(config: dict, purpose: str, producer: str | None) -> dict:
+    if purpose == "bulk":
+        return resolve_bulk(config)
+
     routing = config["reviewer_routing"]
     profiles = routing["profiles"]
     aliases = routing.get("model_aliases", {})
 
-    if purpose == "bulk":
-        references = routing["routes"]["bulk"]
-        producer_identity = None
-    else:
-        if not producer:
-            raise ValueError("--producer is required for validation routing")
-        producer_kind, producer_model = parse_producer(producer)
-        producer_model = model_identity(producer_model, aliases)
-        # Provider aliases must not change the route selected for one model.
-        producer_kind = "codex" if producer_model.startswith("gpt-") else "claude" if producer_model.startswith("claude-") else "kimi"
-        validation = routing["routes"]["validation"]
-        references = validation.get("producer_model", {}).get(producer_model)
-        if references is None:
-            references = validation.get("producer_kind", {}).get(
-                producer_kind, validation["default"]
-            )
-        producer_identity = {"kind": producer_kind, "model": producer_model, "model_identity": producer_model, "reported": producer}
+    if not producer:
+        raise ValueError("--producer is required for validation routing")
+    producer_kind, producer_model = parse_producer(producer)
+    producer_model = model_identity(producer_model, aliases)
+    # Provider aliases must not change the route selected for one model.
+    producer_kind = "codex" if producer_model.startswith("gpt-") else "claude" if producer_model.startswith("claude-") else "kimi"
+    validation = routing["routes"]["validation"]
+    references = validation.get("producer_model", {}).get(producer_model)
+    if references is None:
+        references = validation.get("producer_kind", {}).get(
+            producer_kind, validation["default"]
+        )
+    producer_identity = {"kind": producer_kind, "model": producer_model, "model_identity": producer_model, "reported": producer}
 
     candidates = []
     excluded = []
     for reference in references:
         profile = dict(profiles[reference])
         identity = model_identity(profile["model"], aliases)
-        if producer_identity:
-            profile["model_identity"] = identity
-        if producer_identity and identity == producer_identity["model_identity"]:
+        profile["model_identity"] = identity
+        if identity == producer_identity["model_identity"]:
             excluded.append({"profile": reference, **profile, "reason": "producer_model_conflict"})
             continue
         candidates.append({"profile": reference, **profile})
@@ -93,7 +115,7 @@ def resolve(config: dict, purpose: str, producer: str | None) -> dict:
         "producer_identity": producer_identity,
         "candidates": candidates,
         "excluded": excluded,
-        "validator_relationship": "different-model" if producer_identity else None,
+        "validator_relationship": "different-model",
     }
 
 

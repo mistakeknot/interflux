@@ -19,6 +19,7 @@ duplication break loudly when only one side is edited.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import textwrap
@@ -125,3 +126,48 @@ def test_consent_gate_is_declared():
     # Default true keeps the three configured mirrors; the knob must exist so a
     # user can refuse unsandboxed agents on a sensitive target.
     assert consent["auto_includes_unsandboxed"] is True
+
+
+MELANGE_SKILL = PROJECT_ROOT / "skills" / "flux-melange-engine"
+CHARTER = MELANGE_SKILL / "phases" / "charter.md"
+PEER_DOCS = [CHARTER, MELANGE_SKILL / "references" / "peer-runtimes.md"]
+
+
+@pytest.mark.parametrize("doc", PEER_DOCS, ids=lambda p: p.name)
+def test_peer_docs_do_not_pin_bulk_mirrors_to_a_stale_model(doc):
+    """The defect was prose, not code: the docs claimed a model config denied.
+
+    An orchestrator reads these top to bottom. While one paragraph said bulk
+    mirrors "retain the configured GPT-5.6 Sol/high/Fast profile" and a later
+    step said to resolve the model from `peers.runtimes`, both readings were
+    defensible and the plan display printed only the resolved model — so the
+    substitution was invisible in the run output.
+    """
+    text = doc.read_text()
+    # Scoped to sentences about mirrors: naming GPT-5.6 Sol is still correct when
+    # describing the validation chain, where it is the terminal fallback.
+    # \bsol\b, not "sol" — that substring also lives inside "resolve".
+    names_a_model = re.compile(r"gpt-|\bsol\b", re.IGNORECASE)
+    for sentence in re.split(r"(?<=[.:])\s", text):
+        if "bulk mirror" not in sentence.lower():
+            continue
+        assert not names_a_model.search(sentence), (
+            f"{doc.name} pins a mirror model instead of deferring to config: {sentence.strip()!r}"
+        )
+
+
+def test_charter_names_the_authoritative_peer_table():
+    assert "peers.runtimes" in CHARTER.read_text()
+
+
+def test_charter_warns_that_every_unsandboxed_lane_is_unsandboxed():
+    """kimi's CLI lane auto-approves tool use in the project root, like hermes.
+
+    The trust warning is the only place a user sees this before the run starts,
+    so an omission here reads as an assurance.
+    """
+    charter = CHARTER.read_text()
+    warning = charter[charter.index("trust warning"):]
+    warning = warning[: warning.index("\n\n")]
+    for runtime in ("hermes", "kimi"):
+        assert runtime in warning, f"{runtime} missing from the peer trust warning"

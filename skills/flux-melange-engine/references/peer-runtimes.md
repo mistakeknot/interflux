@@ -44,9 +44,14 @@ sealed parity eval, so a kimi mirror can dominate the barrier — watch mirror l
 
 ## Producer-relative reviewer routing
 
-The ordinary bulk mirror remains `gpt-5.6-sol` at high reasoning on Fast. For
-consequential validation, pass `--producer=<kind>/<model>` and resolve the
-ordered chain with `scripts/select-review-route.py`:
+The ordinary bulk mirror is not routed at all: its model comes from
+`peers.runtimes` (flag > project yaml > plugin defaults), and
+`select-review-route.py --purpose bulk` reads that same table if you want it
+resolved on the command line. A mirror has no producer to be separated from, so
+there is nothing for a routing policy to decide. For consequential validation
+there is — the reviewer must differ from the producer — so pass
+`--producer=<kind>/<model>` and resolve the ordered chain with
+`scripts/select-review-route.py`:
 
 | Producer | Reviewer preference |
 |----------|---------------------|
@@ -55,7 +60,9 @@ ordered chain with `scripts/select-review-route.py`:
 | Other | Claude/Fable, Kimi/K3, then Sol |
 
 Astra requires Codex 0.153.1 or newer. Here “Standard” is represented by
-Codex's `service_tier="default"`; Fast remains confined to the Sol bulk mirror.
+Codex's `service_tier="default"`; Fast belongs to the mirror lane, whose invoke
+template pins `service_tier` and `model_reasoning_effort` explicitly so a
+mirror's economics never drift with the caller's global Codex default.
 The selector filters out the producer model and rejects validation requests
 without an explicit producer identity. Review first-pass findings are sealed
 until both sides have independently completed their initial pass.
