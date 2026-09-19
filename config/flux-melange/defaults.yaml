@@ -105,6 +105,25 @@ verify:
 #
 peers:
   mode: off
+  # ADAPTIVE DEFAULTS (mk 2026-09-19). The `model:` values below are the PREFERENCE.
+  # scripts/detect-runtimes.sh resolves what this environment can actually reach and
+  # reports "model" + "model_reason" per runtime; charter prefers that over the static
+  # value. Codex falls back Astra -> Sol when the CLI predates 0.153.1; hermes falls back
+  # to its own CLI default when no configured provider carries the deepseek model. The
+  # ladder lives in the script beside kimi's lane selection, so probe and invoke can
+  # never disagree — change the two together.
+  consent:
+    # detect-runtimes.sh reports "sandboxed" per runtime. codex --full-auto is
+    # workspace-write inside projectRoot and the kimi HTTP lane executes nothing
+    # locally; hermes --yolo and the kimi CLI lane run a tool-enabled agent in your
+    # project UNSANDBOXED, with your hooks firing in-run.
+    #   true  — `--peers=auto` mirrors on every detected runtime.
+    #   false — `auto` mirrors only on sandboxed runtimes; unsandboxed ones are still
+    #           detected and listed in the plan, but run only when NAMED explicitly
+    #           (`--peers=hermes,kimi`), which is itself consent.
+    # Default true preserves the three configured mirrors; set false on targets whose
+    # contents you would not hand an unsandboxed agent.
+    auto_includes_unsandboxed: true
   runtimes:
     codex:
       model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror

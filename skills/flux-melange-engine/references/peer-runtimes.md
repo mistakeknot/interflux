@@ -18,6 +18,21 @@ detection contract, the shim contract, isolation rules, and cost math.
   logged and skipped (the run proceeds; never an error).
 - `--exchange-rounds=N` (default 3) caps the Parley exchange.
 
+**These defaults are adaptive, not fixed.** `scripts/detect-runtimes.sh` reports, per runtime, the
+model this environment can actually reach (`model`), why (`model_reason`), and whether the runtime
+confines its auto-approved tool use (`sandboxed`). Charter prefers the resolved model over the
+static config value, so a mirror never silently runs on something nobody chose. Codex falls back
+Astra → Sol when the CLI predates 0.153.1 (the routing policy's `minimum_codex_version` for Astra);
+hermes falls back to its own CLI default when no provider the user has configured carries the
+deepseek model. Both downgrades appear in the plan display before the run.
+
+**Consent.** `peers.consent.auto_includes_unsandboxed` (default true) decides what `--peers=auto`
+may enable unasked. codex `--full-auto` is workspace-write inside `projectRoot` and the kimi HTTP
+lane executes nothing locally; hermes `--yolo` and the kimi CLI lane run a tool-enabled agent in
+your project **unsandboxed**, with your hooks firing in-run. Set it false on a target whose
+contents you would not hand an unsandboxed agent — `auto` then mirrors only on sandboxed runtimes,
+while naming a runtime explicitly (`--peers=hermes`) still runs it, because naming is consent.
+
 **Default mirror models** (mk 2026-09-19, `config/flux-melange/defaults.yaml`): codex mirrors on
 **Astra at medium** reasoning (Fast tier), hermes on **DeepSeek v4.1 Flash** via OpenRouter, kimi on
 **K3**. Medium on Astra is deliberate — a mirror earns its keep through independent coverage, not
