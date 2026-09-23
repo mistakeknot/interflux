@@ -8,24 +8,54 @@ Every probe in a round reviews the same `INPUT_PATH`, so without explicit dirs t
 ```
 OUTPUT_ROOT/round-N/probe-{k}/        # k = directive index within the round
 ```
-Pass this as the review's `--output-dir`. This mirrors how `flux-review-engine/phases/track-dispatch.md` keeps tracks disjoint.
+Give this directory directly to the restricted worker in its prompt. Each
+reviewer writes a different findings path, so concurrent probes cannot clobber
+one another.
 
 ## Dispatch per directive type
 
 Launch all probes for the round in parallel (`run_in_background: true`), respecting the per-directive agent counts from `phases/retarget.md`. Use the prompt template **verbatim** — do not add strategic-influence framing (it can trip server-side input classifiers). Inject `GOAL` as the north star in every prompt.
 
+Create each output dir with `mkdir -p` in the orchestrator before dispatch.
+Dispatch each reviewer directly as `Agent` with
+`subagent_type: interflux:melange-worker`; this agent can read source and use
+guarded Write/Edit tools, but has no shell, skill, or external-runtime tools.
+Pass the probe model from `references/budget-ladder.md` on each Agent call.
+Do not nest a review skill inside the probe. Read the selected lens record or
+generated lens file and include its axioms and focus in the direct prompt.
+
+For every directive, the reviewer must use Write to create
+`{OUTPUT_ROOT}/round-N/probe-{k}/{lens_id}.md` with a standard Findings Index,
+Verdict, Summary, Issues Found, and Improvements. Use this shape:
+```
+### Findings Index
+- P1 | L1 | "path:line" | Concrete claim
+Verdict: safe|needs-changes|risky
+
+### Summary
+...
+
+### Issues Found
+L1. P1: Concrete claim — evidence at path:line.
+
+### Improvements
+...
+```
+`L1` is local to this file; the Assayer assigns globally unique `f-NNN` IDs in
+the ledger. An empty index with `Verdict: safe` represents no findings. Return
+the output path and finding count to the orchestrator. Do not write a temporary findings
+file and do not invoke a helper or subprocess to produce the report.
+
 Every probe prompt additionally carries (mk-8wk):
 - **Settled facts** — up to 10 upheld claims from earlier rounds (heat-ordered, one line each) under "SETTLED FACTS — do NOT re-litigate, re-confirm, or spend findings on these; build on them". This is the loop's working memory; without it later rounds re-pay for what verify already settled.
 - **Remediation channel** — instruct: if a verdict implies amending the REVIEW TARGET/BRIEF itself (a settled fact the brief contradicts, a framing to drop, a question to add), state it as ONE imperative sentence in the finding's `remediation` field (distinct from `suggestion`, which stays for ordinary code/design fixes). Remediations are routed to the report's `prescriptions` — the loop never edits its own target.
-- **Artifact safety** — findings Markdown goes through Write. If the flux-engine
-  peer-findings protocol uses `findings-helper.sh write`, its melange path is
-  scrubbed in memory before the helper appends. Do not use any other shell write
-  into the melange output directory.
+- **Artifact safety** — findings Markdown goes through Write in the restricted
+  melange worker.
 
 **DEEPEN / PROBE-DISAGREEMENT** — a single-lens review at a specific location:
 ```
 Run a focused review of {INPUT_PATH} at {target.location} through the lens {lens}.
-Use the `interflux:flux-engine` skill with --output-dir {OUTPUT_ROOT}/round-N/probe-{k}.
+Use the supplied lens axioms and write to {OUTPUT_ROOT}/round-N/probe-{k}/{lens_id}.md.
 Goal (north star): {GOAL}.
 You are CONFIRMING OR REFUTING this prior finding: "{finding.claim}" ({finding.location}).
 For PROBE-DISAGREEMENT: adjudicate the contradiction between {f1.claim} and {f2.claim} —
@@ -36,8 +66,7 @@ Write a standard Findings Index + verdict. Append [t] to any aesthetic finding l
 **FUSE** — a review through the synthetic hybrid lens:
 ```
 Run a review of {INPUT_PATH} through the FUSED lens {fusion_agent}
-(parents: {A}, {B}). Use the `interflux:flux-engine` skill with
---output-dir {OUTPUT_ROOT}/round-N/probe-{k}.
+(parents: {A}, {B}). Write to {OUTPUT_ROOT}/round-N/probe-{k}/{fusion_agent}.md.
 Goal (north star): {GOAL}.
 HARD CONSTRAINT (already in the fused agent's charter): report a finding ONLY if it
 requires BOTH parent perspectives; if either parent alone would catch it, discard it.
@@ -45,7 +74,7 @@ Every finding MUST include an intersection_justification.
 Write a standard Findings Index + verdict.
 ```
 
-**STEER-WIDE** — a review through the new distant lens (standard flux-engine review at its output dir, goal-biased).
+**STEER-WIDE** — a direct review through the new distant lens at its isolated output dir, goal-biased.
 
 ## After all probes complete
 

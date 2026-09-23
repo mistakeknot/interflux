@@ -16,6 +16,13 @@ export const meta = {
   ],
 };
 
+// Workflow agent() subagents do not run this plugin's PreToolUse write guard.
+// They can write findings with unredacted credentials before the controller
+// regains control. Keep this entry point closed until it has a guarded writer.
+throw new Error(
+  "WORKFLOW_UNGUARDED_WRITE: flux-melange Workflow is disabled; run the prose path",
+);
+
 // ============================================================================
 // flux-melange workflow fast-path (Claude Code only).
 //

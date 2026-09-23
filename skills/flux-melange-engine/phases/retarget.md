@@ -28,8 +28,15 @@ Cap at 2–4 directives total. Assign `budget_weight`s summing to ≤ 1.0, biase
 ## Step 3: Generate the lenses each directive needs
 
 - **DEEPEN / PROBE-DISAGREEMENT** typically reuse an existing adjacent lens (named in the directive) — no design needed.
-- **FUSE** builds a synthetic fused-lens spec from the two parents' lens records (`references/fusion.md` § charter), saved to `.claude/flux-gen-specs/{SLUG}-fusion-{k}.json` and generated via `generate-agents.py --from-specs … --registry=off`. Use `interlens combine_lenses` to seed the hybrid when available.
-- **STEER-WIDE** designs a new distant/esoteric lens from a domain maximally distant from `coverage.regions`/`tiers_used` (reuse the flux-explore distant prompt with the accumulated-coverage list), goal-biased, and generates it with `--registry=off`.
+- **FUSE** builds a synthetic fused-lens spec from the two parents' lens records (`references/fusion.md` § charter), saved with Write to `OUTPUT_ROOT/lens-specs/fusion-{round}-{k}.json`. The main orchestrator may call `interlens combine_lenses` to seed the hybrid when available.
+- **STEER-WIDE** designs a new distant/esoteric lens from a domain maximally distant from `coverage.regions`/`tiers_used`, goal-biased, and saves it with Write to `OUTPUT_ROOT/lens-specs/wide-{round}-{k}.json`.
+
+Use `subagent_type: interflux:melange-worker` for lens design, with the fused
+design model from `references/budget-ladder.md`. The worker writes only the
+spec JSON. The **orchestrator** then runs the exact
+`generate-agents.py --from-specs ... --mode=skip-existing --registry=off --json`
+command for each spec, as in `phases/seed.md`; it never delegates the generator
+to a worker. Stop if a spec or generated lens is missing.
 
 Registry routing follows creative intent: seed-adjacent generation uses `--registry=auto` so proven canonical lenses win before local `skip-existing`; seed-distant, FUSE, and STEER-WIDE use `--registry=off` because those paths exist to add genuinely new coverage.
 

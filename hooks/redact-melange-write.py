@@ -87,6 +87,30 @@ def allowed_bash(command: str, cwd: object = None) -> bool:
             or word.startswith("--output") for word in words
         )
 
+    # The orchestrator may read already-guarded lens specs and generate agent
+    # definitions. Match the exact generator invocation; no arbitrary Python
+    # command may name a melange artifact.
+    if words[0] == "python3" and len(words) == 8:
+        script = words[1]
+        plugin_root = Path(__file__).resolve().parents[1]
+        if script.startswith("${CLAUDE_PLUGIN_ROOT}/"):
+            script = str(plugin_root / script.removeprefix("${CLAUDE_PLUGIN_ROOT}/"))
+        specs = words[4]
+        return (
+            os.path.realpath(script) == str(plugin_root / "scripts" / "generate-agents.py")
+            and words[3] == "--from-specs"
+            and is_melange_path(specs, cwd)
+            and "/lens-specs/" in specs.replace("\\", "/")
+            and re.fullmatch(
+                r"(?:seed-(?:adjacent|distant)|fusion-\d+-\d+|wide-\d+-\d+)\.json",
+                posixpath.basename(specs),
+            ) is not None
+            and words[5] == "--mode=skip-existing"
+            and words[6] in ("--registry=auto", "--registry=off")
+            and words[7] == "--json"
+            and not any("$" in word or "`" in word for word in words[2:])
+        )
+
     script_index = 1 if words[0] in ("bash", "/bin/bash") else 0
     if len(words) <= script_index + 1:
         return False

@@ -1,9 +1,12 @@
 """A melange finding must be scrubbed before the file tool writes it."""
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -184,6 +187,21 @@ def test_bash_allows_plugin_root_helper_form(tmp_path: Path):
     assert call_hook("Bash", {"command": command}) == {}
 
 
+def test_bash_allows_only_the_lens_generator_with_melange_specs(tmp_path: Path):
+    specs = tmp_path / "docs" / "research" / "flux-melange" / "example" / "lens-specs" / "seed-adjacent.json"
+    generator = ROOT / "scripts" / "generate-agents.py"
+    command = f'python3 "{generator}" "{tmp_path}" --from-specs "{specs}" --mode=skip-existing --registry=auto --json'
+
+    assert call_hook("Bash", {"command": command}) == {}
+    fusion = specs.with_name("fusion-1-0.json")
+    fusion_command = f'python3 "{generator}" "{tmp_path}" --from-specs "{fusion}" --mode=skip-existing --registry=off --json'
+    assert call_hook("Bash", {"command": fusion_command}) == {}
+    plugin_root_command = command.replace(str(generator), "${CLAUDE_PLUGIN_ROOT}/scripts/generate-agents.py")
+    assert call_hook("Bash", {"command": plugin_root_command}) == {}
+    arbitrary = f'python3 writer.py "{specs}"'
+    assert call_hook("Bash", {"command": arbitrary})["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 def test_bash_allows_simple_reads_and_git_staging_of_melange_artifacts():
     target = "docs/research/flux-melange/example/heat-ledger.jsonl"
 
@@ -239,12 +257,54 @@ def test_findings_helper_scrubs_relative_file_from_melange_cwd(tmp_path: Path):
     assert token not in (cwd / "peer-findings.jsonl").read_text()
 
 
-def test_workflow_requires_guarded_file_tools_and_rejects_unguarded_mirrors():
+def test_workflow_fails_closed_before_any_agent_can_write():
     src = WORKFLOW.read_text()
+    skill = (ROOT / "skills" / "flux-melange-engine" / "SKILL.md").read_text()
 
-    assert "Use Write or Edit for every artifact under" in src
-    assert "Use Edit on the final existing ledger line" in src
-    assert "peer mirrors are disabled until their writes can be scrubbed before disk" in src
+    assert "WORKFLOW_UNGUARDED_WRITE" in src
+    assert src.index("WORKFLOW_UNGUARDED_WRITE") < src.index("const A =")
+    assert "Run the prose path for every invocation" in skill
+    assert "Do not dispatch Workflow" in skill
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable for Workflow entry point check")
+    script = """
+import { readFileSync } from 'node:fs';
+const source = readFileSync(process.argv[1], 'utf8').replace('export const meta =', 'const meta =');
+let calls = 0;
+const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+const workflow = new AsyncFunction('agent', source);
+try {
+  await workflow(() => { calls++; });
+  process.exitCode = 1;
+} catch (error) {
+  if (!String(error.message).includes('WORKFLOW_UNGUARDED_WRITE') || calls !== 0)
+    process.exitCode = 1;
+}
+"""
+    result = subprocess.run(
+        [node, "--input-type=module", "-e", script, str(WORKFLOW)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_prose_probes_use_guarded_agent_tools_without_nested_dispatch():
+    probe = (ROOT / "skills" / "flux-melange-engine" / "phases" / "probe.md").read_text()
+    seed = (ROOT / "skills" / "flux-melange-engine" / "phases" / "seed.md").read_text()
+    worker = (ROOT / "agents" / "melange-worker.md").read_text()
+    manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+
+    assert "subagent_type: interflux:melange-worker" in probe
+    assert "must use Write to create" in probe
+    assert "interflux:flux-engine" not in probe
+    assert "tools: Read, Grep, Glob, Write, Edit" in worker
+    assert "./agents/melange-worker.md" in manifest["agents"]
+    assert "subagent_type: interflux:melange-worker" in seed
+    assert "flux-drive-style" not in seed
+    assert "track-dispatch.md" not in seed
 
 
 def test_missing_python_blocks_melange_write_but_not_unrelated_write():

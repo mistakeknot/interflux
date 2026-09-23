@@ -1,6 +1,6 @@
 # Reference: Workflow Fast-Path — Args Contract & Divergences
 
-When flux-melange runs inside Claude Code (main loop, non-interactive), the orchestrator MAY dispatch `workflow/melange-workflow.js` via the Workflow tool instead of driving the prose loop itself. The phase `.md` files remain the spec for both paths; the script is the deterministic runtime for the loop (`SKILL.md` § Runtime dispatch decides which path runs).
+Historical Workflow contract, retained for a future guarded implementation. The Workflow entry point currently fails closed because its `agent()` subagents bypass the plugin's `PreToolUse` write guard. Follow `SKILL.md` § Runtime dispatch and run the prose path for every invocation.
 
 ## Why a fast-path exists
 

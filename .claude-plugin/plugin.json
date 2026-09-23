@@ -1,7 +1,7 @@
 {
   "name": "interflux",
   "version": "0.3.1",
-  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 17 agents (12 review + 5 research), 8 commands (incl. flux-melange \u2014 a goal-seeking adaptive review loop with lens fusion and novelty/risk/taste scoring), 3 skills (flux-engine, flux-review-engine, flux-melange-engine), 2 MCP servers (exa, openrouter-dispatch). Companion plugin for Clavain.",
+  "description": "Multi-agent review and research with scored triage, domain detection, content slicing, intermediate finding sharing, and knowledge injection. 18 agents (12 review + 5 research + 1 melange worker), 8 commands (incl. flux-melange \u2014 a goal-seeking adaptive review loop with lens fusion and novelty/risk/taste scoring), 3 skills (flux-engine, flux-review-engine, flux-melange-engine), 2 MCP servers (exa, openrouter-dispatch). Companion plugin for Clavain.",
   "author": {
     "name": "mistakeknot"
   },
@@ -35,6 +35,7 @@
     "./commands/flux-review.md"
   ],
   "agents": [
+    "./agents/melange-worker.md",
     "./agents/research/best-practices-researcher.md",
     "./agents/research/framework-docs-researcher.md",
     "./agents/research/git-history-analyzer.md",

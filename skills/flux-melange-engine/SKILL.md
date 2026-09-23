@@ -11,9 +11,11 @@ Run a **closed-loop** review. Where `/flux-review` fans out a fixed set of track
 adjudication, and synthesis artifact under `docs/research/flux-melange/`.
 The plugin's PreToolUse guard redacts secret-shaped values before those tools
 write. Do not use Bash, shell redirection, or a subprocess to write these
-artifacts. The flux-engine `findings-helper.sh write` path is guarded inside
-that helper for melange output. Peer mirrors are temporarily unavailable:
-their external CLIs can write to disk without passing through this guard.
+artifacts. Dispatch every melange subagent as `interflux:melange-worker`; its
+tool allowlist is Read, Grep, Glob, Write, Edit. The main orchestrator may
+create output directories with `mkdir -p` and run the shared findings helper
+for reads. Peer mirrors are temporarily unavailable: their external CLIs can
+write to disk without passing through this guard.
 
 > **Spice metaphor (on-brand, load-bearing).** *Melange* (Dune's spice) grants prescience — the eye that sees across distance. The loop **assays** each round's spice, **steers toward the heat**, **fuses reagents** into new lenses, and ends with the **eye of distance** (synthesis). The names are mnemonics for real mechanics, not decoration.
 
@@ -43,7 +45,7 @@ is enforced. Existing blind-review, gauge, and publication gates still apply.
 
 ## Runtime contract (no new primitives)
 
-The loop is expressible in the exact primitives `flux-engine` / `flux-review-engine` already use — and inside Claude Code there is additionally a **workflow fast-path** (`workflow/melange-workflow.js`, dispatched per § Runtime dispatch below) that runs the same loop as a background Workflow script with the controller as literal code. The prose path rides these primitives:
+The loop uses the primitives `flux-engine` / `flux-review-engine` already use. The Workflow script is disabled because its `agent()` subagents can write files without the plugin's `PreToolUse` redaction guard. The prose path rides these primitives:
 
 | Primitive | Realization |
 |-----------|-------------|
@@ -79,33 +81,11 @@ The loop is **Phase 3 → 4 → 5 → 6**, re-entering from 6 to 3 while `should
 
 After charter, display the plan and (unless `--interactive`) auto-proceed — triage is deterministic.
 
-## Runtime dispatch: workflow fast-path vs prose loop
+## Runtime dispatch
 
-After charter, choose the execution path. Use the **workflow path** when ALL of:
+Run the prose path for every invocation after charter (Steps 1–3 below). Do not dispatch Workflow, including when resuming a prior Workflow run. Its subagents bypass the plugin's `PreToolUse` write guard, so a probe can put a raw secret on disk. The Workflow script itself fails closed before dispatching any agent. Resume incomplete work using the prose phase files and the existing ledger.
 
-1. The **Workflow tool is available** in this session (Claude Code main loop — it is absent under Codex and inside subagents);
-2. **Not `--interactive`** (scripts cannot AskUserQuestion — no per-round confirmation, no GOAL-MET prompt);
-3. **Not resuming a prose-mode run** (a non-empty `heat-ledger.jsonl` with no prior workflow run for this SLUG → finish on the prose path).
-
-Otherwise run the **prose path** (Steps 1–3 below). The phase files are the spec for both paths.
-
-**Peer mirrors are disabled at charter.** The workflow path also rejects any
-nonempty peer list before dispatch. The retained peer design in
-`references/peer-runtimes.md` does not authorize a peer run yet.
-
-**Workflow path:**
-
-1. Charter has already parsed args, merged config, derived identifiers, computed the budget, and created `OUTPUT_ROOT/` + `lenses/` + the empty ledger — all of that still happens here, in the orchestrator.
-2. Dispatch (invocation via `/flux-melange` satisfies the Workflow tool's explicit-opt-in requirement):
-   ```
-   Workflow({
-     scriptPath: "{this skill's base dir}/workflow/melange-workflow.js",
-     args: { ...charter contract — see references/workflow-args.md }
-   })
-   ```
-3. The workflow runs in the background (watch with /workflows). On completion, take the returned report object and render Phase 8 (§ Report below) from it. Verify the synthesis file exists before reporting success; if the report carries `caveats`, surface them verbatim.
-4. **Resume after a crash/kill:** `Workflow({scriptPath, resumeFromRunId: "<prior runId>"})` — completed agent calls replay from the journal cache. This replaces prose-mode resume detection.
-5. Divergences from the prose path (in-loop phase order, state-file substitution, batched verification, slot accounting) are documented in `references/workflow-args.md` — read it before dispatching or debugging a workflow run.
+Peer mirrors remain disabled at charter: their external CLIs also lack this before-disk guard. The retained peer design in `references/peer-runtimes.md` does not authorize a peer run yet.
 
 ## Step 1: First taste (round 0)
 
@@ -153,7 +133,7 @@ Synthesis: docs/research/flux-melange/{SLUG}/{DATE}-synthesis.md
 Total cost: ~${cost}
 
 To rerun the discovered lenses as a flat review: /flux-drive {INPUT_PATH}
-To regenerate a fused lens: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-fusion-{k}.json
+To regenerate a fused lens: /flux-gen --from-specs docs/research/flux-melange/{SLUG}/lens-specs/fusion-{round}-{k}.json
 ```
 
 If the report carries non-empty `prescriptions` (mk-8wk: mid-run remediations — target/brief
