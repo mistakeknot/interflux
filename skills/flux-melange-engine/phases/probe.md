@@ -17,6 +17,10 @@ Launch all probes for the round in parallel (`run_in_background: true`), respect
 Every probe prompt additionally carries (mk-8wk):
 - **Settled facts** — up to 10 upheld claims from earlier rounds (heat-ordered, one line each) under "SETTLED FACTS — do NOT re-litigate, re-confirm, or spend findings on these; build on them". This is the loop's working memory; without it later rounds re-pay for what verify already settled.
 - **Remediation channel** — instruct: if a verdict implies amending the REVIEW TARGET/BRIEF itself (a settled fact the brief contradicts, a framing to drop, a question to add), state it as ONE imperative sentence in the finding's `remediation` field (distinct from `suggestion`, which stays for ordinary code/design fixes). Remediations are routed to the report's `prescriptions` — the loop never edits its own target.
+- **Artifact safety** — findings Markdown goes through Write. If the flux-engine
+  peer-findings protocol uses `findings-helper.sh write`, its melange path is
+  scrubbed in memory before the helper appends. Do not use any other shell write
+  into the melange output directory.
 
 **DEEPEN / PROBE-DISAGREEMENT** — a single-lens review at a specific location:
 ```

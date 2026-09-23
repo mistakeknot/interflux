@@ -7,6 +7,14 @@ description: Invoked from /flux-melange — runs a goal-seeking, multi-round rev
 
 Run a **closed-loop** review. Where `/flux-review` fans out a fixed set of tracks *once*, blind, and synthesizes at the end, `/flux-melange` threads one scored, append-only **heat ledger** between adaptive rounds. Each round's targeting is a pure function of what the previous round found — steering compute *toward the heat* (novelty / risk / disagreement) instead of blindly *further out*. Two lenses can **fuse** into a third hybrid lens that reports only findings invisible to either parent alone. Every finding scores on **Novelty / Risk / Taste**, and the final synthesis **surfaces the spice** — the novelty×risk frontier, the top fusions, the boldest taste calls — not a flat severity list.
 
+**Artifact safety:** Use Write or Edit for every findings, ledger, verification,
+adjudication, and synthesis artifact under `docs/research/flux-melange/`.
+The plugin's PreToolUse guard redacts secret-shaped values before those tools
+write. Do not use Bash, shell redirection, or a subprocess to write these
+artifacts. The flux-engine `findings-helper.sh write` path is guarded inside
+that helper for melange output. Peer mirrors are temporarily unavailable:
+their external CLIs can write to disk without passing through this guard.
+
 > **Spice metaphor (on-brand, load-bearing).** *Melange* (Dune's spice) grants prescience — the eye that sees across distance. The loop **assays** each round's spice, **steers toward the heat**, **fuses reagents** into new lenses, and ends with the **eye of distance** (synthesis). The names are mnemonics for real mechanics, not decoration.
 
 ## Portable reasoning contract
@@ -81,7 +89,9 @@ After charter, choose the execution path. Use the **workflow path** when ALL of:
 
 Otherwise run the **prose path** (Steps 1–3 below). The phase files are the spec for both paths.
 
-**Peer mirrors require the workflow path.** When charter resolved `--peers` (see `phases/charter.md` § Resolve peer runtimes and `references/peer-runtimes.md`) but the prose path is forced (`--interactive`, no Workflow tool), warn and run the primary loop only — the mirror loops and Parley exist only in the script in v1.
+**Peer mirrors are disabled at charter.** The workflow path also rejects any
+nonempty peer list before dispatch. The retained peer design in
+`references/peer-runtimes.md` does not authorize a peer run yet.
 
 **Workflow path:**
 

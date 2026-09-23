@@ -71,6 +71,12 @@ for (const k of [
 const PEERS = Array.isArray(A.peers)
   ? A.peers.filter((p) => p && p.kind && p.invoke)
   : [];
+// External CLIs can write straight to findings files without Claude's
+// PreToolUse guard. Fail before dispatch until they have a before-disk writer.
+if (PEERS.length)
+  throw new Error(
+    "flux-melange: peer mirrors are disabled until their writes can be scrubbed before disk",
+  );
 const EX = { maxRounds: 3, ...(A.exchange || {}) };
 
 // Peer contract hardening (references/peer-runtimes.md § Trust boundary):
@@ -354,7 +360,8 @@ function shimFailureReason(out) {
 
 async function dispatch(R, prompt, opts) {
   try {
-    if (R.isPrimary) return await agent(prompt, opts);
+    if (R.isPrimary)
+      return await agent(`${ARTIFACT_WRITE_CONTRACT}\n${prompt}`, opts);
     const out = await agent(shimWrap(R.rt, prompt, opts.schema), {
       schema: mirrorSchema(opts.schema),
       label: `${R.rt.kind}:${opts.label}`,
@@ -377,6 +384,10 @@ async function dispatch(R, prompt, opts) {
     return null;
   }
 }
+
+const ARTIFACT_WRITE_CONTRACT = `Use Write or Edit for every artifact under ${A.outputRoot}.
+Do not use Bash, shell redirection, helper scripts, or subprocesses to write there.
+The plugin's PreToolUse guard scrubs secret-shaped values before those file tools write.`;
 
 // ---- schemas ---------------------------------------------------------------
 const SEED_DESIGN_SCHEMA = {
@@ -630,7 +641,8 @@ For EACH lens, ALSO write one findings file to the output dir given above, struc
 - Severity / Where / What / Evidence / Suggestion
 ## Verdict
 {1-3 sentences}
-Create the directory if needed (mkdir -p). Grounded findings (verified against the
+Create the directory if needed (mkdir -p), then use Write for the findings file.
+Grounded findings (verified against the
 actual repo files the target cites) score higher than speculation.`;
 
 const severityRef =
@@ -856,7 +868,11 @@ For each finding, assign id f-NNN starting at ${fmtId(idStart)} (input order), t
 6. DISAGREEMENTS: pairs of findings (this round or vs the ledger) at the same location with
    contradictory claims.
 
-Then APPEND one JSON line per finding to ${R.ledger} (create the file if absent; schema identical to
+For round 0, Write the new JSON lines to the empty ${R.ledger}. For later rounds,
+Use Edit on the final existing ledger line: old_string is that exact unique line,
+new_string is that same line followed by one JSON line per new finding. Preserve
+all prior bytes. If the final line cannot be matched uniquely, stop rather than
+rewrite the ledger. Never append with shell redirection. Schema is identical to
 existing lines: id, round=${round}, source{kind:"lens"|"fusion",agents,parent_lenses,source_domains},
 claim, location, severity, novelty, risk{blast_radius,likelihood,product}, taste, taste_kind,
 cluster_id, convergence_refs:[], disagreement_refs:[], intersection_justification, evidence,
@@ -1658,7 +1674,8 @@ Set changed_mind=true iff this round you conceded anything, introduced new evide
     }
 
     table = await agent(
-      `You are the MODERATOR of an adversarial synthesis exchange (flux-melange Parley, round ${exRound}).
+      `${ARTIFACT_WRITE_CONTRACT}
+You are the MODERATOR of an adversarial synthesis exchange (flux-melange Parley, round ${exRound}).
 You merge positions; you never invent arguments or take sides.
 This round's advocate positions (JSON): ${JSON.stringify(positions)}
 Prior consensus table: ${table ? JSON.stringify(table) : "none — first round"}

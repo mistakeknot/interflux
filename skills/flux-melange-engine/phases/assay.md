@@ -21,7 +21,13 @@ For each new finding, the Assayer:
 4. **Annotate TASTE (−2..+2)** — Opus only, only on `[t]`-flagged or form-over-function findings; else `taste = 0, taste_kind = null`.
 5. **Emergence gate (fused-lens findings only).** Check the finding's location against both parents' indexes (`references/fusion.md` § emergence gate): demote to convergence if a parent already had it; promote to EMERGENT (novelty floored at 3) if neither did, or if both touched the location but neither connected the causes. Record `intersection_justification`.
 
-Append one fully-scored JSON object per finding to `heat-ledger.jsonl` (schema: `references/ledger-schema.md`). Set `status = raw` (the verify phase will stamp `upheld`/`refuted` for the high-novelty/high-risk subset).
+On round 0, use Write for the empty `heat-ledger.jsonl`. On later rounds, use
+Edit on the final existing ledger line: replace that exact unique line with
+itself followed by one fully-scored JSON object per new finding. Preserve all
+prior bytes and stop if the final line cannot be matched uniquely. Never
+append with shell redirection. The schema is in `references/ledger-schema.md`.
+Set `status = raw` (the verify phase will stamp `upheld`/`refuted` for the
+high-novelty/high-risk subset).
 
 ## Refresh lens records
 

@@ -35,4 +35,6 @@ Order matters: a refuted finding (check 1) must never reach check 2, or a false 
 
 ## Output
 
-The ledger's `status` fields are now stamped for the gated subset. Proceed to `phases/score.md`, which links convergence/disagreement across the whole ledger and evaluates the loop gate.
+Use Edit to stamp the ledger's `status` fields for the gated subset. Proceed to
+`phases/score.md`, which links convergence/disagreement across the whole ledger
+and evaluates the loop gate.
