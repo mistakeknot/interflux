@@ -40,6 +40,8 @@ def _message_text(content: object) -> str:
 def _read_transcript(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     marker = None
     model = None
+    usage_by_message: dict[str, dict[str, Any]] = {}
+    anonymous_usage_rows = 0
     usage = {
         "input_tokens": 0,
         "cache_creation_input_tokens": 0,
@@ -61,13 +63,15 @@ def _read_transcript(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]
             if role == "user" and not first_user_seen:
                 first_user_seen = True
                 match = MARKER.match(_message_text(message.get("content")))
-                if match:
-                    try:
-                        candidate = json.loads(match.group(1))
-                    except json.JSONDecodeError:
-                        candidate = None
-                    if isinstance(candidate, dict):
-                        marker = candidate
+                if not match:
+                    return None, {**usage, "model": model}
+                try:
+                    candidate = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    return None, {**usage, "model": model}
+                if not isinstance(candidate, dict):
+                    return None, {**usage, "model": model}
+                marker = candidate
             if role != "assistant":
                 continue
             if message.get("model"):
@@ -75,10 +79,19 @@ def _read_transcript(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]
             turn_usage = message.get("usage")
             if not isinstance(turn_usage, dict):
                 continue
-            for key in usage:
-                value = turn_usage.get(key)
-                if isinstance(value, (int, float)):
-                    usage[key] += int(value)
+            message_id = message.get("id")
+            if isinstance(message_id, str) and message_id:
+                usage_key = f"message:{message_id}"
+            else:
+                anonymous_usage_rows += 1
+                usage_key = f"row:{anonymous_usage_rows}"
+            usage_by_message[usage_key] = turn_usage
+
+    for turn_usage in usage_by_message.values():
+        for key in usage:
+            value = turn_usage.get(key)
+            if isinstance(value, (int, float)):
+                usage[key] += int(value)
 
     usage["model"] = model
     return marker, usage

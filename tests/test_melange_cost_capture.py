@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,9 +14,15 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = ROOT / "scripts" / "melange-costs.py"
+MULTIBLOCK_FIXTURE = ROOT / "tests" / "fixtures" / "claude-multiblock-usage.jsonl"
 WORKFLOW = (
     ROOT / "skills" / "flux-melange-engine" / "workflow" / "melange-workflow.js"
 )
+
+CAPTURE_SPEC = importlib.util.spec_from_file_location("melange_costs", CAPTURE)
+assert CAPTURE_SPEC is not None and CAPTURE_SPEC.loader is not None
+MELANGE_COSTS = importlib.util.module_from_spec(CAPTURE_SPEC)
+CAPTURE_SPEC.loader.exec_module(MELANGE_COSTS)
 
 
 def test_melange_standard_profile_is_balanced_three_rounds() -> None:
@@ -50,6 +58,8 @@ def _transcript(path: Path, marker: dict, *, model: str, usage: dict) -> None:
 
 
 def _run_hook(transcript: Path) -> None:
+    env = os.environ.copy()
+    env.pop("CLAUDE_PROJECT_DIR", None)
     subprocess.run(
         [sys.executable, str(CAPTURE), "hook"],
         input=json.dumps(
@@ -64,10 +74,14 @@ def _run_hook(transcript: Path) -> None:
         text=True,
         check=True,
         cwd=ROOT,
+        env=env,
     )
 
 
-def test_melange_run_writes_per_agent_and_per_round_cost_summary(tmp_path: Path) -> None:
+def test_melange_run_writes_per_agent_and_per_round_cost_summary(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "different-project"))
     output_dir = tmp_path / "run"
     output_dir.mkdir()
 
@@ -146,6 +160,66 @@ def test_melange_run_writes_per_agent_and_per_round_cost_summary(tmp_path: Path)
         "tokens_out": 50,
     }
     assert (output_dir / "cost-summary.md").exists()
+
+
+def test_repeated_content_block_rows_count_message_usage_once(tmp_path: Path) -> None:
+    """Fixture shape and usage values are sanitized from a real Claude transcript."""
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    transcript = tmp_path / "multiblock.jsonl"
+    marker = {
+        "output_dir": str(output_dir),
+        "runtime": "claude",
+        "agent": "probe:r1:deepen",
+        "round": "round-1",
+        "backend": "claude",
+        "model": "opus",
+        "quota_source": "unknown",
+    }
+    first_user = {
+        "message": {
+            "role": "user",
+            "content": (
+                "<flux-melange-cost>"
+                + json.dumps(marker, separators=(",", ":"))
+                + "</flux-melange-cost>\nReview the target."
+            ),
+        }
+    }
+    transcript.write_text(
+        json.dumps(first_user) + "\n" + MULTIBLOCK_FIXTURE.read_text()
+    )
+
+    _run_hook(transcript)
+
+    row = json.loads((output_dir / "cost-summary.json").read_text())["agents"][0]
+    assert row["input_tokens"] == 4
+    assert row["cache_creation_input_tokens"] == 6376
+    assert row["cache_read_input_tokens"] == 72132
+    assert row["tokens_in"] == 78512
+    assert row["tokens_out"] == 20
+
+
+def test_unmarked_transcript_stops_after_first_user_message() -> None:
+    class Transcript:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def __iter__(self):
+            yield json.dumps(
+                {"message": {"role": "user", "content": "ordinary task"}}
+            )
+            raise AssertionError("unmarked transcript was read past its first user row")
+
+    class TranscriptPath:
+        def open(self, **_kwargs):
+            return Transcript()
+
+    marker, _usage = MELANGE_COSTS._read_transcript(TranscriptPath())
+    assert marker is None
 
 
 def test_subagent_stop_hook_registers_cost_capture() -> None:
