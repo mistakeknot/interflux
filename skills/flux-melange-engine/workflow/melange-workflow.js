@@ -365,11 +365,38 @@ function shimFailureReason(out) {
   return null;
 }
 
+function costRoundFromPhase(phaseName) {
+  const match = String(phaseName || "").match(/Round (\d+)/i);
+  if (match) return `round-${match[1]}`;
+  if (/seed/i.test(String(phaseName || ""))) return "round-0";
+  if (/parley/i.test(String(phaseName || ""))) return "parley";
+  if (/synthesize/i.test(String(phaseName || ""))) return "synthesis";
+  return "overhead";
+}
+
 async function dispatch(R, prompt, opts) {
+  const isShim = !R.isPrimary;
+  const costMeta = {
+    output_dir: R.base,
+    runtime: R.rt.kind,
+    agent: opts.label,
+    round: opts.costRound || costRoundFromPhase(opts.phase),
+    backend: "claude",
+    model: isShim ? MODEL.shim : opts.model,
+    quota_source: A.quotaSource || "unknown",
+    external_backend: isShim ? R.rt.kind : null,
+    external_model: isShim ? R.rt.model || "unknown" : null,
+    external_quota_source: isShim
+      ? R.rt.quotaSource || "unknown"
+      : null,
+  };
+  const runtimePrompt = isShim
+    ? shimWrap(R.rt, prompt, opts.schema)
+    : `${ARTIFACT_WRITE_CONTRACT}\n${prompt}`;
+  const markedPrompt = `<flux-melange-cost>${JSON.stringify(costMeta)}</flux-melange-cost>\n${runtimePrompt}`;
   try {
-    if (R.isPrimary)
-      return await agent(`${ARTIFACT_WRITE_CONTRACT}\n${prompt}`, opts);
-    const out = await agent(shimWrap(R.rt, prompt, opts.schema), {
+    if (R.isPrimary) return await agent(markedPrompt, opts);
+    const out = await agent(markedPrompt, {
       schema: mirrorSchema(opts.schema),
       label: `${R.rt.kind}:${opts.label}`,
       phase: opts.phase,
@@ -1680,9 +1707,9 @@ Set changed_mind=true iff this round you conceded anything, introduced new evide
       break;
     }
 
-    table = await agent(
-      `${ARTIFACT_WRITE_CONTRACT}
-You are the MODERATOR of an adversarial synthesis exchange (flux-melange Parley, round ${exRound}).
+    table = await dispatch(
+      primary,
+      `You are the MODERATOR of an adversarial synthesis exchange (flux-melange Parley, round ${exRound}).
 You merge positions; you never invent arguments or take sides.
 This round's advocate positions (JSON): ${JSON.stringify(positions)}
 Prior consensus table: ${table ? JSON.stringify(table) : "none — first round"}
@@ -1707,6 +1734,7 @@ Return the structured output.`,
       {
         label: `moderator:r${exRound}`,
         phase: "Parley",
+        costRound: "parley",
         model: MODEL.moderator,
         schema: MODERATOR_SCHEMA,
       },

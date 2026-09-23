@@ -26,7 +26,7 @@ goal: "maximize verified novelty×risk surface until dry"
 # Which derived term the per-round YIELD function boosts. Steers WHAT the loop
 # considers "spice" without changing the loop mechanics.
 #
-#   balanced   equal weight on novelty / risk / taste terms (daily default)
+#   balanced   equal weight on novelty / risk / taste terms (standard profile)
 #   risk-hunt  boost risk.product — for security/migration/prod-safety targets
 #   taste      boost |taste| — for design reviews, API surfaces, naming passes
 #   novelty    boost novelty — for "what are we NOT seeing?" exploration
@@ -38,7 +38,7 @@ weights: balanced
 # Three independent HARD halts: DRY (yield -> 0), BUDGET (slots exhausted),
 # CEILING (max_rounds). min_rounds guards against one unlucky round quitting.
 #
-max_rounds: 4            # CEILING halt. Cap 6 (the engine refuses higher).
+max_rounds: 3            # standard high-stakes pass. Cap 6 (the engine refuses higher).
 min_rounds: 2            # never DRY-halt before this many rounds
 round_cost_floor: 3      # BUDGET halt when remaining slots < this
 diminishing_threshold: 1 # a round opening <= this many new qualifying clusters is DRY
@@ -127,6 +127,7 @@ peers:
   runtimes:
     codex:
       model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror
+      quota_source: unknown # set only when the account/quota source is authoritative
       # This block is the ONE source of truth for the bulk codex mirror.
       # select-review-route.py --purpose bulk reads it rather than the
       # reviewer_routing profiles below, which exist for producer-relative
@@ -157,6 +158,7 @@ peers:
       # carrying any deepseek model (checked against ~/.hermes/provider_models_cache.json);
       # without it hermes silently falls back to its own configured default.
       model: null
+      quota_source: unknown
       # 900s, not 600s: a flash-tier model doing MULTI-TURN agentic exploration
       # of a repo-scale target needs more wall clock than its per-call latency
       # suggests. Measured 2026-09-19: the same invocation answers a trivial
@@ -167,6 +169,7 @@ peers:
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
     kimi:
       model: k3            # canonical Kimi Coding Plan model id (1M ctx, reasoning-only)
+      quota_source: unknown
       # K3 is measured below at 7.7x gpt-5.6-luna on a sealed parity eval, so a
       # 600s window was never sized for it — the observed result was probes
       # returning bare {"findings": []}, scored as honest empty results.
@@ -273,7 +276,7 @@ interactive: false
 # Cost reference (rough, ~per agent slot)
 #
 #   2-round economy:   ~8-10 slots   ~$1     (quick adaptive pass)
-#   3-round balanced:  ~15-18 slots  ~$5     (the daily driver)
+#   3-round balanced:  ~15-18 slots  ~$5     (standard high-stakes pass)
 #   4-round balanced:  ~22-26 slots  ~$8     (design/architecture targets)
 #   to-dry max:        up to 30 cap  ~$15    (high-stakes, risk-hunt or taste)
 #

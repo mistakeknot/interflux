@@ -65,7 +65,7 @@ Field contract:
   "weights": "balanced",
   "round": 2,
   "min_rounds": 2,
-  "max_rounds": 4,
+  "max_rounds": 3,
   "budget": { "total": 30, "remaining": 17, "round_cost_floor": 4 },
   "coverage": {
     "regions": ["migrations/", "internal/store/"],

@@ -87,6 +87,13 @@ Run the prose path for every invocation after charter (Steps 1–3 below). Do no
 
 Peer mirrors remain disabled at charter: their external CLIs also lack this before-disk guard. The retained peer design in `references/peer-runtimes.md` does not authorize a peer run yet.
 
+**Cost capture (both paths):** read `references/cost-capture.md`. The workflow
+path marks every call in its `dispatch()` chokepoint. On the prose path, prefix
+every `Agent` prompt with the documented marker. The `SubagentStop` hook writes
+`cost-events.jsonl`, `cost-summary.json`, and `cost-summary.md` under
+`OUTPUT_ROOT`; quota sources and peer-runtime usage stay explicitly `unknown`
+when the runtime provides no authoritative value.
+
 ## Step 1: First taste (round 0)
 
 **Read `phases/seed.md` now.** Round 0 is the only round NOT steered by heat: it seeds the ledger with a compact two-tier flux-review-style pass (adjacent + distant) plus the lens records that fusion and retargeting depend on.
@@ -130,6 +137,7 @@ Top finding (argmax heat): {one-line}
 
 Ledger:    docs/research/flux-melange/{SLUG}/heat-ledger.jsonl
 Synthesis: docs/research/flux-melange/{SLUG}/{DATE}-synthesis.md
+Costs:     docs/research/flux-melange/{SLUG}/cost-summary.md
 Total cost: ~${cost}
 
 To rerun the discovered lenses as a flat review: /flux-drive {INPUT_PATH}

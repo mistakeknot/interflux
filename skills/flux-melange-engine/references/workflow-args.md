@@ -42,12 +42,14 @@ Charter (Phase 0) resolves these exactly as for the prose path, then passes them
   "fusion": { "perRoundCap": 2, "sharedHeatGate": 2 },
   "verify": { "mode": "auto | off | all", "noveltyGate": 2, "riskGate": 9 },
 
-  "peers": [ { "kind": "codex", "model": "gpt-6-astra", "timeout_ms": 600000, "invoke": "codex exec --full-auto --skip-git-repo-check --ephemeral -C \"/abs/project\" -m \"gpt-6-astra\" -o \"{outfile}\" - < \"{promptfile}\"" } ],
+  "quotaSource": "known quota source, otherwise unknown",
+
+  "peers": [ { "kind": "codex", "model": "gpt-6-astra", "quotaSource": "unknown", "timeout_ms": 600000, "invoke": "codex exec --full-auto --skip-git-repo-check --ephemeral -C \"/abs/project\" -m \"gpt-6-astra\" -o \"{outfile}\" - < \"{promptfile}\"" } ],
   "exchange": { "maxRounds": 3 }
 }
 ```
 
-`peers` and `exchange` are OPTIONAL (all other keys are required): omit both for a classic
+`quotaSource`, `peers`, and `exchange` are OPTIONAL (all other keys are required): omit peers and exchange for a classic
 single-runtime run. When present, `peers[].invoke` must be fully resolved except the
 `{promptfile}` placeholder (required) and optional `{outfile}` (both substituted by the
 shim — `{outfile}` switches result extraction from stdout-scrape to reading the CLI's
@@ -64,6 +66,13 @@ window, and the starvation is silent unless `shim_status` reaches the loop (Sylv
 `date` and `slug` MUST come from the charter — Workflow scripts cannot call `Date.now()` / `new Date()`.
 
 Charter still creates `OUTPUT_ROOT/`, `OUTPUT_ROOT/lenses/`, and the empty `heat-ledger.jsonl` before dispatch (agents append to it from round 0).
+
+## Cost artifacts
+
+Every workflow agent is marked at the `dispatch()` chokepoint. The plugin's
+`SubagentStop` hook writes `cost-events.jsonl`, `cost-summary.json`, and
+`cost-summary.md` to `outputRoot`; see `cost-capture.md` for the schema and
+unknown-usage rules.
 
 ## What the script returns
 
