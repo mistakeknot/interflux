@@ -5,23 +5,36 @@ One **Assayer** subagent (never a reviewer) reads the round's new findings, scor
 ## Inputs
 
 - The round's probe output dirs (`round-N/*/`).
-- `findings-helper.sh read-indexes <output_dir>` for each, giving `agent<TAB>finding-line` — the deterministic overlap source.
+- Read each new probe's Findings Index with the Read tool; its indexed lines are the overlap source.
 - The full existing `heat-ledger.jsonl` (for cross-round novelty/cluster judgment).
 - For fused-lens findings: both parents' Findings Indexes (for the emergence gate).
 
 ## Procedure
 
-Launch **one** Assayer subagent per round (model: Sonnet for novelty/risk; Opus for the taste annotation — run as a single Opus Assayer on `--quality=balanced`+, or a Sonnet assayer + a small Opus taste pass on economy). It sees **all of the round's finding files at once**.
+Launch **one** Assayer subagent per round with
+`subagent_type: interflux:melange-worker`; pass the assay model from
+`references/budget-ladder.md` on the Agent call. Use Opus for the taste
+annotation on balanced/max; skip taste annotation on economy. It sees **all of
+the round's finding files at once**.
 
 For each new finding, the Assayer:
 
+0. **Assign a ledger ID.** Probe IDs are local to their findings file. Allocate
+   the next unused `f-NNN` ID after the maximum in the existing ledger; keep
+   file path plus local ID as the source key for traceability.
 1. **Cluster (deterministic pre-filter first).** Group by location overlap (same file + overlapping lines, OR same file + same top-level symbol). Only location-colliding candidates go to LLM same-root-cause judgment. Assign `cluster_id`; flag whether it opens a **new** cluster (not seen any prior round).
-2. **Score NOVELTY (0–3)** as inverse measured overlap — see `references/heat-scoring.md`. Compute overlap from `read-indexes`, not the `convergence` command.
+2. **Score NOVELTY (0–3)** as inverse measured overlap — see `references/heat-scoring.md`. Compute overlap from the Findings Index lines, not the `convergence` command.
 3. **Score RISK** — `blast_radius (0–3) × likelihood (0–3) = product`, decoupled from `severity`. Store both.
 4. **Annotate TASTE (−2..+2)** — Opus only, only on `[t]`-flagged or form-over-function findings; else `taste = 0, taste_kind = null`.
 5. **Emergence gate (fused-lens findings only).** Check the finding's location against both parents' indexes (`references/fusion.md` § emergence gate): demote to convergence if a parent already had it; promote to EMERGENT (novelty floored at 3) if neither did, or if both touched the location but neither connected the causes. Record `intersection_justification`.
 
-Append one fully-scored JSON object per finding to `heat-ledger.jsonl` (schema: `references/ledger-schema.md`). Set `status = raw` (the verify phase will stamp `upheld`/`refuted` for the high-novelty/high-risk subset).
+On round 0, use Write for the empty `heat-ledger.jsonl`. On later rounds, use
+Edit on the final existing ledger line: replace that exact unique line with
+itself followed by one fully-scored JSON object per new finding. Preserve all
+prior bytes and stop if the final line cannot be matched uniquely. Never
+append with shell redirection. The schema is in `references/ledger-schema.md`.
+Set `status = raw` (the verify phase will stamp `upheld`/`refuted` for the
+high-novelty/high-risk subset).
 
 ## Refresh lens records
 

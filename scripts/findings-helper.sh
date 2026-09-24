@@ -33,6 +33,11 @@ case "$cmd" in
       --arg ts "$timestamp" \
       --argjson refs "$refs" \
       '{severity:$sev, agent:$agt, category:$cat, summary:$sum, file_refs:$refs, timestamp:$ts}')
+    # flux-melange can invoke this shared helper from its prose probe path.
+    # Scrub in memory before the first write to that run's findings tree.
+    if [[ "$PWD/$findings_file" == *"/docs/research/flux-melange/"* ]]; then
+      line=$(printf '%s' "$line" | python3 "$(dirname "${BASH_SOURCE[0]}")/../hooks/redact-melange-write.py" --filter)
+    fi
     # fd 203: peer-findings.jsonl lock domain. fd 200 was previously used here
     # but collides with the results_jsonl.lock domain in fluxbench-{score,qualify}.sh.
     # See scripts/README.md § flock fd allocation.

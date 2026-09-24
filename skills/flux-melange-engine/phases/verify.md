@@ -14,7 +14,9 @@ Findings below the gate keep `status = raw` and are treated as unverified estima
 
 ## Procedure
 
-For each gated finding, launch a cheap-model `Agent` (haiku/sonnet per `references/budget-ladder.md`) that:
+For each gated finding, launch `Agent` with
+`subagent_type: interflux:melange-worker` and pass the cheap verify model from
+`references/budget-ladder.md` on the call. The worker:
 1. Reads the exact cited `location` (`path:lines`) in the real source.
 2. Checks whether the `evidence` actually supports the `claim` at that location.
 3. Stamps the ledger finding's `status`:
@@ -35,4 +37,6 @@ Order matters: a refuted finding (check 1) must never reach check 2, or a false 
 
 ## Output
 
-The ledger's `status` fields are now stamped for the gated subset. Proceed to `phases/score.md`, which links convergence/disagreement across the whole ledger and evaluates the loop gate.
+Use Edit to stamp the ledger's `status` fields for the gated subset. Proceed to
+`phases/score.md`, which links convergence/disagreement across the whole ledger
+and evaluates the loop gate.

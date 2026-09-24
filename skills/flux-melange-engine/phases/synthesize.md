@@ -4,7 +4,10 @@ One Opus agent reads the **full** ledger and produces a **surfacing-first** repo
 
 ## Launch
 
-Model: Opus on `balanced`/`max`, Sonnet on `economy`. Input: the entire `heat-ledger.jsonl`, `melange-state.json`, all `round-N-directives.json`, and `lenses/`.
+Dispatch `Agent` with `subagent_type: interflux:melange-worker`. Pass the
+synthesis model from `references/budget-ladder.md`: Opus on `balanced`/`max`,
+Sonnet on `economy`. Input: the entire `heat-ledger.jsonl`,
+`melange-state.json`, all `round-N-directives.json`, and `lenses/`.
 
 Prompt template (verbatim):
 ```
@@ -90,7 +93,7 @@ Alongside the markdown, write `{OUTPUT_ROOT}/surfaced.jsonl` — one line per fi
 
 `views` is any subset of `frontier` | `fusion` | `taste` | `convergence` | `disagreement` | `if-you-read-one-thing`. A finding surfaced by the risk axis of view 1 OR the taste view OR the fusions view all belong here — the surfaced set is the **union** of the five views, not a single Pareto front. Refuted findings never appear. This file is the eval target for `scripts/_melange_score.py`.
 
-**Do not write it in the same agent turn as the report.** A run without `surfaced.jsonl` cannot be scored at all, and it is the cheapest artifact of the phase — so it must never queue behind the most expensive one. The workflow fast-path enforces this structurally (`references/workflow-args.md` divergence 3a): the manifest is transcribed from controller state first, the synthesis agent writes the markdown and returns immediately, and a separate surfacing agent tabulates this file from the finished report. On the prose path, write the report, *then* start a fresh pass for the surfacing record; if the report-writing pass has run long, treat that as a reason to hand the extraction to a new agent rather than to push on.
+**Do not write it in the same agent turn as the report.** A run without `surfaced.jsonl` cannot be scored at all, and it is the cheapest artifact of the phase — so it must never queue behind the most expensive one. Write the report, *then* start a fresh pass for the surfacing record; if the report-writing pass has run long, hand the extraction to a new agent. The historical Workflow ordering is documented in `references/workflow-args.md`, but that runtime is disabled until its subagent writes have a before-disk guard.
 
 ## Then → Phase 8 Report
 

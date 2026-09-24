@@ -32,6 +32,10 @@ Resolve in priority order (highest wins):
 
 Read plugin defaults first, then merge the project override (project values win per-key).
 
+If the effective `--peers` mode is not `off`, stop before creating any output
+files. Peer CLIs write directly to disk and are disabled until a before-disk
+redaction boundary is available. The workflow script enforces the same gate.
+
 ## Derive identifiers
 
 ```

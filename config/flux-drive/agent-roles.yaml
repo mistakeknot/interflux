@@ -202,9 +202,9 @@ roles:
 
   host-default:
     description: |
-      Agents whose frontmatter intentionally omits `model:`, deferring to the
-      host's default model. No yaml policy is asserted — the role records that
-      the agent exists and that "no opinion" is the intent.
+      Agents whose frontmatter omits `model:` or declares `model: inherit`,
+      deferring to the host's default model. No yaml policy is asserted — the
+      role records that the agent exists and that "no opinion" is the intent.
       Host adapters should NOT inject a model preference for these agents.
     # No model_tier, no min_model, no max_model — host's choice
     domain_complexity: low
@@ -212,6 +212,7 @@ roles:
       - data-migration-expert  # clavain: validates migrations (author chose host-default)
       - ui-polish              # clavain: iterative UI refinement
       - fluxbench-discover     # interflux: weekly cron-style discovery agent
+      - melange-worker         # interflux: inherits caller model; file tools are restricted
 
 # Experiment tracking — which experiments have been run and their status.
 # Updated by experiment execution scripts, read by framework_score.py.

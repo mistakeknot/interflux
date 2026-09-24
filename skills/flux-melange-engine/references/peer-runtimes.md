@@ -1,5 +1,9 @@
 # Reference: Peer Runtimes — Multi-Runtime Mirrors & the Transport Shim
 
+**Temporarily disabled:** `--peers` stops before dispatch until external CLI
+writes can be scrubbed before they reach disk. The design below is retained
+for restoring the feature after that boundary exists.
+
 `--peers` runs the SAME melange loop as epistemically independent mirrors on external agent
 runtimes (Codex CLI, Claude CLI, Hermes Agent, or Kimi), each with its own ledger, lenses, and synthesis, then
 reconciles the syntheses in the Parley phase (phases/parley.md). This reference owns the
