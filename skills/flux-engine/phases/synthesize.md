@@ -258,7 +258,7 @@ Use the Write tool to create this file. The orchestrator generates this from the
 
 **Verdict logic**: If any finding is P0 → "risky". If any P1 → "needs-changes". Otherwise → "safe".
 
-**Low-confidence gate** (`docs/spec/core/synthesis.md` Step 4a): set `"low_confidence": true` on a finding when it has a `severity_conflict` (agents disagreed on severity) OR when `convergence == 1` and `severity` is `P0`/`P1`. This does not change verdict logic above — it only marks the finding. If a downstream step records interspect evidence against a low-confidence finding (e.g. via `/interspect:interspect-correction`), pass `low_confidence: true` and the finding's `id` (as `finding_id`) through to `_interspect_insert_evidence`'s context JSON so the gate applies.
+**Low-confidence gate** (`docs/spec/core/synthesis.md` Step 4a): set `"low_confidence": true` on a finding when it has a `severity_conflict` (agents disagreed on severity) OR when `convergence == 1` and `severity` is `P0`/`P1`. This does not change verdict logic above — it only marks the finding. If a downstream step records interspect evidence against a low-confidence finding (e.g. via `/interspect:interspect-correction`), pass `low_confidence: true`, the finding's `id` (as `finding_id`), AND a run-scoped `review_id` (the flux-drive output-directory basename) through to `_interspect_insert_evidence`'s context JSON so the gate applies. `review_id` is required to namespace the key — `finding_id`s like `P0-1` are positional per run and collide across unrelated runs otherwise.
 
 ### Step 3.4b: Generate cost report
 
