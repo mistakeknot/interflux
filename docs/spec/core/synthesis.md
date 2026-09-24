@@ -302,6 +302,8 @@ Generate a machine-readable summary for programmatic access:
 - `co_located_with`: Array of finding IDs at the same location (present when `co_located` is true)
 - `cross_references`: Array of finding IDs for the same issue at different locations (Rule 3)
 - `severity_conflict`: Object mapping agent names to their severity ratings (present when agents disagree, Rule 4)
+- `low_confidence`: Boolean — severity boundary or single-judge P0/P1 call (Step 4a). Present (and `true`) only when flagged; absent otherwise.
+- `low_confidence_reasons`: Array, present when `low_confidence` is true — `"severity_boundary"` and/or `"single_judge_p0_p1"`
 - `early_stop`: Boolean — was Stage 2 skipped?
 - `content_routing_active`: Boolean — did agents receive different content slices?
 
