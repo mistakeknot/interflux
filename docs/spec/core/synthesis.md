@@ -188,6 +188,21 @@ When agents received different content slices:
 - When computing convergence for a finding in `file.ts:42`, check which agents received `file.ts`
 - Adjust M dynamically: `M = agents_completed.filter(a => a.files_received.includes(finding.file)).length`
 
+### Step 4a: Low-Confidence Gate (Sylveste-06i.4 Option A)
+
+A same-family kappa audit (`docs/research/interspect-audit/2026-07-16-judge-kappa-phase1.md`) found a single judge disagrees with itself on severity tier roughly 1 time in 4 — worst right at the P0/P1 and P1/P2 boundaries. Two categories of finding carry that specific risk and get flagged `"low_confidence": true` in findings.json:
+
+1. **Severity boundary.** The finding has a `severity_conflict` (Rule 4: agents disagreed on severity for the same issue). A disagreement between judges is direct evidence the call sits near a tier boundary.
+2. **Single-judge P0/P1.** `convergence == 1` (only one agent reported it) AND its severity is `P0` or `P1`. One judge's high-severity call, with no second opinion, is exactly the untested case the audit couldn't distinguish from noise.
+
+This is orthogonal to the existing `confidence` field (which is purely a convergence-count display value) and to `verification_recommended` (which flags single-source findings from a *non-top-tier provider*, regardless of severity). A finding can be `low_confidence` without triggering either of those, and vice versa.
+
+**This gate does not re-judge anything** — no new dispatch rounds, no anchoring examples. It only marks the finding; verdict computation (Step 5) is unaffected — a low-confidence P0 still makes the run `risky`. What changes is downstream: any evidence recorded against this finding (e.g. `/interspect:interspect-correction` logging that an agent was wrong) MUST pass `low_confidence: true`, the finding's `id`, and a *per-run* `review_id` through to `_interspect_insert_evidence`'s context JSON as `finding_id` and `review_id` (see `interspect/hooks/lib-interspect.sh`). Flux-drive IDs like `P0-1` are positional *within a run* — every run has a `P0-1` — so `review_id` is required to namespace the two into a `review_id:finding_id` key; a bare `finding_id` would otherwise let one run's correction corroborate an unrelated run's same-numbered finding. `review_id` must identify the specific run, not just the target: the flux-drive output-directory basename alone is deliberately stable across reruns of the same target, so two independent reruns share it and would otherwise collide. Callers derive a per-run id by combining that basename with this finding's `synthesis_timestamp` (e.g. via `_interspect_review_id_from_findings` in `interspect/hooks/lib-interspect.sh`) so two runs on the same target never share a `review_id` (Sylveste-06i.4 round-2 M1). Interspect quarantines that evidence indefinitely — it cannot drive an agent's `agent_wrong` exclusion — until a second, independent signal with a *matching* `override_reason` (another judge's re-judge, or a second person, agreeing on the same kind of correction — a `deprioritized` flag does not corroborate an `agent_wrong` one) corroborates the same `review_id:finding_id`, at which point the gate lifts and it counts normally.
+
+**Automatic disagreement path.** The kernel's `disagreement_resolved` flow (`lib-interspect.sh`'s `_interspect_process_disagreement_event`) emits `disagreement_override` evidence for findings with a `severity_conflict` — exactly the boundary category this gate targets. For the `severity_overridden`/no-`dismissal_reason` branch (`override_reason: severity_miscalibrated`), `chosen_severity` is the mechanical max of the panel's own conflicting ratings (Rule 4 above), decided by a single resolving session with no second judge — the same boundary-noise case the gate exists to catch, not an adjudicated resolution. **This branch is not exempt from the gate**: it is recorded with `low_confidence: true` and gated exactly like a manual correction (Sylveste-06i.4 round-2 M4), and corroborates only once a second, independent signal with a matching `override_reason` and `review_id` is recorded against the same finding. `resolve.md` does not yet emit a per-run `review_run_id` on these events, so today these rows land without a `review_id` — gated indefinitely, liftable only via an explicit `_interspect_corroborate_evidence` call, never by a second automatic resolution (fail-safe, same as an un-namespaced manual correction). Threading a `review_run_id` through `resolve.md`'s event context is tracked separately; once present, this path corroborates exactly like the manual one. (The remaining dismissal-reason branches — `agent_wrong`, `deprioritized`, `already_fixed`, `not_applicable` — represent an explicit human call on a resolved disagreement and are recorded ungated, as before.)
+
+**Instrumentation for Option B:** `_interspect_low_confidence_gate_stats` reports how many findings were flagged vs. later corroborated. If that ratio stays low over time, it's evidence Option B's anchored multi-round re-judge is worth building; if most flags are noise (rarely corroborated), the cheap gate alone is enough.
+
 ### Step 5: Verdict Computation
 
 Compute a deterministic verdict from the highest severity finding:
@@ -250,6 +265,8 @@ Generate a machine-readable summary for programmatic access:
       "co_located_with": ["P2-3"],
       "cross_references": ["P0-4"],
       "severity_conflict": {"fd-safety": "P0", "fd-quality": "P1"},
+      "low_confidence": true,
+      "low_confidence_reasons": ["severity_boundary", "single_judge_p0_p1"],
       "note": "Single-source finding from non-top-tier provider — verify independently"
     }
   ],
@@ -287,6 +304,8 @@ Generate a machine-readable summary for programmatic access:
 - `co_located_with`: Array of finding IDs at the same location (present when `co_located` is true)
 - `cross_references`: Array of finding IDs for the same issue at different locations (Rule 3)
 - `severity_conflict`: Object mapping agent names to their severity ratings (present when agents disagree, Rule 4)
+- `low_confidence`: Boolean — severity boundary or single-judge P0/P1 call (Step 4a). Present (and `true`) only when flagged; absent otherwise.
+- `low_confidence_reasons`: Array, present when `low_confidence` is true — `"severity_boundary"` and/or `"single_judge_p0_p1"`
 - `early_stop`: Boolean — was Stage 2 skipped?
 - `content_routing_active`: Boolean — did agents receive different content slices?
 
