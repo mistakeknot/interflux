@@ -188,6 +188,19 @@ When agents received different content slices:
 - When computing convergence for a finding in `file.ts:42`, check which agents received `file.ts`
 - Adjust M dynamically: `M = agents_completed.filter(a => a.files_received.includes(finding.file)).length`
 
+### Step 4a: Low-Confidence Gate (Sylveste-06i.4 Option A)
+
+A same-family kappa audit (`docs/research/interspect-audit/2026-07-16-judge-kappa-phase1.md`) found a single judge disagrees with itself on severity tier roughly 1 time in 4 — worst right at the P0/P1 and P1/P2 boundaries. Two categories of finding carry that specific risk and get flagged `"low_confidence": true` in findings.json:
+
+1. **Severity boundary.** The finding has a `severity_conflict` (Rule 4: agents disagreed on severity for the same issue). A disagreement between judges is direct evidence the call sits near a tier boundary.
+2. **Single-judge P0/P1.** `convergence == 1` (only one agent reported it) AND its severity is `P0` or `P1`. One judge's high-severity call, with no second opinion, is exactly the untested case the audit couldn't distinguish from noise.
+
+This is orthogonal to the existing `confidence` field (which is purely a convergence-count display value) and to `verification_recommended` (which flags single-source findings from a *non-top-tier provider*, regardless of severity). A finding can be `low_confidence` without triggering either of those, and vice versa.
+
+**This gate does not re-judge anything** — no new dispatch rounds, no anchoring examples. It only marks the finding; verdict computation (Step 5) is unaffected — a low-confidence P0 still makes the run `risky`. What changes is downstream: any evidence recorded against this finding (e.g. `/interspect:interspect-correction` logging that an agent was wrong) MUST pass `low_confidence: true` and a stable `finding_id` through to `_interspect_insert_evidence`'s context JSON (see `interspect/hooks/lib-interspect.sh`). Interspect quarantines that evidence indefinitely — it cannot drive an agent's `agent_wrong` exclusion — until a second, independent signal (another judge's re-judge, or a second person) corroborates the same `finding_id`, at which point the gate lifts and it counts normally.
+
+**Instrumentation for Option B:** `_interspect_low_confidence_gate_stats` reports how many findings were flagged vs. later corroborated. If that ratio stays low over time, it's evidence Option B's anchored multi-round re-judge is worth building; if most flags are noise (rarely corroborated), the cheap gate alone is enough.
+
 ### Step 5: Verdict Computation
 
 Compute a deterministic verdict from the highest severity finding:
