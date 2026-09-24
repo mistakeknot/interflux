@@ -263,6 +263,8 @@ Generate a machine-readable summary for programmatic access:
       "co_located_with": ["P2-3"],
       "cross_references": ["P0-4"],
       "severity_conflict": {"fd-safety": "P0", "fd-quality": "P1"},
+      "low_confidence": true,
+      "low_confidence_reasons": ["severity_boundary", "single_judge_p0_p1"],
       "note": "Single-source finding from non-top-tier provider — verify independently"
     }
   ],
