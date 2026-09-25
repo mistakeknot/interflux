@@ -27,11 +27,11 @@ is enforced. Existing blind-review, gauge, and publication gates still apply.
 
 ## Input
 
-**[review mode]**: User provides a file or directory path. Detect type:
+**[review mode]**: User provides a file path, directory path, or inline text/topic. If no argument, ask with AskUserQuestion. Detect type:
 
 ```
-INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/")
-INPUT_STEM = filename without extension, or dir basename
+INPUT_TYPE = file | directory | diff (starts with "diff --git" or "--- a/") | text (argument is not a valid path on disk)
+INPUT_STEM = filename without extension, or dir basename, or text as kebab-case (max 50 chars)
 PROJECT_ROOT = nearest .git ancestor or INPUT_DIR
 OUTPUT_DIR = {PROJECT_ROOT}/docs/research/flux-drive/{INPUT_STEM}  (absolute path!)
 ```
@@ -47,6 +47,8 @@ INPUT_TYPE = research
 ```
 
 Clean OUTPUT_DIR of stale `.md` files before starting.
+
+**Text input:** When `INPUT_TYPE = text`, `INPUT_DIR = CWD`; write the user's text to `{OUTPUT_DIR}/input.md` and treat it as a `.md` document for triage — all agents (including cognitive agents) are eligible.
 
 ## Phase 1: Analyze + Triage
 
@@ -139,7 +141,7 @@ Domain bonus: +1 for best-practices/framework-docs if detected domain has Resear
 - fd-game-design: skip unless game-simulation domain detected
 - fd-architecture, fd-quality: always pass (domain-general)
 - fd-performance: always pass for file/dir; filter for diffs
-- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document input (PRD, brainstorm, plan, strategy) — NEVER for code/diff
+- fd-systems, fd-decisions, fd-people, fd-resilience, fd-perception: skip unless `.md`/`.txt` document or `text` input (PRD, brainstorm, plan, strategy, options analysis) — NEVER for code/diff
 
 **Step 1.2b: Score** (0-8 scale):
 
@@ -175,6 +177,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/config/flux-drive/budget.yaml`. Look up the budget f
 - `diff` with < 500 lines → `diff-small`
 - `diff` with >= 500 lines → `diff-large`
 - `directory` → `repo`
+- `text` → treat like `file` (Document Profile → Type; default `other`)
 
 If a project-level override exists at `{PROJECT_ROOT}/.claude/flux-drive-budget.yaml`, use that instead.
 
@@ -251,7 +254,7 @@ Options: Approve, Launch all (override budget), Edit selection, Cancel.
 | fd-performance | interflux:review:fd-performance | Bottlenecks, resources, algorithmic complexity |
 | fd-game-design | interflux:review:fd-game-design | Balance, pacing, feedback loops, emergent behavior |
 
-**Cognitive Agents** (document review only — `.md`/`.txt` inputs, NEVER code/diff):
+**Cognitive Agents** (document review only — `.md`/`.txt` or inline `text` inputs, NEVER code/diff):
 
 | Agent | subagent_type | Domain |
 |-------|--------------|--------|

@@ -3,11 +3,11 @@ name: flux-drive
 description: "Intelligent document review — triages relevant agents, runs in background. Supports research mode (--mode=research)."
 user-invocable: true
 codex-aliases: [flux-drive]
-argument-hint: "[path to file or directory] [--mode=review|research] [--phase=<phase>]"
+argument-hint: "[path to file or directory, or inline text] [--mode=review|research] [--phase=<phase>]"
 disable-model-invocation: true
 ---
 
-Use the `interflux:flux-engine` skill to review the document or directory specified by the user. Pass the file or directory path as context. Default mode is `review`. Pass `--mode=research` for multi-agent research (or use `/interflux:flux-research` which auto-sets research mode).
+Use the `interflux:flux-engine` skill to review the document, directory, or inline text specified by the user. Pass the file or directory path (or the inline text verbatim) as context. Default mode is `review`. Pass `--mode=research` for multi-agent research (or use `/interflux:flux-research` which auto-sets research mode).
 
 Routing note: if the target is a discovery-shaped question (gap analysis, "what are we missing", design-space or plan exploration) rather than a bounded artifact check, suggest escalating to `/interflux:flux-melange <target> --goal="..."` — the adaptive loop is the default for open-ended analysis/planning work. See `docs/guide-choosing-flux-command.md`.
 
