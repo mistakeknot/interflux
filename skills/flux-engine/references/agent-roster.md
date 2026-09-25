@@ -34,7 +34,7 @@ These agents are provided by the Clavain plugin. They auto-detect project docume
 
 ### Cognitive Agents (interflux — document review only)
 
-These agents review documents for cognitive blind spots using analytical lenses from the Interlens framework. They are NEVER included for code or diff reviews — the cognitive pre-filter in SKILL.md Step 1.2a gates them to `.md`/`.txt` document inputs only.
+These agents review documents for cognitive blind spots using analytical lenses from the Interlens framework. They are NEVER included for code or diff reviews — the cognitive pre-filter in SKILL.md Step 1.2a gates them to `.md`/`.txt` document inputs and inline `text` inputs only.
 
 | Agent | subagent_type | Domain |
 |-------|--------------|--------|
