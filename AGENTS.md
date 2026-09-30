@@ -363,7 +363,7 @@ interflux supports standalone (marketplace) and integrated (Interverse ecosystem
 ### Structural Tests (pytest)
 
 ```bash
-cd /home/mk/projects/Demarch/interverse/interflux && uv run pytest tests/ -q
+cd /home/mk/projects/Sylveste/interverse/interflux && uv run pytest tests/ -q
 ```
 
 Key test suites in `tests/structural/`:
