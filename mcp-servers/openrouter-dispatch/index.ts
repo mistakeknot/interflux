@@ -27,6 +27,19 @@ if (!API_KEY) {
   process.exit(78);
 }
 
+// Defense in depth for a direct launch that bypasses scripts/launch-openrouter.sh:
+// never bill without an explicit opt-in, a real key and a positive ceiling.
+if (
+  process.env.OPENROUTER_ALLOW_PAID_DISPATCH !== "1" ||
+  API_KEY.includes("${") ||
+  !(parseFloat(process.env.OPENROUTER_SPEND_CEILING_USD || "0") > 0)
+) {
+  console.error(
+    "openrouter-dispatch refuses to run: set OPENROUTER_ALLOW_PAID_DISPATCH=1, a real key and OPENROUTER_SPEND_CEILING_USD > 0.",
+  );
+  process.exit(78);
+}
+
 const RATE_LIMIT = parseInt(process.env.OPENROUTER_RATE_LIMIT || "20", 10);
 const SPEND_CEILING = parseFloat(
   process.env.OPENROUTER_SPEND_CEILING_USD || "0",
