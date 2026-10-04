@@ -60,3 +60,6 @@ docs/research/flux-drive/
 # local telemetry, not a project artifact.
 !.beads/beads.jsonl
 !.beads/issues.jsonl
+
+# Local sync marker (machine-specific).
+.remote-source
