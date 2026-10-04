@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lib-lock.sh — hybrid locking for the fd-204 dispatch-slots domain
-# (Sylveste-9cs). Linux keeps the exact flock(1) subshell/fd semantics the
+# Linux keeps the exact flock(1) subshell/fd semantics the
 # scripts have always had; macOS ships no flock(1), so it falls back to a
 # mkdir spin-lock with pid-based stale-lock stealing.
 #

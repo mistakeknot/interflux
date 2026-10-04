@@ -5,7 +5,7 @@ budget-ladder.md § Quality → model routing) and in code (the MODEL block in
 workflow/melange-workflow.js). Drift between them is a live-run hazard, not a
 cosmetic one: routing the assayer to opus under balanced fed a findings-JSON
 prompt to opus-scale thinking and tripped the host's no-progress watchdog,
-killing a 2.2-hour run (Sylveste-kp9). This test hard-codes the documented
+killing a 2.2-hour run. This test hard-codes the documented
 table; changing routing on purpose means updating budget-ladder.md, the MODEL
 block, and this table together.
 """
@@ -94,5 +94,5 @@ def test_dispatch_degrades_agent_failures_to_null(workflow_src):
     body = fn_m.group(0)
     assert "catch" in body and "return null" in body, (
         "dispatch() must catch agent() throws and return null so failures "
-        "flow into the loop's existing degradation paths (Sylveste-kp9)"
+        "flow into the loop's existing degradation paths"
     )

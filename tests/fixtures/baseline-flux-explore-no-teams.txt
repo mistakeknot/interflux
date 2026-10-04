@@ -1,5 +1,5 @@
 # Baseline frontmatter contract for /interflux:flux-explore <target> WITHOUT --teams
-# This file is the no-regression check for F2 (sylveste-3xl3.1.5).
+# This file is the no-regression check for F2.
 # When --teams is NOT passed, the synthesis frontmatter MUST contain exactly these keys (and no others):
 artifact_type: brainstorm
 bead: <CLAVAIN_BEAD_ID or "none">

@@ -125,7 +125,7 @@ OUTPUT_DIR        = {PROJECT_ROOT}/docs/research/flux-research/{INPUT_STEM}
 INPUT_TYPE        = research
 ```
 
-**Run isolation:** Content-address OUTPUT_DIR with a stable hash of the input. This keeps the agent-prompt prefix identical across reruns of the same target, restoring Anthropic prompt cache hits (~21k tok/session per BSC-1, sylveste-a4oj.2):
+**Run isolation:** Content-address OUTPUT_DIR with a stable hash of the input. This keeps the agent-prompt prefix identical across reruns of the same target, restoring Anthropic prompt cache hits (~21k tok/session per BSC-1):
 ```
 RUN_HASH = $(printf '%s' "{INPUT_PATH or RESEARCH_QUESTION}" | sha256sum | cut -c1-8)
 OUTPUT_DIR = {OUTPUT_DIR}-{RUN_HASH}
@@ -258,7 +258,7 @@ final_score = base_score(0-3) + domain_boost(0-2) + project_bonus(0-1) + domain_
 - project_bonus: +1 if CLAUDE.md/AGENTS.md exist (Plugin) or always (Project Agent)
 - domain_agent: +1 for flux-gen agents matching detected domain
 - tier_bonus: Read from `.claude/agents/.index.yaml` (cache). +1.0 if tier=proven, +0.5 if tier=used, +0 if tier=generated, -1.0 if tier=stub AND use_count=0 AND lines≤80. If index is missing, tier_bonus=0 (don't fail). Rebuild with `/interflux:flux-agent index`.
-- **quality_signal_adjust** (Sylveste-fwd): Read from `.clavain/interspect/routing-calibration.json` if it exists. For each candidate agent, look up `agents.<name>.weighted_hit_rate` (fall back to `hit_rate`) and `agents.<name>.evidence_sessions`.
+- **quality_signal_adjust**: Read from `.clavain/interspect/routing-calibration.json` if it exists. For each candidate agent, look up `agents.<name>.weighted_hit_rate` (fall back to `hit_rate`) and `agents.<name>.evidence_sessions`.
   - Cold start (`evidence_sessions < 5` OR agent not in calibration): `+0` (no adjust). Never skip on insufficient data.
   - Underperforming (`hit_rate < 0.4`): `-1` (effectively excludes the agent — combines with `tier_bonus -1` for repeated agents to push final_score below the selection floor). Emit a one-line note in the triage table: `[skipped: interspect hit_rate <X.XX> < 0.40]`.
   - Strong (`hit_rate >= 0.7` AND `evidence_sessions >= 20`): `+0.5`. Note: `[boosted: interspect hit_rate <X.XX>]`.
@@ -278,7 +278,7 @@ Present triage table: Agent | Category | Score | Stage | Est. Tokens | Source | 
 
 The **Risk Addressed** column is the agent's `risk_addressed` frontmatter value — the class of risk that goes unreviewed if this agent is skipped. Read it from each candidate's agent `.md` frontmatter (Plugin and Project agents alike). Truncate to a short phrase (the text before the em-dash, e.g. "Silent incorrectness", "Security and deployment harm") so the table stays readable; the full sentence lives in the frontmatter. If an agent has no `risk_addressed` field (older or third-party agents), render `—`.
 
-**Persist triage decisions** (Sylveste-nyt): After scoring all candidates and assigning stages, append one JSON line per agent to `{PROJECT_ROOT}/.clavain/interflux/triage.jsonl`. Schema in [triage-log-schema.md](../../../../../docs/contracts/triage-log-schema.md). Include every agent considered (even pre-filtered ones with `base: 0`); share a single `run_id` across all lines from the same triage (use the same 8-char hash that names `OUTPUT_DIR`).
+**Persist triage decisions**: After scoring all candidates and assigning stages, append one JSON line per agent to `{PROJECT_ROOT}/.clavain/interflux/triage.jsonl`. Schema in [triage-log-schema.md](../../../../../docs/contracts/triage-log-schema.md). Include every agent considered (even pre-filtered ones with `base: 0`); share a single `run_id` across all lines from the same triage (use the same 8-char hash that names `OUTPUT_DIR`).
 
 This is the observability foundation that lets `triage-stats.py` answer "is `quality_signal_adjust` causing useful skips, or over-pruning?" — without it, the new scoring term is unmeasurable.
 

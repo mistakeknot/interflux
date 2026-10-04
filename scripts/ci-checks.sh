@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Independent zklw recipe for the existing required routing-drift audit.
+# Independent CI recipe for the existing required routing-drift audit.
 # Python and PyYAML are supplied by the registry-pinned Ubuntu 24.04 image.
 set -euo pipefail
 [[ "${CI:-}" == true && -n "${CI_SOURCE_SHA:-}" ]] || {

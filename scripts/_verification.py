@@ -14,7 +14,7 @@ because some condition was already met. The skip itself must emit a
 VerificationStep so the audit log distinguishes "we checked and were correct
 to skip" from "we never checked".
 
-The canonical case is the microrouter no-op short-circuit (Sylveste-a5u): when
+The canonical case is the microrouter no-op short-circuit: when
 microrouter recommendation matches B3 calibration, the resolver short-circuits
 without writing a shadow log entry. Operators can't distinguish "router said
 sonnet" from "router was skipped". The fix is a VerificationStep with

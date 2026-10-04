@@ -101,7 +101,7 @@ CWD, and `{projectRoot}` pins the CLI lane's workspace.
 - **Lane 1 (preferred): the Kimi Code CLI on subscription OAuth.** Headless
   `kimi --output-format stream-json -p <prompt>` — no API key; the final message is the LAST
   `role=assistant` JSONL row (earlier assistant rows carry the user's hook dumps). Verified
-  2026-07-27 (mk-2xg5): `-p` auto-approves regular tool calls (a probe-shaped file-read ran
+  2026-07-27: `-p` auto-approves regular tool calls (a probe-shaped file-read ran
   with no approval hang) and rejects `--auto`/`--yolo` as conflicting. The CLI model ALIAS is
   `kimi-code/k3` — the `/` would fail the peer-model regex, so the wrapper owns the
   `k3 → kimi-code/k3` mapping (`KIMI_CLI_MODEL` overrides) and config keeps `model: k3`.
@@ -237,7 +237,7 @@ the payload: eight of the ten schemas have no required string field, so a degrad
 on those is just `{"findings": []}` — byte-identical to a probe that ran and found nothing.
 `runProbes` counts null as failed but anything truthy as a success, so before `shim_status`
 a dead mirror scored `roundYield 0`, tripped the DRY halt, and reported a convergence it
-never earned, which Parley then reconciled as an independent opinion (Sylveste-cg1).
+never earned, which Parley then reconciled as an independent opinion.
 
 A shim must therefore never fabricate content to satisfy a schema. An empty array or a
 placeholder lens is indistinguishable from a real result once it reaches the ledger.

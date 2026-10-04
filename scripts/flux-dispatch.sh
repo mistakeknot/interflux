@@ -44,7 +44,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUDGET_CONFIG="${BUDGET_CONFIG:-${SCRIPT_DIR}/../config/flux-drive/budget.yaml}"
 
-# Hybrid flock/mkdir locking (Sylveste-9cs) — see lib-lock.sh.
+# Hybrid flock/mkdir locking — see lib-lock.sh.
 # shellcheck source=lib-lock.sh
 source "$SCRIPT_DIR/lib-lock.sh"
 

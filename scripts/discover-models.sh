@@ -39,7 +39,7 @@ done
 # consistent with the shared pattern), and time-of-day is anchored to
 # midnight explicitly — BSD `date -j -f` otherwise fills missing H/M/S with
 # the *current* time-of-day rather than zero, which would make this
-# non-deterministic. Echoes empty on failure (Sylveste-a3a).
+# non-deterministic. Echoes empty on failure.
 _discover_models_date_to_epoch() {
     local ts="${1:-}"
     [[ -z "$ts" ]] && { echo ""; return 0; }

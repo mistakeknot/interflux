@@ -123,7 +123,7 @@ const Q = A.quality;
 // (pinned by tests/structural/test_melange_model_routing.py). The assayer is
 // sonnet below max: its prompt embeds the round's full findings JSON (10s of
 // KB), and opus-scale thinking on that payload can exceed the host's
-// no-progress watchdog before the first token lands (Sylveste-kp9).
+// no-progress watchdog before the first token lands.
 const MODEL = {
   designAdjacent: Q === "max" ? "opus" : "sonnet",
   designDistant: Q === "economy" ? "sonnet" : "opus",
@@ -323,7 +323,7 @@ TASK>>>`;
 // (probes: dropped directive; assay: findings kept unscored; synthesis:
 // null-tolerant report) instead of killing the whole run at primary.failed.
 // A survivable single-agent failure must never destroy a multi-hour ledger
-// (Sylveste-kp9). Deliberate hard floors remain at the call sites (e.g. the
+// Deliberate hard floors remain at the call sites (e.g. the
 // both-seed-probes-failed throw).
 // A mirror's failure must be REPRESENTABLE. The shim contract asks a failed
 // shim to return "a minimally valid object ... any required string field =
@@ -331,7 +331,7 @@ TASK>>>`;
 // on those the degraded object is `{"findings": []}`, which is byte-identical
 // to an honest empty result. runProbes treats null as failed and anything
 // truthy as a success, so a dead mirror scored roundYield 0 and halted the
-// loop DRY, reporting a convergence it never earned (Sylveste-cg1).
+// loop DRY, reporting a convergence it never earned.
 //
 // mirrorSchema adds a REQUIRED shim_status to the schema the shim itself must
 // satisfy (never the base schema the external agent sees), and dispatch maps
@@ -539,7 +539,7 @@ const VERIFY_SCHEMA = {
 // and never reached the trailing instructions: the markdown landed, the two
 // machine-readable artifacts did not, no structured output was ever emitted,
 // and the workflow sat waiting on an agent that was neither making progress nor
-// throwing (Sylveste-kp9 family). `synthesis_path` is script-known and
+// throwing (same failure family). `synthesis_path` is script-known and
 // `surfaced_count` now comes from the surfacing agent, so neither belongs here.
 const SYNTH_SCHEMA = {
   type: "object",
@@ -655,7 +655,7 @@ actual repo files the target cites) score higher than speculation.`;
 const severityRef =
   "Severity: P0 = would corrupt/block the whole design; P1 = must fix before implementing; P2 = degrades quality; P3 = polish.";
 
-// Settled facts threaded into every probe prompt (mk-8wk fix b): verified
+// Settled facts threaded into every probe prompt (fix b): verified
 // resolutions from earlier rounds are the loop's working memory — without
 // this, later rounds re-litigate what verify already settled.
 function settledFactsBlock(R, directive) {
@@ -917,7 +917,7 @@ Return the structured output (findings array with scores + disagreements).`,
       intersection_justification: raw
         ? raw.intersection_justification || null
         : null,
-      // mk-8wk: the assayer scores; it doesn't relay prose fields — rescue
+      // the assayer scores; it doesn't relay prose fields — rescue
       // the probe's remediation (target/brief amendment) and suggestion from
       // the raw finding so they survive into the ledger state and report.
       suggestion: f.suggestion || (raw ? raw.suggestion : null) || null,
@@ -1097,7 +1097,7 @@ function buildHeatMapAndDirectives(R, round) {
         budget_weight: 0.2,
       });
   }
-  // Settled-cluster gate (mk-8wk): DEEPEN exists to confirm-or-refute. A
+  // Settled-cluster gate: DEEPEN exists to confirm-or-refute. A
   // cluster is closed for DEEPEN when (a) any member is upheld (existing
   // rule), (b) it was already DEEPENed this run — one confirm-or-refute
   // dispatch per cluster, whatever the verify gate later does with the
@@ -1738,7 +1738,7 @@ Return the structured output.`,
 }
 
 // ---- report ---------------------------------------------------------------------
-// mk-8wk: mid-run remediation directives get an explicit routing — every
+// mid-run remediation directives get an explicit routing — every
 // non-refuted finding carrying a `remediation` (a target/brief amendment,
 // distinct from ordinary fix suggestions) surfaces here as a prescription
 // for the orchestrator/user to apply. The loop never edits its own target.

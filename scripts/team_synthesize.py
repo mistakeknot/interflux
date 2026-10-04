@@ -347,7 +347,7 @@ def _extract_member_session_ids(team_config: dict[str, Any]) -> list[str]:
         from agentId → session UUID exposed in team config
 
     For now we extract only the lead's session ID. Teammate cost is not attributable from
-    config.json alone — see sylveste-3xl3.1.20 follow-up for the full resolution path.
+    config.json alone — see the follow-up for the full resolution path.
     Also accept `session_id`/`sessionId`/`agent_id`/`id` as legacy/forward-compat aliases.
     """
     out: list[str] = []

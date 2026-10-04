@@ -1,4 +1,4 @@
-# Agent Role Mappings for Heterogeneous Routing (iv-jc4j)
+# Agent Role Mappings for Heterogeneous Routing
 #
 # Inspired by Dr. MAS (Dynamic Role Multi-Agent Systems): assigns model tier
 # per agent based on role capability requirements, not uniform per-phase defaults.
@@ -11,7 +11,7 @@
 #
 # model_tier: declared preference for experiment scoring and cost analysis.
 # min_model: ENFORCED safety floor — lib-routing.sh clamps resolved model
-# to at least this tier. Added iv-db5pc (2026-03-01).
+# to at least this tier. Added 2026-03-01.
 #
 # domain_complexity: low|medium|high — minimum reasoning tier for coherent analysis
 #   in this domain. Used by cross-model dispatch to prevent downgrading complex-domain
@@ -22,14 +22,14 @@
 #   Prevents over-resourcing simple-domain agents during upgrade passes.
 #   If absent, no ceiling is enforced.
 #
-# Safety rule (from iv-dthn Loop 4): fd-safety and fd-correctness NEVER
+# Safety rule (from an earlier review loop): fd-safety and fd-correctness NEVER
 # route below Sonnet regardless of role assignment.
 
 roles:
   planner:
     description: Architectural decisions requiring high reasoning capability
     model_tier: opus
-    # No min_model floor: Sylveste-0zy chose to honor deliberate frontmatter tuning.
+    # No min_model floor: the maintainers chose to honor deliberate frontmatter tuning.
     # fd-architecture frontmatter=sonnet; fd-systems frontmatter=haiku (intentional, per git history).
     domain_complexity: high
     agents:
@@ -45,7 +45,7 @@ roles:
       - fd-correctness
       - fd-quality
       - fd-safety
-      # Sylveste-0zy additions (frontmatter sonnet, within band):
+      # Additions (frontmatter sonnet, within band):
       - fd-integration         # intertrace: cross-module integration review
       - agent-native-reviewer  # intercraft: plugin pattern review
 
@@ -79,7 +79,7 @@ roles:
 
   # ============================================================================
   # Built-in subagent types and high-volume non-fd agents
-  # Added 2026-05-09 per Sylveste-cs2 (heuristic coverage extension).
+  # Added 2026-05-09 per an earlier review (heuristic coverage extension).
   # Defaults sourced from observed production usage in interstat metrics.db
   # — see docs/brainstorms/2026-05-06-microrouter-heuristic-baseline.md.
   # NOTE: lib-routing.sh consumes min_model + max_model; model_tier is
@@ -112,7 +112,7 @@ roles:
 
   interflux-researcher:
     description: External research subagents (best-practices, framework-docs, git-history, learnings, repo-research)
-    model_tier: haiku       # Sylveste-0zy: matched to frontmatter; 17/17 April dispatches haiku
+    model_tier: haiku       # matched to frontmatter; 17/17 April dispatches haiku
     max_model: opus         # allow up-shift when caller needs deeper synthesis
     domain_complexity: medium
     agents:
@@ -124,7 +124,7 @@ roles:
 
   plugin-reviewer:
     description: Cross-plugin reviewer subagents (plan-reviewer, synthesize-review, code-reviewer)
-    model_tier: haiku       # Sylveste-0zy: matched to frontmatter; plan-reviewer + synthesize-review both deliberately haiku
+    model_tier: haiku       # matched to frontmatter; plan-reviewer + synthesize-review both deliberately haiku
     max_model: opus         # allow up-shift when caller needs deeper review
     # No min_model floor: synthesize-review is intentionally haiku per intersynth design
     # (synthesis is structuring not reasoning); plan-reviewer was cycled sonnet→haiku→sonnet→haiku in git history.
@@ -158,9 +158,9 @@ roles:
       - fd-bevy-rendergraph-lifecycle
 
   # ============================================================================
-  # Coverage extension — Sylveste-0zy (2026-05-12)
+  # Coverage extension (2026-05-12)
   # Added the 14 first-party subagents that had frontmatter `model:` declared
-  # but no agent-roles.yaml role entry. Per Sylveste-0zy's frontmatter-wins
+  # but no agent-roles.yaml role entry. Per the frontmatter-wins
   # resolution, these are descriptive (no min/max floors) — they record the
   # empirical/intentional model per subagent so host adapters have full policy
   # coverage. See docs/research/microrouter-phase1/verify_frontmatter.py for

@@ -128,7 +128,7 @@ synthesizer adding discourse-layer annotations: `reactions`, `stemma_analysis`,
 > synthesizer agent doc. Reconciling them into one canonical schema is tracked as
 > follow-on work; this contract only mandates the `synthesis_protocol_version`
 > stamp and points at [core/synthesis.md](../core/synthesis.md) Step 6 as the
-> reference definition. (Same problem class as sibling bead `sylveste-rrn4` for
+> reference definition. (Same problem class as a sibling issue for
 > interweave's QueryResult.)
 
 #### Return string

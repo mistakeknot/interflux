@@ -161,7 +161,7 @@ peers:
       # of a repo-scale target needs more wall clock than its per-call latency
       # suggests. Measured 2026-09-19: the same invocation answers a trivial
       # prompt in 7.4s, but every 600s window on a 61k-LOC Rust tree expired
-      # without output (Sylveste-cg1). If a hermes mirror still starves here,
+      # without output. If a hermes mirror still starves here,
       # the fix is a narrower target, not a bigger number.
       timeout_ms: 900000
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
@@ -205,7 +205,7 @@ peers:
 #
 # These two jobs briefly shared one table via a `routes.bulk` entry pointing at
 # the profile then named `sol-bulk`, which made mk's 2026-09-19 mirror ruling
-# reachable by one code path and not the other (Sylveste-5nk). `routes` now
+# reachable by one code path and not the other. `routes` now
 # covers validation only, and the profile is named `sol-fallback` for what it
 # actually is: the terminal fallback of every validation chain, including the
 # Astra-producer chain, which must never resolve back to Astra. Retargeting its
