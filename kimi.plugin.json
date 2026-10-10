@@ -41,11 +41,6 @@
   },
   "hooks": [
     {
-      "event": "PreToolUse",
-      "matcher": "Write|Edit|Bash",
-      "command": "/bin/bash"
-    },
-    {
       "event": "SessionStart",
       "command": "bash"
     },
