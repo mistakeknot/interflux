@@ -223,16 +223,16 @@ def test_unmarked_transcript_stops_after_first_user_message() -> None:
 
 
 def test_subagent_stop_hook_registers_cost_capture() -> None:
-    hooks = json.loads((ROOT / ".claude-plugin" / "hooks" / "hooks.json").read_text())
+    hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
     registered = hooks["hooks"]["SubagentStop"]
     commands = [
-        hook["command"]
+        [hook["command"], *hook.get("args", [])]
         for group in registered
         for hook in group["hooks"]
         if hook["type"] == "command"
     ]
     assert commands == [
-        "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/melange-costs.py hook"
+        ["python3", "${CLAUDE_PLUGIN_ROOT}/scripts/melange-costs.py", "hook"]
     ]
 
 
@@ -289,3 +289,96 @@ def test_peer_marker_keeps_external_backend_visible_when_usage_is_unknown(
     assert summary["agents"][1]["tokens_out"] is None
     assert summary["agents"][1]["usage_status"] == "unknown"
     assert summary["totals"]["unknown_usage_count"] == 1
+
+
+USAGE = {
+    "input_tokens": 100,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 10,
+}
+
+
+def _marker(output_dir: Path, **extra) -> dict:
+    return {
+        "output_dir": str(output_dir),
+        "runtime": "claude",
+        "agent": "seed:adjacent",
+        "round": "round-0",
+        "backend": "claude",
+        "model": "sonnet",
+        "quota_source": "unknown",
+        **extra,
+    }
+
+
+def _totals(output_dir: Path) -> dict:
+    return json.loads((output_dir / "cost-summary.json").read_text())["totals"]
+
+
+def test_fresh_run_in_same_directory_does_not_accumulate_earlier_costs(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    first = tmp_path / "a1.jsonl"
+    _transcript(first, _marker(out, run_id="r1"), model="m", usage=USAGE)
+    _run_hook(first)
+    second = tmp_path / "a2.jsonl"
+    _transcript(second, _marker(out, run_id="r2"), model="m", usage=USAGE)
+    _run_hook(second)
+    assert _totals(out)["tokens_in"] == 100
+
+
+def test_resume_with_changed_model_replaces_the_earlier_cumulative_row(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    agent = tmp_path / "agent.jsonl"
+    _transcript(agent, _marker(out, run_id="r1"), model="m1", usage=USAGE)
+    _run_hook(agent)
+    _transcript(
+        agent, _marker(out, run_id="r1"), model="m2", usage={**USAGE, "input_tokens": 120}
+    )
+    _run_hook(agent)
+    assert _totals(out)["tokens_in"] == 120
+
+
+def test_symlinked_ledger_is_refused_and_private_data_is_not_copied(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    secret = tmp_path / "private.jsonl"
+    secret.write_text(json.dumps({"private": "do-not-copy"}) + "\n")
+    (out / "cost-events.jsonl").symlink_to(secret)
+    agent = tmp_path / "agent.jsonl"
+    _transcript(agent, _marker(out, run_id="r1"), model="m", usage=USAGE)
+    _run_hook(agent)
+    assert not (out / "cost-summary.json").exists()
+    assert "do-not-copy" not in "".join(
+        p.read_text() for p in out.iterdir() if p.is_file() and not p.is_symlink()
+    )
+
+
+def test_ledger_rows_with_unknown_shape_are_dropped_not_copied(tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / "cost-events.jsonl").write_text(
+        json.dumps({"run_id": "r1", "private": "do-not-copy"}) + "\n"
+    )
+    agent = tmp_path / "agent.jsonl"
+    _transcript(agent, _marker(out, run_id="r1"), model="m", usage=USAGE)
+    _run_hook(agent)
+    assert "do-not-copy" not in (out / "cost-events.jsonl").read_text()
+    assert _totals(out)["agent_count"] == 1
+
+
+def test_hook_survives_non_object_payload_and_bad_transcript_shape(tmp_path: Path) -> None:
+    for payload in ("[]", "3", "null"):
+        result = subprocess.run(
+            [sys.executable, str(CAPTURE), "hook"], input=payload, text=True,
+            capture_output=True, cwd=ROOT,
+        )
+        assert result.returncode == 0 and result.stderr == ""

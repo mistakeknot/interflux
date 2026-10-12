@@ -374,9 +374,14 @@ function costRoundFromPhase(phaseName) {
   return "overhead";
 }
 
+// Stable per run: the charter passes runId so a resume keeps accumulating,
+// while a fresh run in the same output directory starts a new ledger.
+const COST_RUN_ID = String(A.runId || A.run_id || `run-${Date.now().toString(36)}`);
+
 async function dispatch(R, prompt, opts) {
   const isShim = !R.isPrimary;
   const costMeta = {
+    run_id: COST_RUN_ID,
     output_dir: R.base,
     runtime: R.rt.kind,
     agent: opts.label,

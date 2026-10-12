@@ -180,3 +180,5 @@ Synthesis: {OUTPUT_ROOT}/{DATE}-synthesis.md
 ## Resume detection
 
 If `heat-ledger.jsonl` already exists and is non-empty for this `SLUG`, this is a **resume**: read the last `melange-state.json:round` and re-enter the loop at that round's retarget instead of re-seeding. The append-or-stamp invariant guarantees the existing ledger is replayable.
+
+Cost capture: set `runId` in the workflow args once at charter time and keep it on resume; a new `runId` in the same output directory starts a fresh cost ledger (see `references/cost-capture.md`).

@@ -97,6 +97,30 @@ def _read_transcript(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]
     return marker, usage
 
 
+EVENT_STR_KEYS = ("agent", "round", "runtime", "backend", "model", "quota_source", "agent_id", "parent_session_id", "run_id")
+EVENT_NUM_KEYS = ("tokens_in", "tokens_out", "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _clean_event(item: Any) -> dict[str, Any] | None:
+    """Rebuild a ledger row from known fields only, or drop it."""
+    if not isinstance(item, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in EVENT_STR_KEYS:
+        value = item.get(key, "unknown" if key in ("run_id", "quota_source") else None)
+        if not isinstance(value, str):
+            return None
+        out[key] = value
+    for key in EVENT_NUM_KEYS:
+        value = item.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+            return None
+        out[key] = value
+    if item.get("usage_status") == "unknown":
+        out["usage_status"] = "unknown"
+    return out
+
+
 def _atomic_write(path: Path, content: str) -> None:
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=path.parent, delete=False
@@ -202,10 +226,12 @@ def _record(
         return
 
     output_dir = Path(str(marker["output_dir"])).expanduser().resolve()
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project_dir and not output_dir.is_relative_to(Path(project_dir).resolve()):
-        return
+    # Containment is bound to the run root the charter authorized, not to the
+    # launch project, so reviewing another repository still records costs.
     output_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("cost-events.jsonl", "cost-summary.json", "cost-summary.md", ".cost-summary.lock"):
+        if (output_dir / name).is_symlink():
+            return
 
     event = {
         "agent": str(marker["agent"]),
@@ -225,6 +251,7 @@ def _record(
         "cache_read_input_tokens": usage["cache_read_input_tokens"],
         "agent_id": agent_id or "unknown",
         "parent_session_id": parent_session_id or "unknown",
+        "run_id": str(marker.get("run_id") or "unknown"),
     }
     new_events = [event]
     if marker.get("external_backend"):
@@ -245,6 +272,7 @@ def _record(
                 "cache_read_input_tokens": None,
                 "agent_id": agent_id or "unknown",
                 "parent_session_id": parent_session_id or "unknown",
+                "run_id": str(marker.get("run_id") or "unknown"),
                 "usage_status": "unknown",
             }
         )
@@ -260,27 +288,26 @@ def _record(
                     existing = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(existing, dict):
-                    events.append(existing)
+                clean = _clean_event(existing)
+                if clean is not None:
+                    events.append(clean)
+        run_id = new_events[0]["run_id"]
+        # A different run in the same directory starts a fresh ledger.
+        events = [item for item in events if item.get("run_id") == run_id]
+        # Replace by stable agent identity (not model), so a resume that
+        # changes model supersedes the earlier cumulative row.
         identities = {
-            (
-                item["agent_id"],
-                item["agent"],
-                item["round"],
-                item["backend"],
-                item["model"],
-            )
+            (item["agent_id"], item["agent"], item["round"], item["backend"])
             for item in new_events
         }
         events = [
             existing
             for existing in events
             if (
-                existing.get("agent_id"),
-                existing.get("agent"),
-                existing.get("round"),
-                existing.get("backend"),
-                existing.get("model"),
+                existing["agent_id"],
+                existing["agent"],
+                existing["round"],
+                existing["backend"],
             )
             not in identities
         ]
@@ -300,7 +327,9 @@ def _record(
 def hook() -> int:
     try:
         payload = json.load(sys.stdin)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return 0
+    if not isinstance(payload, dict):
         return 0
     if payload.get("hook_event_name") != "SubagentStop":
         return 0
@@ -312,15 +341,16 @@ def hook() -> int:
     transcript = Path(str(transcript_value)).expanduser()
     try:
         marker, usage = _read_transcript(transcript)
-    except OSError:
-        return 0
-    if marker is not None:
-        _record(
-            marker,
-            usage,
-            payload.get("agent_id") or payload.get("session_id"),
-            payload.get("session_id"),
-        )
+        if marker is not None:
+            _record(
+                marker,
+                usage,
+                payload.get("agent_id") or payload.get("session_id"),
+                payload.get("session_id"),
+            )
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        # Cost capture must never fail a subagent; leave one quiet line.
+        print(f"melange-costs: skipped ({type(error).__name__})", file=sys.stderr)
     return 0
 
 
