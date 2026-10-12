@@ -47,7 +47,6 @@ DATE          = YYYY-MM-DD
 GOAL          = resolved --goal text
 WEIGHTS       = resolved --weights
 OUTPUT_ROOT   = {PROJECT_ROOT}/docs/research/flux-melange/{SLUG}
-QUOTA_SOURCE  = authoritative provider/account quota label, else "unknown"
 ```
 
 ## Resolve peer runtimes (only when `--peers` ≠ off)
@@ -117,9 +116,7 @@ guess it from the current host.
    `kimi`) point its invoke at a plugin-shipped wrapper script instead of a PATH binary — the
    wrapper POSTs `{promptfile}` to an API and writes the final message to `{outfile}`, so the
    shim's file-extraction path is identical to codex's `-o`.
-   Carry `quota_source` from the selected profile/runtime config as
-   `quotaSource`; use `unknown` when absent and never infer it from the model.
-   Result: `PEERS = [{kind, model, quotaSource, invoke}]`.
+   Result: `PEERS = [{kind, model, invoke}]`.
    **Validate before baking** (the values land inside shell commands): runtime kind must match
    `^[a-z][a-z0-9-]{1,15}$`, model must match `^[A-Za-z0-9._:-]{1,64}$` — REJECT the flag
    otherwise (the workflow script re-validates at its chokepoint and will throw). Keep the
@@ -180,5 +177,3 @@ Synthesis: {OUTPUT_ROOT}/{DATE}-synthesis.md
 ## Resume detection
 
 If `heat-ledger.jsonl` already exists and is non-empty for this `SLUG`, this is a **resume**: read the last `melange-state.json:round` and re-enter the loop at that round's retarget instead of re-seeding. The append-or-stamp invariant guarantees the existing ledger is replayable.
-
-Cost capture: set `runId` in the workflow args once at charter time and keep it on resume; a new `runId` in the same output directory starts a fresh cost ledger (see `references/cost-capture.md`).
