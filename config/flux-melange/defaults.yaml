@@ -26,7 +26,7 @@ goal: "maximize verified novelty×risk surface until dry"
 # Which derived term the per-round YIELD function boosts. Steers WHAT the loop
 # considers "spice" without changing the loop mechanics.
 #
-#   balanced   equal weight on novelty / risk / taste terms (daily default)
+#   balanced   equal weight on novelty / risk / taste terms (standard profile)
 #   risk-hunt  boost risk.product — for security/migration/prod-safety targets
 #   taste      boost |taste| — for design reviews, API surfaces, naming passes
 #   novelty    boost novelty — for "what are we NOT seeing?" exploration
@@ -38,7 +38,7 @@ weights: balanced
 # Three independent HARD halts: DRY (yield -> 0), BUDGET (slots exhausted),
 # CEILING (max_rounds). min_rounds guards against one unlucky round quitting.
 #
-max_rounds: 4            # CEILING halt. Cap 6 (the engine refuses higher).
+max_rounds: 3            # standard high-stakes pass. Cap 6 (the engine refuses higher).
 min_rounds: 2            # never DRY-halt before this many rounds
 round_cost_floor: 3      # BUDGET halt when remaining slots < this
 diminishing_threshold: 1 # a round opening <= this many new qualifying clusters is DRY
@@ -273,7 +273,7 @@ interactive: false
 # Cost reference (rough, ~per agent slot)
 #
 #   2-round economy:   ~8-10 slots   ~$1     (quick adaptive pass)
-#   3-round balanced:  ~15-18 slots  ~$5     (the daily driver)
+#   3-round balanced:  ~15-18 slots  ~$5     (standard high-stakes pass)
 #   4-round balanced:  ~22-26 slots  ~$8     (design/architecture targets)
 #   to-dry max:        up to 30 cap  ~$15    (high-stakes, risk-hunt or taste)
 #

@@ -9,6 +9,6 @@ disable-model-invocation: true
 
 Use the `interflux:flux-review-engine` skill to run a multi-track deep review of the target. Pass `$ARGUMENTS` through verbatim. The skill handles per-track agent design across semantic-distance tiers, parallel flux-drive review dispatch, cross-track synthesis, and the final report.
 
-Routing note: if the target is a discovery-shaped question (gap analysis, "what are we missing", design-space or plan exploration) rather than a bounded review of an artifact, suggest escalating to `/interflux:flux-melange <target> --goal="..."` — the adaptive loop is the default for open-ended analysis/planning work. See `docs/guide-choosing-flux-command.md`.
+Routing note: this command is the escalation for bounded research and one-pass semantic-distance review. Suggest `/interflux:flux-melange <target> --goal="..."` only for high-stakes work: architecture pivots, security or data-loss hunts, pre-mortems, and foundational plans. Use its balanced three-round profile; suggest to-dry only when the user explicitly asks. See `docs/guide-choosing-flux-command.md`.
 
 Note: the underlying skill is named `flux-review-engine` (not `flux-review`) to avoid command-shadowing — the command and skill would otherwise both resolve to `interflux:flux-review` and the command would shadow the skill at invocation time. Same pattern as `/flux-drive` → `interflux:flux-engine`.
