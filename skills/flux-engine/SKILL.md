@@ -105,7 +105,7 @@ Then detect:
 - If `INPUT_PATH` is a **directory**: `INPUT_FILE = none (repo review mode)`, `INPUT_DIR = INPUT_PATH`, `INPUT_TYPE = directory`
 - If `INPUT_PATH` is **not a valid path on disk**: `INPUT_TYPE = text`, `INPUT_DIR = CWD`, treat as inline text
 
-**Text input handling:** When `INPUT_TYPE = text`, write the user's text to `{OUTPUT_DIR}/input.md` so agents can read it. Text inputs are treated like `.md` documents for triage — all agents (including cognitive agents) are eligible.
+**Text input handling:** When `INPUT_TYPE = text`, write the user's text to `{OUTPUT_DIR}/input.md` so agents can read it (the launch pre-clean keeps this file). Text inputs are treated like `.md` documents for triage — all agents (including cognitive agents) are eligible.
 
 Derive:
 ```
@@ -138,7 +138,7 @@ Before dispatch, clean stale outputs (handles a slow agent from a previous ident
 #    If another .run-*.lock already exists, auto-suffix OUTPUT_DIR to
 #    {OUTPUT_DIR}-{UUID} so concurrent runs use disjoint dirs.
 # 3) Only then clean (safe because we hold the lock and no peer run is live):
-find {OUTPUT_DIR} -maxdepth 1 \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete 2>/dev/null
+find {OUTPUT_DIR} -maxdepth 1 ! -name input.md \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" \) -delete 2>/dev/null
 ```
 Every agent writes `{agent-name}.{FLUX_RUN_UUID}.md` (UUID embedded in the filename) and synthesis globs only `{OUTPUT_DIR}/*.{FLUX_RUN_UUID}.md`, so files from a different run are structurally excluded regardless of cleanup timing.
 

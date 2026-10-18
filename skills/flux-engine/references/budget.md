@@ -13,6 +13,7 @@ the current `INPUT_TYPE`:
 - `diff` with < 500 lines → `diff-small`
 - `diff` with >= 500 lines → `diff-large`
 - `directory` → `repo`
+- `text` → treat like `file` (Document Profile → Type; default `other`)
 
 If a project-level override exists at `{PROJECT_ROOT}/.claude/flux-drive-budget.yaml`,
 use that instead.

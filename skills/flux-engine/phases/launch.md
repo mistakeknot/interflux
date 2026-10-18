@@ -45,7 +45,8 @@ OUTPUT_DIR is content-addressed by default (see SKILL.md § Run isolation): suff
 ```bash
 # Safe pre-clean: our lock is held and no other lock exists, so any remaining files
 # are stale orphans from a prior sequential run on this same target.
-find "$OUTPUT_DIR" -maxdepth 1 -type f \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" -o -name "decisions.log" \) -delete
+# input.md is kept: for INPUT_TYPE=text it is the review source written at Step 1.0, before this clean.
+find "$OUTPUT_DIR" -maxdepth 1 -type f ! -name input.md \( -name "*.md" -o -name "*.md.partial" -o -name "peer-findings.jsonl" -o -name "decisions.log" \) -delete
 ```
 
 `FLUX_RUN_UUID` is auto-consumed by `scripts/_verification.py` (every VerificationStep records it) and by `scripts/_decisions_log.py` (every decision record). Pass it into agent prompts via the `RUN_UUID` template variable — agents emit it in their output preamble for synthesis-time validation **and embed it in their output filename** (`{agent-name}.{RUN_UUID}.md`, see `references/prompt-template.md` § Output Format). The UUID-in-filename scheme is the structural half of the quire-mark: synthesis globs only `{OUTPUT_DIR}/*.${FLUX_RUN_UUID}.md`, so stale or foreign files are excluded by construction, not just by content check.
