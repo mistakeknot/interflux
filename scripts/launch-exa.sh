@@ -16,9 +16,24 @@ for _bindir in "$HOME/.npm-global/bin" "$HOME/.bun/bin" "$HOME/.local/bin"; do
     [[ -d "$_bindir" ]] && PATH="$_bindir:$PATH"
 done
 
+# Claude Code passes plugin.json's env through unexpanded when the variable is not
+# set in the host environment, so the key can arrive as the literal placeholder
+# string. Treat that the same as unset and fall back to the secrets file. The
+# value is never echoed.
+if [[ -z "${EXA_API_KEY:-}" || "${EXA_API_KEY}" == '${EXA_API_KEY}' ]]; then
+    unset EXA_API_KEY
+    _key_file="${SECRETS_DIR:-$HOME/.config/secrets}/EXA_API_KEY"
+    if [[ -r "$_key_file" ]]; then
+        EXA_API_KEY="$(<"$_key_file")"
+        # Strip trailing newline/whitespace left by editors.
+        EXA_API_KEY="${EXA_API_KEY%"${EXA_API_KEY##*[![:space:]]}"}"
+        [[ -n "$EXA_API_KEY" ]] && export EXA_API_KEY || unset EXA_API_KEY
+    fi
+fi
+
 if [[ -z "${EXA_API_KEY:-}" ]]; then
     echo "EXA_API_KEY not set — Exa search MCP server disabled." >&2
-    echo "Set EXA_API_KEY in your environment to enable web search in research agents." >&2
+    echo "Set EXA_API_KEY in your environment (or in ${SECRETS_DIR:-~/.config/secrets}/EXA_API_KEY) to enable web search in research agents." >&2
     # Exit 78 (EX_CONFIG) surfaces missing-prereq as a config error rather than a clean
     # shutdown (exit 0 masquerades as "running successfully" in Claude Code's plugin surface).
     exit 78
