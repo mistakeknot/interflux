@@ -48,7 +48,7 @@ INPUT_TYPE = research
 
 Clean OUTPUT_DIR of stale `.md` files before starting.
 
-**Text input:** When `INPUT_TYPE = text`, `INPUT_DIR = CWD`; write the user's text to `{OUTPUT_DIR}/input.md` and treat it as a `.md` document for triage — all agents (including cognitive agents) are eligible.
+**Text input:** When `INPUT_TYPE = text`, `INPUT_DIR = CWD`; write the user's text to `{OUTPUT_DIR}/input.md` (the launch pre-clean keeps this file) and treat it as a `.md` document for triage — all agents (including cognitive agents) are eligible.
 
 ## Phase 1: Analyze + Triage
 

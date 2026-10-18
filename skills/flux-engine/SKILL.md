@@ -105,7 +105,7 @@ Then detect:
 - If `INPUT_PATH` is a **directory**: `INPUT_FILE = none (repo review mode)`, `INPUT_DIR = INPUT_PATH`, `INPUT_TYPE = directory`
 - If `INPUT_PATH` is **not a valid path on disk**: `INPUT_TYPE = text`, `INPUT_DIR = CWD`, treat as inline text
 
-**Text input handling:** When `INPUT_TYPE = text`, write the user's text to `{OUTPUT_DIR}/input.md` so agents can read it. Text inputs are treated like `.md` documents for triage — all agents (including cognitive agents) are eligible.
+**Text input handling:** When `INPUT_TYPE = text`, write the user's text to `{OUTPUT_DIR}/input.md` so agents can read it (the launch pre-clean keeps this file). Text inputs are treated like `.md` documents for triage — all agents (including cognitive agents) are eligible.
 
 Derive:
 ```
