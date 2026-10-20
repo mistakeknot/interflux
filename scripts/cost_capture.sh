@@ -25,7 +25,7 @@
 set -u
 
 GRACE_SEC="${INTERFLUX_TEAMS_COST_GRACE_SEC:-5}"
-INTERSTAT_SCRIPT="${INTERSTAT_SCRIPT:-$HOME/projects/Sylveste/interverse/interstat/scripts/cost-query.sh}"
+INTERSTAT_SCRIPT="${INTERSTAT_SCRIPT:-${HOME:-}/projects/Sylveste/interverse/interstat/scripts/cost-query.sh}"
 
 if [[ ! -f "$INTERSTAT_SCRIPT" ]]; then
     cat <<EOF

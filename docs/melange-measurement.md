@@ -137,7 +137,7 @@ Run cheapest first; E2/E3 are ablations of E1's run, so build E1 before them.
 
 ## E0 — first live run: what it proved and what it fixed
 
-The first end-to-end run (`docs/research/flux-melange/eval-token-cache/`, on `fixture-token-cache`)
+The first end-to-end run (on `fixture-token-cache`; the run output is not tracked)
 **ran fully**: seeded, ran one heat-steered adaptive round, fused a lens pair, verified, and
 halted correctly on BUDGET. The control loop behaved as designed — the round-1 directives were
 demonstrably *computed from* the round-0 ledger (DEEPEN the highest-risk unconfirmed cluster,

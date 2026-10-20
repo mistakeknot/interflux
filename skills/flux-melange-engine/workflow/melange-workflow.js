@@ -162,7 +162,7 @@ const normKey = (loc) =>
 // several places at once:
 //
 //   "docs/brainstorms/...-brainstorm.md L13, L33, L41 (decision 3);
-//    crates/city-build/src/lib.rs:16,62; ravenous/.../footprints.rs"
+//    crates/city-build/src/lib.rs:16,62; project/.../footprints.rs"
 //
 // fusion.md defines SHARED_HEAT as "both lenses fired findings on the same file
 // / section / line-range", so membership is a SET, not a string. Comparing
