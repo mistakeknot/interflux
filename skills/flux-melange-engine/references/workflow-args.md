@@ -59,7 +59,7 @@ final-message file), and charter must pre-create
 `peers[].timeout_ms` is OPTIONAL (default 600000, clamped to 60s–60min): the wall-clock
 window the shim gives ONE invocation of that runtime. Size it to the runtime, not to the
 task — a runtime measured several times slower than the others starves under a shared
-window, and the starvation is silent unless `shim_status` reaches the loop (Sylveste-cg1).
+window, and the starvation is silent unless `shim_status` reaches the loop.
 
 `date` and `slug` MUST come from the charter — Workflow scripts cannot call `Date.now()` / `new Date()`.
 

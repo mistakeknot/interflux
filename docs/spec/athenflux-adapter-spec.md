@@ -5,8 +5,6 @@ Scope: Hermes-native adapter over `interflux`
 Canonical upstream: `interflux`
 Upstream compatibility anchor: `interflux` plugin `0.2.68`; `flux-drive` protocol spec `1.0.0`
 Owning doctrine: `docs/spec/athenverse-adapters.md`
-Companion rationale: `docs/research/interverse-athenverse-doctrine.md`
-Review basis: `docs/research/flux-review/athenflux-adapter-spec/2026-05-02-synthesis.md`
 
 ## Normative language
 

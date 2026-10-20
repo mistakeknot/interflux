@@ -105,7 +105,7 @@ verify:
 #
 peers:
   mode: off
-  # ADAPTIVE DEFAULTS (mk 2026-09-19). The `model:` values below are the PREFERENCE.
+  # ADAPTIVE DEFAULTS (2026-09-19). The `model:` values below are the PREFERENCE.
   # scripts/detect-runtimes.sh resolves what this environment can actually reach and
   # reports "model" + "model_reason" per runtime; charter prefers that over the static
   # value. Codex falls back Astra -> Sol when the CLI predates 0.153.1; hermes falls back
@@ -126,7 +126,7 @@ peers:
     auto_includes_unsandboxed: true
   runtimes:
     codex:
-      model: gpt-6-astra   # mk 2026-09-19: Astra is the default codex mirror
+      model: gpt-6-astra   # Astra is the default codex mirror
       # This block is the ONE source of truth for the bulk codex mirror.
       # select-review-route.py --purpose bulk reads it rather than the
       # reviewer_routing profiles below, which exist for producer-relative
@@ -143,13 +143,13 @@ peers:
       # service_tier=fast: 1.5x output speed at 2.5x credit rate. Mirrors sit on the Parley
       # barrier's critical path, so wall clock buys real latency here; drop the flag in your
       # project flux-melange.yaml if credit burn matters more than wall clock.
-      # model_reasoning_effort=medium (mk 2026-09-19): a mirror's job is independent coverage,
+      # model_reasoning_effort=medium (2026-09-19): a mirror's job is independent coverage,
       # not depth — probe tasks are scoped and numerous, and Astra's reasoning tokens multiply
       # wall clock and cost fast. Medium is a deliberate floor for a mirror, not a degraded
       # setting. Raise per-project only if a mirror's misses look depth-shaped.
       invoke: 'codex exec --full-auto --skip-git-repo-check --ephemeral -C "{projectRoot}" -m "{model}" -c service_tier="fast" -c model_reasoning_effort="medium" -o "{outfile}" - < "{promptfile}"'
     hermes:
-      # mk 2026-09-19: DeepSeek v4.1 Flash is the default hermes mirror. Its canonical id is
+      # DeepSeek v4.1 Flash is the default hermes mirror. Its canonical id is
       # provider-prefixed (deepseek/deepseek-v4.1-flash) and that '/' fails the peer-model
       # regex (^[A-Za-z0-9._:-]{1,64}$) — so, exactly as kimi documents below, the real id
       # lives in the invoke template and `model:` stays null, leaving {model_flag} empty.
@@ -161,7 +161,7 @@ peers:
       # of a repo-scale target needs more wall clock than its per-call latency
       # suggests. Measured 2026-09-19: the same invocation answers a trivial
       # prompt in 7.4s, but every 600s window on a 61k-LOC Rust tree expired
-      # without output (Sylveste-cg1). If a hermes mirror still starves here,
+      # without output. If a hermes mirror still starves here,
       # the fix is a narrower target, not a bigger number.
       timeout_ms: 900000
       invoke: 'cd "{projectRoot}" && hermes -z "$(cat "{promptfile}")" -m "deepseek/deepseek-v4.1-flash" --provider openrouter --yolo'   # {model_flag} = " -m {model}" when model set, else ""
@@ -204,12 +204,12 @@ peers:
 # instead of reconstructing this policy in prose.
 #
 # These two jobs briefly shared one table via a `routes.bulk` entry pointing at
-# the profile then named `sol-bulk`, which made mk's 2026-09-19 mirror ruling
-# reachable by one code path and not the other (Sylveste-5nk). `routes` now
+# the profile then named `sol-bulk`, which made the 2026-09-19 mirror default
+# reachable by one code path and not the other. `routes` now
 # covers validation only, and the profile is named `sol-fallback` for what it
 # actually is: the terminal fallback of every validation chain, including the
 # Astra-producer chain, which must never resolve back to Astra. Retargeting its
-# model to satisfy a mirror ruling would silently change reviewer separation —
+# model to satisfy a mirror default would silently change reviewer separation —
 # the old name invited exactly that, which is why it is gone.
 #
 reviewer_routing:

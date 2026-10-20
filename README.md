@@ -114,7 +114,6 @@ One MCP server: `exa` for web search (progressive enhancement — falls back to 
 
 - `inter*` names are canonical Interverse / Sylveste-native capabilities.
 - Hermes-specific adapters over those capabilities may use `athen*` names when they add substantive Hermes-native orchestration, prompting, synthesis, or workflow opinionation.
-- For the current doctrine note and rationale, see `docs/research/interverse-athenverse-doctrine.md`.
 
 ## FluxBench metrics
 

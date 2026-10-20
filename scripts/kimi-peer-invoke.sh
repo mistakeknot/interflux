@@ -7,7 +7,7 @@
 # LANE 1 (preferred) — the Kimi Code CLI on subscription OAuth. Runs
 #   `kimi --output-format stream-json -p <prompt>` headless (no API key) and
 #   extracts the LAST role=assistant JSONL row as the final message. Verified
-#   2026-07-27 (mk-2xg5): `-p` mode auto-approves regular tool calls (a
+#   2026-07-27: `-p` mode auto-approves regular tool calls (a
 #   probe-shaped file-read ran without an approval hang) and REJECTS
 #   --auto/--yolo as conflicting flags. TRUST NOTE vs the HTTP lane: this lane
 #   runs a TOOL-ENABLED agent in the CWD, UNSANDBOXED (hermes --yolo class),

@@ -20,7 +20,7 @@ Each directive in `round-N-directives.json`:
 Spawn an adjacent lens at the **exact location** of a high-risk, low-convergence cluster (found once, scary, unconfirmed) to confirm or refute it.
 - **Fires when:** a cluster has high `risk.product` but `convergence_refs == []` and `status != upheld`.
 - **Effect:** narrows compute onto a known-hot point. The opposite of flux-explore's outward drift.
-- **Settled-cluster gate (mk-8wk).** A cluster is CLOSED for DEEPEN when any of:
+- **Settled-cluster gate.** A cluster is CLOSED for DEEPEN when any of:
   (a) any member is `upheld` (the existing rule); (b) it has already received one
   DEEPEN this run — DEEPEN is confirm-or-refute, one dispatch answers it, whatever
   the verify gate later does with the yield; (c) any member's normalized location

@@ -46,7 +46,7 @@ the ledger. An empty index with `Verdict: safe` represents no findings. Return
 the output path and finding count to the orchestrator. Do not write a temporary findings
 file and do not invoke a helper or subprocess to produce the report.
 
-Every probe prompt additionally carries (mk-8wk):
+Every probe prompt additionally carries:
 - **Settled facts** — up to 10 upheld claims from earlier rounds (heat-ordered, one line each) under "SETTLED FACTS — do NOT re-litigate, re-confirm, or spend findings on these; build on them". This is the loop's working memory; without it later rounds re-pay for what verify already settled.
 - **Remediation channel** — instruct: if a verdict implies amending the REVIEW TARGET/BRIEF itself (a settled fact the brief contradicts, a framing to drop, a question to add), state it as ONE imperative sentence in the finding's `remediation` field (distinct from `suggestion`, which stays for ordinary code/design fixes). Remediations are routed to the report's `prescriptions` — the loop never edits its own target.
 - **Artifact safety** — findings Markdown goes through Write in the restricted

@@ -195,11 +195,11 @@ def test_append_to_log_appends_existing(tmp_path: Path) -> None:
     assert json.loads(lines[1])["name"] == "new"
 
 
-# --- canonical use case: microrouter no-op short-circuit (Sylveste-a5u) ---
+# --- canonical use case: microrouter no-op short-circuit ---
 
 
 def test_microrouter_passthrough_audit() -> None:
-    """The exact pattern that closes Sylveste-a5u — record the short-circuit."""
+    """The exact pattern that closes the no-op short-circuit case — record the short-circuit."""
     s = v.VerificationStep.verified(
         "microrouter-passthrough",
         evidence="matched B3 calibration:sonnet for fd-architecture",

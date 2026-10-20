@@ -1,7 +1,7 @@
 # Fixture: fusion pairing (SHARED_HEAT)
 
 `heat-ledger.jsonl` is the finding-location record of a real flux-melange run —
-`datum` / `orthophoto-pass-and-address-gauge`, 2026-09-13: 10 lenses, 3 rounds,
+a downstream mapping project, 2026-09-13: 10 lenses, 3 rounds,
 33 findings, 45 candidate lens pairs. Trimmed to the four fields the pairing
 controller reads (`id`, `round`, `agents`, `location`, `cluster_id`); claims,
 scores, evidence and status are dropped.

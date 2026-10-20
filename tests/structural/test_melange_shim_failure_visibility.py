@@ -1,6 +1,6 @@
 """A peer mirror that died must not be reportable as a mirror that found nothing.
 
-Sylveste-cg1. The shim contract tells a shim, on CLI failure or timeout, to
+The shim contract tells a shim, on CLI failure or timeout, to
 return "a minimally valid object for the schema (empty arrays; any required
 string field = SHIM-FAILURE: <reason>)". Eight of the ten top-level schemas
 have no required string field, so on those the degraded object is just

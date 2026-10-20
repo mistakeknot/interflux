@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 bats_require_minimum_version 1.5.0
 
-# Integration tests for cross-model dispatch enforce mode (sylveste-fyo3.3).
+# Integration tests for cross-model dispatch enforce mode.
 #
 # Design note: Cross-model dispatch is implemented as LLM-interpreted skill
 # instructions (expansion.md § 2.2c), not a bash script. These tests verify:
@@ -12,7 +12,7 @@ bats_require_minimum_version 1.5.0
 # Known residual risk: The downgrade-cap restoration path (expansion.md lines
 # 267-272) re-applies _routing_apply_safety_floor via inline comment instruction.
 # This is convention-enforced, not compile-time verified. The pool-level quality
-# assertion (step 6) provides a secondary catch. See sylveste-fyo3.3 bead notes.
+# assertion (step 6) provides a secondary catch.
 
 setup() {
     CONFIG_DIR="${BATS_TEST_DIRNAME}/../config/flux-drive"

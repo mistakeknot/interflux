@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install interflux git hooks (Sylveste-10p).
+# Install interflux git hooks.
 #
 # Points core.hooksPath at the tracked .githooks/ directory so the
 # routing frontmatter drift gate (.githooks/pre-commit) runs on every

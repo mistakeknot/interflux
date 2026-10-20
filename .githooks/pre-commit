@@ -10,10 +10,10 @@ if [ -x "$HOME/projects/dotfiles/cloud/pre-commit.sh" ]; then
   "$HOME/projects/dotfiles/cloud/pre-commit.sh" "$@" || exit $?
 fi
 # --- END SHARED PRE-COMMIT DISPATCHER ---
-# interflux pre-commit hook — routing frontmatter drift gate (Sylveste-10p)
+# interflux pre-commit hook — routing frontmatter drift gate
 #
 # Light gate that complements the GitHub Actions drift audit
-# (.github/workflows/routing-drift.yml, Sylveste-onp). When any routing
+# (.github/workflows/routing-drift.yml). When any routing
 # input is staged, run the strict frontmatter audit and block the commit
 # on drift — catching it before push instead of after a CI roundtrip.
 #

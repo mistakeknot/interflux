@@ -37,7 +37,7 @@ Operating modes (auto-detected from --root, can be overridden):
                      SHOULD be filtered with --only-agents-in-dirs (default
                      when --agent-dir is supplied).
 
-Origin: Sylveste-0zy (audit) + Sylveste-onp (CI gate). Replaces the
+Replaces the
 pre-promotion gitignored copy under docs/research/microrouter-phase1/.
 """
 

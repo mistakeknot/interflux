@@ -80,7 +80,7 @@ dropout:
   threshold: 0.6            # redundancy score (0.0-1.0) at which an agent is dropped
                             # Lower = more aggressive pruning, higher = more conservative
                             # 0.6 requires domain convergence (0.4) + finding density (0.2)
-                            # Lowered from 0.7 (Demarch-1x9l.3) — saves 15-40K tokens per dropped agent
+                            # Lowered from 0.7 — saves 15-40K tokens per dropped agent
                             # Validated 2026-03-26 (26+ runs): 0% P0/P1 recall loss — dropout candidates never produce P0/P1
 
 # Incremental expansion — speculative Stage 2 launch (Step 2.2a.6)

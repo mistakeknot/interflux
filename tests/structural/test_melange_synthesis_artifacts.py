@@ -2,8 +2,8 @@
 
 One synthesis agent used to be asked for four things in a single turn, largest
 first: a 30+ KB markdown report, then `surfaced.jsonl`, then `run-manifest.json`,
-then a three-field structured return. A live run (datum /
-orthophoto-pass-and-address-gauge, 2026-09-13) stalled mid-turn immediately
+then a three-field structured return. A live run (a downstream mapping
+project, 2026-09-13) stalled mid-turn immediately
 after the big Write — the markdown landed at 20:18, the agent emitted nothing
 for the next 6.5 minutes, and the two machine-readable artifacts and the
 structured return never arrived. Because a stalled agent neither returns nor

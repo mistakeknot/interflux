@@ -315,8 +315,8 @@ Cost estimation: `scripts/estimate-costs.sh` queries interstat historical data, 
 
 `config/flux-drive/agent-roles.yaml` is the host-agnostic policy source of truth for per-role model tiers; each subagent's `model:` frontmatter must stay within the role's `[min_model, max_model]` band. Two gates guard that invariant:
 
-- **CI (hard gate)** — `.github/workflows/routing-drift.yml` runs `scripts/verify_frontmatter.py --strict` on every push/PR that touches `agent-roles.yaml`, `agents/**/*.md`, or the audit script. Origin: Sylveste-onp.
-- **Pre-commit (light gate)** — `.githooks/pre-commit` runs the same `--strict` audit locally when any of those files is staged, blocking the commit on drift before it reaches CI. Origin: Sylveste-10p.
+- **CI (hard gate)** — `.github/workflows/routing-drift.yml` runs `scripts/verify_frontmatter.py --strict` on every push/PR that touches `agent-roles.yaml`, `agents/**/*.md`, or the audit script.
+- **Pre-commit (light gate)** — `.githooks/pre-commit` runs the same `--strict` audit locally when any of those files is staged, blocking the commit on drift before it reaches CI.
 
 Install the local hook once per clone:
 

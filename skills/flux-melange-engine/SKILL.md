@@ -136,7 +136,7 @@ To rerun the discovered lenses as a flat review: /flux-drive {INPUT_PATH}
 To regenerate a fused lens: /flux-gen --from-specs docs/research/flux-melange/{SLUG}/lens-specs/fusion-{round}-{k}.json
 ```
 
-If the report carries non-empty `prescriptions` (mk-8wk: mid-run remediations — target/brief
+If the report carries non-empty `prescriptions` (mid-run remediations — target/brief
 amendments the loop itself never applies), append:
 ```
 Prescriptions (apply to the target/brief before re-running or acting on this review):

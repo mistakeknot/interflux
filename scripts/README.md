@@ -17,7 +17,7 @@ Reference card for shell + Python utilities under `scripts/`. Establishes canoni
 MODEL_REGISTRY="${MODEL_REGISTRY:-${SCRIPT_DIR}/../config/flux-drive/model-registry.yaml}"
 ```
 
-Older variable names (`REGISTRY_FILE`, `REGISTRY`) were retired in BP-B5 (sylveste-9lp.34); do not reintroduce them.
+Older variable names (`REGISTRY_FILE`, `REGISTRY`) were retired in BP-B5; do not reintroduce them.
 
 ## flock fd allocation
 
@@ -63,7 +63,7 @@ Inline Python heredocs (`python3 -c "..."`) are fine for ≤10 logical lines. Be
 2. Invoke via `python3 "${SCRIPT_DIR}/_<name>.py" <args>` from the shell wrapper.
 3. Add unit tests at `scripts/tests/test_<name>.py`.
 
-The 180-line FluxBench scoring algorithm (BP-C1.C, sylveste-9lp.32.7) was the canonical case: it lived in a `python3 -c` heredoc inside `fluxbench-score.sh` until extraction made it testable. Don't recreate that pattern.
+The 180-line FluxBench scoring algorithm (BP-C1.C) was the canonical case: it lived in a `python3 -c` heredoc inside `fluxbench-score.sh` until extraction made it testable. Don't recreate that pattern.
 
 ## Python error handling
 

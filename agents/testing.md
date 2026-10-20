@@ -4,7 +4,7 @@
 
 ```bash
 # Run all structural tests
-cd /home/mk/projects/Demarch/interverse/interflux && uv run pytest tests/ -q
+cd <interflux-repo-root> && uv run pytest tests/ -q
 
 # Key test suites
 uv run pytest tests/structural/test_namespace.py -v  # Guards against stale clavain: refs
