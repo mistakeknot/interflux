@@ -37,7 +37,7 @@ your project **unsandboxed**, with your hooks firing in-run. Set it false on a t
 contents you would not hand an unsandboxed agent — `auto` then mirrors only on sandboxed runtimes,
 while naming a runtime explicitly (`--peers=hermes`) still runs it, because naming is consent.
 
-**Default mirror models** (mk 2026-09-19, `config/flux-melange/defaults.yaml`): codex mirrors on
+**Default mirror models** (2026-09-19, `config/flux-melange/defaults.yaml`): codex mirrors on
 **Astra at medium** reasoning (Fast tier), hermes on **DeepSeek v4.1 Flash** via OpenRouter, kimi on
 **K3**. Medium on Astra is deliberate — a mirror earns its keep through independent coverage, not
 depth, and mirrors sit on the Parley barrier where wall clock is the scarce resource. Hermes's

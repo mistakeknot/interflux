@@ -14,7 +14,7 @@ The flux-drive review protocol is documented in `docs/spec/` (flux-drive-spec 1.
 
 ```bash
 # Test locally
-claude --plugin-dir /root/projects/Interverse/plugins/interflux
+claude --plugin-dir /path/to/interflux
 
 # Validate structure
 ls skills/*/SKILL.md | wc -l          # Should be 3 (flux-engine, flux-melange-engine, flux-review-engine; flux-research skill removed in v0.2.61, flux-review extracted from command in BP-C4)
