@@ -541,13 +541,11 @@ def generate_from_specs(
                             {**spec, "source_spec_file": specs_file_name},
                         )
                         lens_registry.record_reuse(
-                            registry_root,
-                            {
-                                **reuse,
-                                "consumer": "flux-gen",
-                                "project": str(project),
-                                "target": str(target),
-                            },
+                            match,
+                            name=name,
+                            consumer="flux-gen",
+                            project=str(project),
+                            target=str(target),
                         )
                     report["reused"].append(reuse)
                     continue

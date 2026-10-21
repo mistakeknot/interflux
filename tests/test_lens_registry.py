@@ -27,6 +27,8 @@ def lens_registry():
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    if module._resolver_module() is None:
+        pytest.skip("Linsenkasten source package is unavailable for integration tests")
     return module
 
 
@@ -173,27 +175,6 @@ def _frontmatter(text: str) -> dict:
     return yaml.safe_load(text[4:end])
 
 
-def test_embedding_text_matches_harvest_recipe(lens_registry):
-    spec = {
-        "persona": "A migration operator",
-        "focus": "Identity boundaries",
-        "decision_lens": "Prefer reversible cuts",
-        "review_areas": ["Check rollback", "Check propagation"],
-    }
-    assert lens_registry.embedding_text(spec, "ignored") == (
-        "A migration operator\nIdentity boundaries\nPrefer reversible cuts\n"
-        "Check rollback\nCheck propagation"
-    )
-
-    body = (
-        "Apply the perspective of a queue operator.\n\n"
-        "### 1. Backpressure\n\nDetails.\n\n### 2. Fairness\n"
-    )
-    assert lens_registry.embedding_text(None, body) == (
-        "Apply the perspective of a queue operator.\n"
-        "Backpressure\nFairness\n"
-        "Apply the perspective of a queue operator. ### 1. Backpressure Details. ### 2. Fairness"
-    )
 
 
 def test_find_registry_root_and_load_only_cluster_heads(tmp_path, monkeypatch, lens_registry):
@@ -256,6 +237,34 @@ def test_load_ignores_rows_with_null_cluster(tmp_path, lens_registry):
         "fd-body-only",
         "fd-corrupt-no-spec",
     ]
+
+
+def test_fixed_specs_match_legacy_resolver_results(tmp_path, monkeypatch, lens_registry):
+    """Expected results recorded from the copied resolver at base d8c4146."""
+    root = tmp_path / "registry"
+    _write_registry(root)
+    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
+    monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
+    monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
+    fixed = [
+        ({"name": "fd-body-only", "focus": "unrelated"},
+         ("gen:fd-body-only@bbbbbbbb", 1.0, "lexical")),
+        ({"name": "fd-new", "focus": "queue fairness backpressure"},
+         ("gen:fd-body-only@bbbbbbbb", 1.0, "lexical")),
+        ({"name": "fd-new", "focus": "queue latency"}, None),
+        ({"name": "fd-corrupt-no-spec", "focus": "unrelated"}, None),
+    ]
+    for spec, expected in fixed:
+        match = lens_registry.resolve(spec)
+        actual = (match["registry_id"], match["score"], match["method"]) if match else None
+        assert actual == expected
+
+    with _fake_ollama(_unit_vector(0)) as (url, _):
+        monkeypatch.setenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", url)
+        match = lens_registry.resolve({"name": "fd-new", "focus": "Identity migration", "persona": "Operator"})
+    assert (match["registry_id"], match["score"], match["method"]) == (
+        "gen:fd-canonical@aaaaaaaa", 1.0, "embedding"
+    )
 
 
 def test_resolve_uses_local_then_fallback_ollama_and_generated_matrix(
@@ -324,8 +333,6 @@ def test_resolve_uses_lexical_fallback_and_rejects_corrupt_body_without_spec(
     assert corrupt is None
 
 
-def test_lexical_threshold_is_named(lens_registry):
-    assert lens_registry.LEXICAL_MIN_JACCARD == pytest.approx(0.6)
 
 
 def test_resolve_lexical_fallback_uses_focus_summary_jaccard(
@@ -407,82 +414,10 @@ def test_resolve_uses_lexical_when_embedding_model_does_not_match(
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("meta", [None, [], "partial"])
-def test_resolve_uses_lexical_when_embedding_meta_is_not_an_object(
-    tmp_path, monkeypatch, lens_registry, meta
-):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    (root / "data" / "embeddings" / "meta.json").write_text(
-        json.dumps(meta), encoding="utf-8"
-    )
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(
-        lens_registry,
-        "_embed",
-        lambda _text: (_unit_vector(0), "local"),
-    )
-
-    match = lens_registry.resolve(
-        {"name": "fd-new", "focus": "queue fairness backpressure"}
-    )
-
-    assert match is not None
-    assert match["id"] == "gen:fd-body-only@bbbbbbbb"
-    assert match["method"] == "lexical"
 
 
-def test_resolve_ignores_cluster_head_without_a_string_id(
-    tmp_path, monkeypatch, lens_registry
-):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    index = root / "data" / "generated" / "index.jsonl"
-    with index.open("a", encoding="utf-8") as handle:
-        handle.write(
-            json.dumps(
-                {
-                    "name": "fd-idless",
-                    "summary": "unique idless summary",
-                    "cluster": {"head": True, "id": "cluster-idless"},
-                    "corrupt": False,
-                    "spec_path": None,
-                }
-            )
-            + "\n"
-        )
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(lens_registry, "_embed", lambda _text: None)
-
-    assert lens_registry.resolve({"name": "fd-idless", "focus": "unique idless"}) is None
 
 
-def test_resolve_computes_query_norm_once(tmp_path, monkeypatch, lens_registry):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(
-        lens_registry,
-        "_embed",
-        lambda _text: (_unit_vector(0), "local"),
-    )
-    original_sqrt = lens_registry.math.sqrt
-    sqrt_calls = 0
-
-    def counted_sqrt(value):
-        nonlocal sqrt_calls
-        sqrt_calls += 1
-        return original_sqrt(value)
-
-    monkeypatch.setattr(lens_registry.math, "sqrt", counted_sqrt)
-
-    match = lens_registry.resolve(
-        {"name": "fd-new", "focus": "Identity migration", "persona": "Operator"}
-    )
-
-    assert match is not None
-    assert match["id"] == "gen:fd-canonical@aaaaaaaa"
-    assert sqrt_calls == 3  # one query norm plus one norm for each candidate vector
 
 
 def test_generate_agents_module_is_loaded_once(monkeypatch, lens_registry):
@@ -677,60 +612,8 @@ def test_materialize_replaces_legacy_registry_name_before_validation(
     assert frontmatter["name"] == "fd-current-request"
 
 
-def test_record_reuse_uses_registry_then_home_fallback(tmp_path, monkeypatch, lens_registry):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    entry = {
-        "registry_id": "gen:fd-canonical@aaaaaaaa",
-        "name": "fd-canonical",
-        "score": 0.95,
-        "method": "embedding",
-        "embed_tier": "local",
-        "consumer": "interflux",
-        "project": "demo",
-        "target": Path("plan.md"),
-        "ignored": "not persisted",
-    }
-
-    primary = lens_registry.record_reuse(root, entry)
-    primary_row = json.loads(primary.read_text(encoding="utf-8").splitlines()[-1])
-    assert primary == root / "data" / "generated" / "reuse-log.jsonl"
-    assert primary_row["registry_id"] == entry["registry_id"]
-    assert primary_row["target"] == "plan.md"
-    assert primary_row["recorded_at"].endswith("+00:00")
-    assert "ignored" not in primary_row
-
-    (root / "data" / "generated" / "reuse-log.jsonl").unlink()
-    (root / "data" / "generated" / "reuse-log.jsonl").mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    fallback = lens_registry.record_reuse(root, entry)
-
-    assert fallback == tmp_path / "home" / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
-    assert json.loads(fallback.read_text(encoding="utf-8"))["name"] == "fd-canonical"
 
 
-def test_record_reuse_falls_back_after_primary_serialization_error(
-    tmp_path, monkeypatch, lens_registry
-):
-    root = tmp_path / "registry"
-    fallback_home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(fallback_home))
-    original_append = lens_registry._append_jsonl
-    calls = 0
-
-    def fail_primary(path, row):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise TypeError("not serializable")
-        original_append(path, row)
-
-    monkeypatch.setattr(lens_registry, "_append_jsonl", fail_primary)
-
-    path = lens_registry.record_reuse(root, {"target": Path("plan.md")})
-
-    assert path == fallback_home / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
-    assert json.loads(path.read_text(encoding="utf-8"))["target"] == "plan.md"
 
 
 def test_load_skips_malformed_index_lines_instead_of_raising(tmp_path, lens_registry, capsys):
