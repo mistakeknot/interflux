@@ -20,16 +20,23 @@ EMBED_DIM = 768
 
 
 @pytest.fixture
-def lens_registry():
+def lens_registry(tmp_path, monkeypatch):
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     if not MODULE_PATH.exists():
         pytest.skip("scripts/lib_lens_registry.py has not been implemented")
     spec = importlib.util.spec_from_file_location("lib_lens_registry_under_test", MODULE_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if module._resolver_module() is None:
-        pytest.skip("Linsenkasten source package is unavailable for integration tests")
     return module
+
+
+@pytest.fixture
+def resolver_available(lens_registry):
+    if lens_registry._resolver_module() is None:
+        pytest.skip("Linsenkasten source package is unavailable for resolver integration")
 
 
 def test_lens_registry_module_exists():
@@ -139,6 +146,16 @@ def _write_registry(root: Path) -> list[dict]:
     return records
 
 
+def _matched_record(root: Path, lens_id: str) -> dict:
+    """Build a materialization input without requiring the optional resolver package."""
+    index = root / "data" / "generated" / "index.jsonl"
+    for line in index.read_text(encoding="utf-8").splitlines():
+        record = json.loads(line)
+        if record.get("id") == lens_id:
+            return {**record, "registry_id": lens_id, "_registry_root": str(root)}
+    raise AssertionError(f"fixture record missing: {lens_id}")
+
+
 @contextmanager
 def _fake_ollama(vector: list[float]):
     requests: list[dict] = []
@@ -177,6 +194,7 @@ def _frontmatter(text: str) -> dict:
 
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_find_registry_root_and_load_only_cluster_heads(tmp_path, monkeypatch, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -224,6 +242,7 @@ def test_find_registry_root_prefers_linsenkasten_checkout_over_interlens(
     assert lens_registry.find_registry_root() == linsenkasten
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_load_ignores_rows_with_null_cluster(tmp_path, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -239,6 +258,7 @@ def test_load_ignores_rows_with_null_cluster(tmp_path, lens_registry):
     ]
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_fixed_specs_match_legacy_resolver_results(tmp_path, monkeypatch, lens_registry):
     """Expected results recorded from the copied resolver at base d8c4146."""
     root = tmp_path / "registry"
@@ -267,6 +287,7 @@ def test_fixed_specs_match_legacy_resolver_results(tmp_path, monkeypatch, lens_r
     )
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_local_then_fallback_ollama_and_generated_matrix(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -295,6 +316,7 @@ def test_resolve_uses_local_then_fallback_ollama_and_generated_matrix(
     ]
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_local_ollama_and_ignores_non_heads(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -313,6 +335,7 @@ def test_resolve_uses_local_ollama_and_ignores_non_heads(
     assert len(requests) == 1
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_fallback_and_rejects_corrupt_body_without_spec(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -335,6 +358,7 @@ def test_resolve_uses_lexical_fallback_and_rejects_corrupt_body_without_spec(
 
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_lexical_fallback_uses_focus_summary_jaccard(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -356,6 +380,7 @@ def test_resolve_lexical_fallback_uses_focus_summary_jaccard(
     assert miss is None
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_empty_embedding_text_uses_lexical_without_ollama(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -374,6 +399,7 @@ def test_resolve_empty_embedding_text_uses_lexical_without_ollama(
     assert requests == []
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_when_embedding_matrix_is_missing(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -393,6 +419,7 @@ def test_resolve_uses_lexical_when_embedding_matrix_is_missing(
     assert len(requests) == 1
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_when_embedding_model_does_not_match(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -453,8 +480,7 @@ def test_materialize_rerenders_registry_spec_and_overrides_reuse_frontmatter(
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-canonical", "focus": "identity"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     target = lens_registry.materialize(
         match,
@@ -487,8 +513,7 @@ def test_materialize_copies_only_clean_body_when_registry_has_no_spec(
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-body-only", "focus": "queue"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
 
     target = lens_registry.materialize(
         match, tmp_path / "agents", {"name": "fd-queue-fairness"}
@@ -531,8 +556,7 @@ def test_materialize_honors_explicit_null_spec_path(tmp_path, monkeypatch, lens_
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-body-only", "focus": "queue"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
 
     target = lens_registry.materialize(
         match, tmp_path / "agents", {"name": "fd-queue-fairness"}
@@ -548,11 +572,7 @@ def test_materialize_rejects_corrupt_body_without_spec_directly(
 ):
     root = tmp_path / "registry"
     _write_registry(root)
-    match = next(
-        record
-        for record in lens_registry.load(root)
-        if record["name"] == "fd-corrupt-no-spec"
-    )
+    match = _matched_record(root, "gen:fd-corrupt-no-spec@dddddddd")
 
     with pytest.raises(ValueError, match="corrupt registry body without a spec"):
         lens_registry.materialize(
@@ -570,8 +590,7 @@ def test_materialize_rejects_invalid_registry_spec(tmp_path, monkeypatch, lens_r
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-canonical", "focus": "identity"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     with pytest.raises(ValueError, match="invalid registry spec"):
         lens_registry.materialize(
@@ -596,11 +615,7 @@ def test_materialize_replaces_legacy_registry_name_before_validation(
     registry_spec = json.loads(registry_spec_path.read_text(encoding="utf-8"))
     registry_spec["name"] = "fd_Legacy"
     registry_spec_path.write_text(json.dumps(registry_spec), encoding="utf-8")
-    match = next(
-        record
-        for record in lens_registry.load(root)
-        if record["name"] == "fd-canonical"
-    )
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     target = lens_registry.materialize(
         match,
@@ -616,6 +631,7 @@ def test_materialize_replaces_legacy_registry_name_before_validation(
 
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_load_skips_malformed_index_lines_instead_of_raising(tmp_path, lens_registry, capsys):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -636,7 +652,7 @@ def test_materialize_copy_path_drops_the_registry_records_provenance(tmp_path, m
         "# Body-only lens\n\nKeep this body verbatim.\n",
         encoding="utf-8",
     )
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     target = lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})
     frontmatter = _frontmatter(target.read_text(encoding="utf-8"))
     for stale in ("source_spec", "use_count", "last_used", "generated_at"):
@@ -651,7 +667,7 @@ def test_materialize_copy_path_drops_the_registry_records_provenance(tmp_path, m
 def test_materialize_accepts_a_bare_list_cohort(tmp_path, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     match["cohort"] = ["fd-a", "fd-b"]
     target = lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})
     assert _frontmatter(target.read_text(encoding="utf-8"))["cohort_siblings"] == ["fd-a", "fd-b"]
@@ -662,7 +678,7 @@ def test_materialize_refuses_a_body_path_outside_the_registry(tmp_path, lens_reg
     _write_registry(root)
     outside = tmp_path / "outside.md"
     outside.write_text("---\nname: x\n---\nnot registry data\n", encoding="utf-8")
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     match["body_path"] = "../../outside.md"
     with pytest.raises(ValueError, match="escapes data root"):
         lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})

@@ -321,6 +321,28 @@ def test_registry_auto_dry_run_reports_reuse_without_materializing(tmp_path):
     assert not (registry_root / "data" / "generated" / "reuse-log.jsonl").exists()
 
 
+def test_reuse_log_failure_keeps_materialized_lens(tmp_path):
+    registry_root = tmp_path / "registry"
+    project = tmp_path / "project"
+    specs = tmp_path / "specs.json"
+    home = tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    _write_fixture_registry(registry_root)
+    _write_specs(specs)
+    log_path = home / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
+    log_path.mkdir(parents=True)
+
+    report, _ = _run_generator(project, specs, registry_root, home=home)
+
+    assert report["generated"] == []
+    assert report["reused"][0]["registry_id"] == REGISTRY_ID
+    assert report["errors"] == []
+    assert report["warnings"] and "reuse log" in report["warnings"][0].lower()
+    target = project / ".claude" / "agents" / "fd-registry-match.md"
+    assert _frontmatter(target)["tier"] == "registry"
+
+
 def test_melange_routes_registry_by_creative_intent():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     seed = workflow.split("async function seedRun(R) {", 1)[1].split(
