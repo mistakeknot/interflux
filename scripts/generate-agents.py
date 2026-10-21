@@ -435,7 +435,7 @@ def generate_from_specs(
         anti_overlap (list[str], optional): What NOT to flag (other agents cover it)
 
     Returns a report dict with keys: status, generated, skipped, reused,
-    overlaps, errors.
+    overlaps, warnings, errors.
     """
     if registry_mode not in {"auto", "off"}:
         raise ValueError("registry_mode must be 'auto' or 'off'")
@@ -449,6 +449,7 @@ def generate_from_specs(
         "skipped": [],
         "reused": [],
         "overlaps": [],  # existing proven/used agents that cover the domain
+        "warnings": [],
         "errors": [],
     }
 
@@ -540,15 +541,19 @@ def generate_from_specs(
                             agents_dir,
                             {**spec, "source_spec_file": specs_file_name},
                         )
-                        lens_registry.record_reuse(
-                            registry_root,
-                            {
-                                **reuse,
-                                "consumer": "flux-gen",
-                                "project": str(project),
-                                "target": str(target),
-                            },
-                        )
+                        try:
+                            lens_registry.record_reuse(
+                                match,
+                                name=name,
+                                consumer="flux-gen",
+                                project=str(project),
+                                target=str(target),
+                            )
+                        except Exception as exc:
+                            report["status"] = "warning"
+                            report["warnings"].append(
+                                f"Registry reuse log failed for '{name}': {exc}"
+                            )
                     report["reused"].append(reuse)
                     continue
             except Exception as exc:
@@ -688,6 +693,7 @@ def main() -> int:
     reused = report.get("reused", [])
     overlaps = report.get("overlaps", [])
     errs = report.get("errors", [])
+    warnings = report.get("warnings", [])
 
     # Detect silent failure: specs had entries but nothing was generated or skipped
     specs_count = report.get("specs_count", 0)
@@ -722,6 +728,8 @@ def main() -> int:
                 print(f"    {r['new']} ↔ {', '.join(r['overlapping'][:3])}")
         for err in errs:
             print(f"  Warning: {err}", file=sys.stderr)
+        for warning in warnings:
+            print(f"  Warning: {warning}", file=sys.stderr)
         if not gen and not skip and not reused:
             print("  Warning: no agents generated or skipped — check specs file content", file=sys.stderr)
 

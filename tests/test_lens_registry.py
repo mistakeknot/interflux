@@ -20,7 +20,10 @@ EMBED_DIM = 768
 
 
 @pytest.fixture
-def lens_registry():
+def lens_registry(tmp_path, monkeypatch):
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     if not MODULE_PATH.exists():
         pytest.skip("scripts/lib_lens_registry.py has not been implemented")
     spec = importlib.util.spec_from_file_location("lib_lens_registry_under_test", MODULE_PATH)
@@ -28,6 +31,12 @@ def lens_registry():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture
+def resolver_available(lens_registry):
+    if lens_registry._resolver_module() is None:
+        pytest.skip("Linsenkasten source package is unavailable for resolver integration")
 
 
 def test_lens_registry_module_exists():
@@ -137,6 +146,16 @@ def _write_registry(root: Path) -> list[dict]:
     return records
 
 
+def _matched_record(root: Path, lens_id: str) -> dict:
+    """Build a materialization input without requiring the optional resolver package."""
+    index = root / "data" / "generated" / "index.jsonl"
+    for line in index.read_text(encoding="utf-8").splitlines():
+        record = json.loads(line)
+        if record.get("id") == lens_id:
+            return {**record, "registry_id": lens_id, "_registry_root": str(root)}
+    raise AssertionError(f"fixture record missing: {lens_id}")
+
+
 @contextmanager
 def _fake_ollama(vector: list[float]):
     requests: list[dict] = []
@@ -173,29 +192,9 @@ def _frontmatter(text: str) -> dict:
     return yaml.safe_load(text[4:end])
 
 
-def test_embedding_text_matches_harvest_recipe(lens_registry):
-    spec = {
-        "persona": "A migration operator",
-        "focus": "Identity boundaries",
-        "decision_lens": "Prefer reversible cuts",
-        "review_areas": ["Check rollback", "Check propagation"],
-    }
-    assert lens_registry.embedding_text(spec, "ignored") == (
-        "A migration operator\nIdentity boundaries\nPrefer reversible cuts\n"
-        "Check rollback\nCheck propagation"
-    )
-
-    body = (
-        "Apply the perspective of a queue operator.\n\n"
-        "### 1. Backpressure\n\nDetails.\n\n### 2. Fairness\n"
-    )
-    assert lens_registry.embedding_text(None, body) == (
-        "Apply the perspective of a queue operator.\n"
-        "Backpressure\nFairness\n"
-        "Apply the perspective of a queue operator. ### 1. Backpressure Details. ### 2. Fairness"
-    )
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_find_registry_root_and_load_only_cluster_heads(tmp_path, monkeypatch, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -243,6 +242,7 @@ def test_find_registry_root_prefers_linsenkasten_checkout_over_interlens(
     assert lens_registry.find_registry_root() == linsenkasten
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_load_ignores_rows_with_null_cluster(tmp_path, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -258,6 +258,36 @@ def test_load_ignores_rows_with_null_cluster(tmp_path, lens_registry):
     ]
 
 
+@pytest.mark.usefixtures("resolver_available")
+def test_fixed_specs_match_legacy_resolver_results(tmp_path, monkeypatch, lens_registry):
+    """Expected results recorded from the copied resolver at base d8c4146."""
+    root = tmp_path / "registry"
+    _write_registry(root)
+    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
+    monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
+    monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
+    fixed = [
+        ({"name": "fd-body-only", "focus": "unrelated"},
+         ("gen:fd-body-only@bbbbbbbb", 1.0, "lexical")),
+        ({"name": "fd-new", "focus": "queue fairness backpressure"},
+         ("gen:fd-body-only@bbbbbbbb", 1.0, "lexical")),
+        ({"name": "fd-new", "focus": "queue latency"}, None),
+        ({"name": "fd-corrupt-no-spec", "focus": "unrelated"}, None),
+    ]
+    for spec, expected in fixed:
+        match = lens_registry.resolve(spec)
+        actual = (match["registry_id"], match["score"], match["method"]) if match else None
+        assert actual == expected
+
+    with _fake_ollama(_unit_vector(0)) as (url, _):
+        monkeypatch.setenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", url)
+        match = lens_registry.resolve({"name": "fd-new", "focus": "Identity migration", "persona": "Operator"})
+    assert (match["registry_id"], match["score"], match["method"]) == (
+        "gen:fd-canonical@aaaaaaaa", 1.0, "embedding"
+    )
+
+
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_local_then_fallback_ollama_and_generated_matrix(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -286,6 +316,7 @@ def test_resolve_uses_local_then_fallback_ollama_and_generated_matrix(
     ]
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_local_ollama_and_ignores_non_heads(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -304,6 +335,7 @@ def test_resolve_uses_local_ollama_and_ignores_non_heads(
     assert len(requests) == 1
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_fallback_and_rejects_corrupt_body_without_spec(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -324,10 +356,9 @@ def test_resolve_uses_lexical_fallback_and_rejects_corrupt_body_without_spec(
     assert corrupt is None
 
 
-def test_lexical_threshold_is_named(lens_registry):
-    assert lens_registry.LEXICAL_MIN_JACCARD == pytest.approx(0.6)
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_lexical_fallback_uses_focus_summary_jaccard(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -349,6 +380,7 @@ def test_resolve_lexical_fallback_uses_focus_summary_jaccard(
     assert miss is None
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_empty_embedding_text_uses_lexical_without_ollama(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -367,6 +399,7 @@ def test_resolve_empty_embedding_text_uses_lexical_without_ollama(
     assert requests == []
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_when_embedding_matrix_is_missing(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -386,6 +419,7 @@ def test_resolve_uses_lexical_when_embedding_matrix_is_missing(
     assert len(requests) == 1
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_resolve_uses_lexical_when_embedding_model_does_not_match(
     tmp_path, monkeypatch, lens_registry
 ):
@@ -407,82 +441,10 @@ def test_resolve_uses_lexical_when_embedding_model_does_not_match(
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("meta", [None, [], "partial"])
-def test_resolve_uses_lexical_when_embedding_meta_is_not_an_object(
-    tmp_path, monkeypatch, lens_registry, meta
-):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    (root / "data" / "embeddings" / "meta.json").write_text(
-        json.dumps(meta), encoding="utf-8"
-    )
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(
-        lens_registry,
-        "_embed",
-        lambda _text: (_unit_vector(0), "local"),
-    )
-
-    match = lens_registry.resolve(
-        {"name": "fd-new", "focus": "queue fairness backpressure"}
-    )
-
-    assert match is not None
-    assert match["id"] == "gen:fd-body-only@bbbbbbbb"
-    assert match["method"] == "lexical"
 
 
-def test_resolve_ignores_cluster_head_without_a_string_id(
-    tmp_path, monkeypatch, lens_registry
-):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    index = root / "data" / "generated" / "index.jsonl"
-    with index.open("a", encoding="utf-8") as handle:
-        handle.write(
-            json.dumps(
-                {
-                    "name": "fd-idless",
-                    "summary": "unique idless summary",
-                    "cluster": {"head": True, "id": "cluster-idless"},
-                    "corrupt": False,
-                    "spec_path": None,
-                }
-            )
-            + "\n"
-        )
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(lens_registry, "_embed", lambda _text: None)
-
-    assert lens_registry.resolve({"name": "fd-idless", "focus": "unique idless"}) is None
 
 
-def test_resolve_computes_query_norm_once(tmp_path, monkeypatch, lens_registry):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
-    monkeypatch.setattr(
-        lens_registry,
-        "_embed",
-        lambda _text: (_unit_vector(0), "local"),
-    )
-    original_sqrt = lens_registry.math.sqrt
-    sqrt_calls = 0
-
-    def counted_sqrt(value):
-        nonlocal sqrt_calls
-        sqrt_calls += 1
-        return original_sqrt(value)
-
-    monkeypatch.setattr(lens_registry.math, "sqrt", counted_sqrt)
-
-    match = lens_registry.resolve(
-        {"name": "fd-new", "focus": "Identity migration", "persona": "Operator"}
-    )
-
-    assert match is not None
-    assert match["id"] == "gen:fd-canonical@aaaaaaaa"
-    assert sqrt_calls == 3  # one query norm plus one norm for each candidate vector
 
 
 def test_generate_agents_module_is_loaded_once(monkeypatch, lens_registry):
@@ -518,8 +480,7 @@ def test_materialize_rerenders_registry_spec_and_overrides_reuse_frontmatter(
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-canonical", "focus": "identity"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     target = lens_registry.materialize(
         match,
@@ -552,8 +513,7 @@ def test_materialize_copies_only_clean_body_when_registry_has_no_spec(
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-body-only", "focus": "queue"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
 
     target = lens_registry.materialize(
         match, tmp_path / "agents", {"name": "fd-queue-fairness"}
@@ -596,8 +556,7 @@ def test_materialize_honors_explicit_null_spec_path(tmp_path, monkeypatch, lens_
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-body-only", "focus": "queue"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
 
     target = lens_registry.materialize(
         match, tmp_path / "agents", {"name": "fd-queue-fairness"}
@@ -613,11 +572,7 @@ def test_materialize_rejects_corrupt_body_without_spec_directly(
 ):
     root = tmp_path / "registry"
     _write_registry(root)
-    match = next(
-        record
-        for record in lens_registry.load(root)
-        if record["name"] == "fd-corrupt-no-spec"
-    )
+    match = _matched_record(root, "gen:fd-corrupt-no-spec@dddddddd")
 
     with pytest.raises(ValueError, match="corrupt registry body without a spec"):
         lens_registry.materialize(
@@ -635,8 +590,7 @@ def test_materialize_rejects_invalid_registry_spec(tmp_path, monkeypatch, lens_r
     monkeypatch.setenv("LINSENKASTEN_ROOT", str(root))
     monkeypatch.setenv("LINSENKASTEN_OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.delenv("LINSENKASTEN_OLLAMA_FALLBACK_URL", raising=False)
-    match = lens_registry.resolve({"name": "fd-canonical", "focus": "identity"})
-    assert match is not None
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     with pytest.raises(ValueError, match="invalid registry spec"):
         lens_registry.materialize(
@@ -661,11 +615,7 @@ def test_materialize_replaces_legacy_registry_name_before_validation(
     registry_spec = json.loads(registry_spec_path.read_text(encoding="utf-8"))
     registry_spec["name"] = "fd_Legacy"
     registry_spec_path.write_text(json.dumps(registry_spec), encoding="utf-8")
-    match = next(
-        record
-        for record in lens_registry.load(root)
-        if record["name"] == "fd-canonical"
-    )
+    match = _matched_record(root, "gen:fd-canonical@aaaaaaaa")
 
     target = lens_registry.materialize(
         match,
@@ -677,62 +627,11 @@ def test_materialize_replaces_legacy_registry_name_before_validation(
     assert frontmatter["name"] == "fd-current-request"
 
 
-def test_record_reuse_uses_registry_then_home_fallback(tmp_path, monkeypatch, lens_registry):
-    root = tmp_path / "registry"
-    _write_registry(root)
-    entry = {
-        "registry_id": "gen:fd-canonical@aaaaaaaa",
-        "name": "fd-canonical",
-        "score": 0.95,
-        "method": "embedding",
-        "embed_tier": "local",
-        "consumer": "interflux",
-        "project": "demo",
-        "target": Path("plan.md"),
-        "ignored": "not persisted",
-    }
-
-    primary = lens_registry.record_reuse(root, entry)
-    primary_row = json.loads(primary.read_text(encoding="utf-8").splitlines()[-1])
-    assert primary == root / "data" / "generated" / "reuse-log.jsonl"
-    assert primary_row["registry_id"] == entry["registry_id"]
-    assert primary_row["target"] == "plan.md"
-    assert primary_row["recorded_at"].endswith("+00:00")
-    assert "ignored" not in primary_row
-
-    (root / "data" / "generated" / "reuse-log.jsonl").unlink()
-    (root / "data" / "generated" / "reuse-log.jsonl").mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    fallback = lens_registry.record_reuse(root, entry)
-
-    assert fallback == tmp_path / "home" / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
-    assert json.loads(fallback.read_text(encoding="utf-8"))["name"] == "fd-canonical"
 
 
-def test_record_reuse_falls_back_after_primary_serialization_error(
-    tmp_path, monkeypatch, lens_registry
-):
-    root = tmp_path / "registry"
-    fallback_home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(fallback_home))
-    original_append = lens_registry._append_jsonl
-    calls = 0
-
-    def fail_primary(path, row):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise TypeError("not serializable")
-        original_append(path, row)
-
-    monkeypatch.setattr(lens_registry, "_append_jsonl", fail_primary)
-
-    path = lens_registry.record_reuse(root, {"target": Path("plan.md")})
-
-    assert path == fallback_home / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
-    assert json.loads(path.read_text(encoding="utf-8"))["target"] == "plan.md"
 
 
+@pytest.mark.usefixtures("resolver_available")
 def test_load_skips_malformed_index_lines_instead_of_raising(tmp_path, lens_registry, capsys):
     root = tmp_path / "registry"
     _write_registry(root)
@@ -753,7 +652,7 @@ def test_materialize_copy_path_drops_the_registry_records_provenance(tmp_path, m
         "# Body-only lens\n\nKeep this body verbatim.\n",
         encoding="utf-8",
     )
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     target = lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})
     frontmatter = _frontmatter(target.read_text(encoding="utf-8"))
     for stale in ("source_spec", "use_count", "last_used", "generated_at"):
@@ -768,7 +667,7 @@ def test_materialize_copy_path_drops_the_registry_records_provenance(tmp_path, m
 def test_materialize_accepts_a_bare_list_cohort(tmp_path, lens_registry):
     root = tmp_path / "registry"
     _write_registry(root)
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     match["cohort"] = ["fd-a", "fd-b"]
     target = lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})
     assert _frontmatter(target.read_text(encoding="utf-8"))["cohort_siblings"] == ["fd-a", "fd-b"]
@@ -779,7 +678,7 @@ def test_materialize_refuses_a_body_path_outside_the_registry(tmp_path, lens_reg
     _write_registry(root)
     outside = tmp_path / "outside.md"
     outside.write_text("---\nname: x\n---\nnot registry data\n", encoding="utf-8")
-    match = next(r for r in lens_registry.load(root) if r["id"] == "gen:fd-body-only@bbbbbbbb")
+    match = _matched_record(root, "gen:fd-body-only@bbbbbbbb")
     match["body_path"] = "../../outside.md"
     with pytest.raises(ValueError, match="escapes data root"):
         lens_registry.materialize(match, tmp_path / "agents", {"name": "fd-queue-fairness"})

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -102,6 +104,15 @@ def _run_generator(
     *extra: str,
     home: Path | None = None,
 ) -> tuple[dict, subprocess.CompletedProcess[str]]:
+    if "--registry=off" not in extra and (registry_root / "data" / "generated" / "index.jsonl").is_file():
+        source = os.environ.get("LINSENKASTEN_PACKAGE_ROOT")
+        if not (source and (Path(source) / "linsenkasten" / "resolve.py").is_file()):
+            try:
+                installed = importlib.util.find_spec("linsenkasten.resolve") is not None
+            except ModuleNotFoundError:
+                installed = False
+            if not installed:
+                pytest.skip("Linsenkasten source package is unavailable for integration tests")
     env = os.environ.copy()
     env["LINSENKASTEN_ROOT"] = str(registry_root)
     env["LINSENKASTEN_OLLAMA_URL"] = "http://127.0.0.1:1"
@@ -139,12 +150,14 @@ def test_registry_auto_materializes_before_skip_existing_and_records_reuse(tmp_p
     registry_root = tmp_path / "registry"
     project = tmp_path / "project"
     specs = tmp_path / "specs.json"
+    home = tmp_path / "home"
+    home.mkdir()
     project.mkdir()
     _write_fixture_registry(registry_root)
     _write_specs(specs)
     target = _write_existing_agent(project)
 
-    report, _ = _run_generator(project, specs, registry_root)
+    report, _ = _run_generator(project, specs, registry_root, home=home)
 
     assert report["generated"] == []
     assert report["skipped"] == []
@@ -162,7 +175,7 @@ def test_registry_auto_materializes_before_skip_existing_and_records_reuse(tmp_p
     assert frontmatter["registry_id"] == REGISTRY_ID
     assert "Canonical registry body" in target.read_text(encoding="utf-8")
 
-    reuse_log = registry_root / "data" / "generated" / "reuse-log.jsonl"
+    reuse_log = tmp_path / "home" / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
     row = json.loads(reuse_log.read_text(encoding="utf-8").splitlines()[-1])
     assert row["registry_id"] == REGISTRY_ID
     assert row["consumer"] == "flux-gen"
@@ -231,6 +244,44 @@ def test_registry_auto_without_match_renders_normally(tmp_path):
     assert _frontmatter(target)["tier"] == "generated"
 
 
+def test_registry_auto_epoch_drift_renders_fresh(tmp_path):
+    registry_root = tmp_path / "registry"
+    project = tmp_path / "project"
+    specs = tmp_path / "specs.json"
+    project.mkdir()
+    _write_fixture_registry(registry_root)
+    _write_specs(specs)
+    epochs = registry_root / "epochs"
+    epochs.mkdir()
+    digest = "sha256:" + "a" * 64
+    (epochs / "current.json").write_text(json.dumps({"epoch": digest}), encoding="utf-8")
+    (epochs / f"{'a' * 12}.json").write_text(
+        json.dumps({"epoch_digest": digest, "bound": {}}), encoding="utf-8"
+    )
+
+    report, _ = _run_generator(project, specs, registry_root)
+
+    assert report["generated"] == ["fd-registry-match"]
+    assert report["reused"] == []
+    assert report["errors"] == []
+    assert _frontmatter(project / ".claude" / "agents" / "fd-registry-match.md")["tier"] == "generated"
+
+
+def test_registry_auto_unreachable_embedder_renders_fresh(tmp_path):
+    registry_root = tmp_path / "registry"
+    project = tmp_path / "project"
+    specs = tmp_path / "specs.json"
+    project.mkdir()
+    _write_fixture_registry(registry_root)
+    _write_specs(specs, name="fd-new", focus="unrelated")
+
+    report, _ = _run_generator(project, specs, registry_root)
+
+    assert report["generated"] == ["fd-new"]
+    assert report["reused"] == []
+    assert report["errors"] == []
+
+
 def test_registry_materialization_failure_falls_back_to_normal_generation(tmp_path):
     registry_root = tmp_path / "registry"
     project = tmp_path / "project"
@@ -268,6 +319,28 @@ def test_registry_auto_dry_run_reports_reuse_without_materializing(tmp_path):
     target = project / ".claude" / "agents" / "fd-registry-match.md"
     assert not target.exists()
     assert not (registry_root / "data" / "generated" / "reuse-log.jsonl").exists()
+
+
+def test_reuse_log_failure_keeps_materialized_lens(tmp_path):
+    registry_root = tmp_path / "registry"
+    project = tmp_path / "project"
+    specs = tmp_path / "specs.json"
+    home = tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    _write_fixture_registry(registry_root)
+    _write_specs(specs)
+    log_path = home / ".local" / "share" / "linsenkasten" / "reuse-log.jsonl"
+    log_path.mkdir(parents=True)
+
+    report, _ = _run_generator(project, specs, registry_root, home=home)
+
+    assert report["generated"] == []
+    assert report["reused"][0]["registry_id"] == REGISTRY_ID
+    assert report["errors"] == []
+    assert report["warnings"] and "reuse log" in report["warnings"][0].lower()
+    target = project / ".claude" / "agents" / "fd-registry-match.md"
+    assert _frontmatter(target)["tier"] == "registry"
 
 
 def test_melange_routes_registry_by_creative_intent():
