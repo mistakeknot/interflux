@@ -1,5 +1,5 @@
 """Advisory synthesis checker. Fixtures are built from flagged findings in a
-manual review of real syntheses (bead mk-yvmw9.12)."""
+manual review of real syntheses."""
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +10,7 @@ SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "check_synthesis_r
 
 # Flagged finding: headline 91 (12/38/30/11) but per-agent rows give 13/38/30/11 = 92.
 HERMES = """# Runtime surface review
-Verdict: risky. 91 findings (12 P0 / 38 P1 / 30 P2 / 11 P3)
+Verdict: risky. 91 findings (12 P0 / 38 P1 / 30 P2 / 11 P3), the sum of per-agent rows
 
 | Agent | Findings (P0/P1/P2/P3) |
 |---|---|
@@ -35,6 +35,18 @@ def test_hermes_91_vs_92_is_flagged():
 def test_consistent_counts_are_not_flagged():
     ok = HERMES.replace("91 findings", "92 findings").replace("12 P0", "13 P0")
     assert msgs(c.run(ok), "count") == []
+
+
+def test_deduplicated_total_is_not_flagged():
+    """Synthesis dedups, so 91 after merging 92 raw agent findings is fine."""
+    dedup = HERMES.replace(", the sum of per-agent rows", " after deduplication")
+    assert msgs(c.run(dedup), "count") == []
+
+
+def test_decimal_product_is_not_misread_as_whole_number():
+    assert c.run("- P2 | Cost: 1.5 x 2 = 3 calls per run, add caching")["flags"] == []
+    bad = c.run("- P2 | Cost: 1.5 x 2 = 4 calls, add caching")["flags"]
+    assert any("1.5 x 2 = 3" in f["message"] for f in bad)
 
 
 def test_bad_product_is_flagged_dim2():

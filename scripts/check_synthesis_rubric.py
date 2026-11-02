@@ -6,8 +6,9 @@ emits flags in a report section. It never blocks and never rewrites the input:
 flags always exit 0. Only a bad invocation (unreadable file) exits 2.
 
 Checks
-  count     headline finding totals vs. their own severity breakdown and vs. the
-            sum of per-agent table rows (cells shaped P0/P1/P2[/P3]).
+  count     headline totals vs. their own severity breakdown, and vs. per-agent rows
+            only when the document says the headline is that sum (synthesis dedups);
+            rows are table cells shaped P0/P1/P2[/P3].
   ref       file:line references: when --source-root resolves the file, the line
             must exist. Unresolvable references are counted, not flagged.
   dim 2     aggregate backed by evidence: an "A x B = C" product that does not
@@ -31,8 +32,12 @@ from pathlib import Path
 
 SEVS = ("P0", "P1", "P2", "P3")
 REF_RE = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.[A-Za-z]{1,6}):(\d+)(?:-(\d+))?\b")
+_NUM = r"\d[\d,]*(?:\.\d+)?"
 PRODUCT_RE = re.compile(
-    r"(\d[\d,]*)\s*(?:[A-Za-z]+\s+)?[x×*]\s*(\d[\d,]*)\s*(?:[A-Za-z]+\s+)?=\s*(\d[\d,]*)(\+?)")
+    rf"(?<![\d.,])({_NUM})\s*(?:[A-Za-z]+\s+)?[x×*]\s*({_NUM})\s*(?:[A-Za-z]+\s+)?=\s*({_NUM})(\+?)")
+SUM_OF_ROWS_RE = re.compile(
+    r"(sum of (?:the )?(?:per-?agent|agent)|(?:adds?|add up|totals?) (?:up )?(?:across|over|from) (?:the )?(?:per-?agent|agent)"
+    r"|raw (?:per-?agent|agent) total|before (?:de-?dup|dedup))", re.I)
 FINDING_RE = re.compile(r"^\s*(?:[-*]|#{2,5}|\|)\s*.*?\b(P[0-3])\b")
 TOTAL_RE = re.compile(r"\b(\d+)\s+(?:total\s+)?findings?\b", re.I)
 BREAKDOWN_RE = re.compile(r"(\d+)\s*(P[0-3])\b")
@@ -88,7 +93,9 @@ def check_counts(text: str) -> list[dict]:
                         break
         else:
             in_table = False
-    if rows:
+    # Synthesis deduplicates, so a headline legitimately differs from raw per-agent
+    # totals. Compare them only when the document says the headline is that sum.
+    if rows and SUM_OF_ROWS_RE.search(text):
         width = max(len(r) for r in rows)
         sums = [sum(r[i] for r in rows if i < len(r)) for i in range(width)]
         row_total = sum(sums)
@@ -146,10 +153,10 @@ def tag_findings(text: str) -> list[dict]:
             continue
         label = re.sub(r"\s+", " ", line.strip(" |-*#"))[:90]
         for p in PRODUCT_RE.finditer(line):
-            a, b, c = (int(p.group(k).replace(",", "")) for k in (1, 2, 3))
-            if a * b != c:
+            a, b, c = (float(p.group(k).replace(",", "")) for k in (1, 2, 3))
+            if abs(a * b - c) > 1e-9 * max(1.0, abs(c)):
                 flags.append({"check": "tag", "dim": 2, "line": i, "finding": label,
-                              "message": f"{a} x {b} = {a * b}, not {c}{p.group(4)}"})
+                              "message": f"{a:g} x {b:g} = {a * b:g}, not {p.group(3)}{p.group(4)}"})
         if AGGREGATE_RE.search(line) and not REF_RE.search(line) and not PRODUCT_RE.search(line) \
                 and not EVIDENCE_RE.search(line):
             flags.append({"check": "tag", "dim": 2, "line": i, "finding": label,
