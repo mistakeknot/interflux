@@ -43,6 +43,34 @@ def test_deduplicated_total_is_not_flagged():
     assert msgs(c.run(dedup), "count") == []
 
 
+ROWS4 = """
+| Agent | Findings (P0/P1/P2) |
+|---|---|
+| fd-a | 1/1/0 |
+| fd-b | 1/1/0 |
+"""
+
+
+def test_document_wide_dedup_wording_does_not_enable_comparison():
+    t = "2 findings (1 P0 / 1 P1) after deduplication\nRaw agent totals before deduplication are shown below.\n" + ROWS4
+    assert msgs(c.run(t), "count") == []
+
+
+def test_negated_sum_claim_does_not_enable_comparison():
+    t = "2 findings (1 P0 / 1 P1) after deduplication, not the sum of per-agent rows\n" + ROWS4
+    assert msgs(c.run(t), "count") == []
+
+
+def test_negation_without_dedup_word_does_not_enable_comparison():
+    t = "2 findings (1 P0 / 1 P1), not the sum of per-agent rows\n" + ROWS4
+    assert msgs(c.run(t), "count") == []
+
+
+def test_affirmative_headline_sum_is_compared():
+    t = "2 findings (1 P0 / 1 P1), the sum of per-agent rows\n" + ROWS4
+    assert any("4" in m for m in msgs(c.run(t), "count"))
+
+
 def test_decimal_product_is_not_misread_as_whole_number():
     assert c.run("- P2 | Cost: 1.5 x 2 = 3 calls per run, add caching")["flags"] == []
     bad = c.run("- P2 | Cost: 1.5 x 2 = 4 calls, add caching")["flags"]

@@ -7,7 +7,7 @@ flags always exit 0. Only a bad invocation (unreadable file) exits 2.
 
 Checks
   count     headline totals vs. their own severity breakdown, and vs. per-agent rows
-            only when the document says the headline is that sum (synthesis dedups);
+            only when the headline line itself says it is that sum (synthesis dedups);
             rows are table cells shaped P0/P1/P2[/P3].
   ref       file:line references: when --source-root resolves the file, the line
             must exist. Unresolvable references are counted, not flagged.
@@ -36,8 +36,9 @@ _NUM = r"\d[\d,]*(?:\.\d+)?"
 PRODUCT_RE = re.compile(
     rf"(?<![\d.,])({_NUM})\s*(?:[A-Za-z]+\s+)?[x×*]\s*({_NUM})\s*(?:[A-Za-z]+\s+)?=\s*({_NUM})(\+?)")
 SUM_OF_ROWS_RE = re.compile(
-    r"(sum of (?:the )?(?:per-?agent|agent)|(?:adds?|add up|totals?) (?:up )?(?:across|over|from) (?:the )?(?:per-?agent|agent)"
-    r"|raw (?:per-?agent|agent) total|before (?:de-?dup|dedup))", re.I)
+    r"\b(?:sum|total|adds? up|add up)\b[^.\n]*\b(?:per-?agent|agent)\b[^.\n]*\brows?\b", re.I)
+NOT_SUM_RE = re.compile(
+    r"\b(?:not|no|rather than|instead of|unlike|dedup\w*|de-dup\w*|unique|merged|distinct)\b", re.I)
 FINDING_RE = re.compile(r"^\s*(?:[-*]|#{2,5}|\|)\s*.*?\b(P[0-3])\b")
 TOTAL_RE = re.compile(r"\b(\d+)\s+(?:total\s+)?findings?\b", re.I)
 BREAKDOWN_RE = re.compile(r"(\d+)\s*(P[0-3])\b")
@@ -95,7 +96,14 @@ def check_counts(text: str) -> list[dict]:
             in_table = False
     # Synthesis deduplicates, so a headline legitimately differs from raw per-agent
     # totals. Compare them only when the document says the headline is that sum.
-    if rows and SUM_OF_ROWS_RE.search(text):
+    headline_line = ""
+    if total_m:
+        start = text.rfind("\n", 0, total_m.start()) + 1
+        end = text.find("\n", total_m.end())
+        headline_line = text[start: end if end != -1 else len(text)]
+    # Only the headline line itself may tie the two, affirmatively: no negation and
+    # no dedup wording there. Wording elsewhere in the document never enables this.
+    if rows and SUM_OF_ROWS_RE.search(headline_line) and not NOT_SUM_RE.search(headline_line):
         width = max(len(r) for r in rows)
         sums = [sum(r[i] for r in rows if i < len(r)) for i in range(width)]
         row_total = sum(sums)
