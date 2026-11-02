@@ -147,6 +147,16 @@ What it asserts: every `(severity, id)` pair in `findings.json` is grounded in s
 
 Pass `--strict` to fail on *any* ungrounded finding (any severity) or any severity-mismatch; `--json` for machine-readable output (consumed by post-mortem tooling).
 
+### Step 3.2c: Rubric flags [review only] — OPTIONAL, ADVISORY
+
+An optional zero-token check of the written summary. It re-adds the headline finding counts against the per-agent rows, checks that `file:line` references exist when the file resolves under the reviewed repo, and tags findings that may fail dimension 2 (aggregate backed by evidence), 3 (sizing causal and de-overlapped) or 8 (fix applies verbatim):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_synthesis_rubric.py" "{OUTPUT_DIR}/summary.md" --source-root "{PROJECT_ROOT}"
+```
+
+Advisory only: it exits 0 whatever it flags, never blocks, and never rewrites the synthesis. Append its "Rubric flags (advisory)" section to the summary or the run log if wanted; skip the step freely. The tags are heuristics for a reader to look at, not verdicts.
+
 ### Step 3.3: (Handled by synthesis subagent)
 
 Deduplication, convergence tracking, conflict detection, and cognitive agent dedup are all performed by the synthesis subagent above. The 5 dedup rules (defined in `docs/spec/core/synthesis.md` Step 3) are executed in the subagent's context:
