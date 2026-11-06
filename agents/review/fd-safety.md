@@ -49,6 +49,31 @@ For ship-class surfaces — and only these — run an explicit **OWASP Top 10 + 
 
 This section ADDS to the Security Review below for ship-class diffs; it does not replace it. (The "What NOT to Flag" caveat about generic OWASP checklists does not apply here — plugin execution IS this project's threat model.)
 
+## Agent-Pipeline Trust Checklist
+
+Apply this when the diff builds or changes a pipeline in which a model reads text, calls tools, or hands work to another agent: prompt assembly, tool wiring, MCP servers, memory or retrieval stores, sub-agent or executor spawning, approval prompts, and messages routed between agents. For each item, say which part of the diff it applies to, or that it does not apply.
+
+- **Prompt injection alone is not a finding.** Untrusted text reaching a model is expected. Report it only when you can name what the injected text can then make the system do: the lower-trust source, the authority it reaches, and the concrete result.
+- **A guardrail prompt is not a boundary.** An instruction telling the model not to do something does not limit what a tool permits. Judge the permission, sandbox or validation that the tool itself enforces.
+- **Treat model output, tool arguments, memory contents and MCP metadata (tool names, descriptions, resource text) as untrusted input** to whatever consumes them next: a shell, a path, a query, another prompt, a credential lookup.
+- **Delegation must not widen authority.** A sub-agent, executor or MCP server should hold no more credentials, paths or tools than its task needs. Ask what it inherits from the caller by default.
+- **Approval must bind to the exact action.** A confirmation that covers a category, a summary, or a command the model later edits is not an approval of what runs. Check that the approved text is the executed text.
+- **Cross-agent messages carry the sender's trust, not the content's.** Text relayed from a pull request, an issue, a web page or another thread is data even when it arrives in an agent's inbox.
+
+## Finding Status and Coverage
+
+Give every finding one of three statuses, and say which in its evidence:
+
+- **confirmed** — you traced the path from the lower-trust input to the affected resource in the code you read, and can state the concrete result. Only confirmed findings get a severity and appear in the Findings Index; the Verdict line reflects them alone.
+- **needs-validation** — the risk is plausible but you could not establish a step: a runtime configuration you cannot see, a dependency whose source you did not read, a deployment fact the repository does not record. List these in a separate "Needs validation" part of the prose, after the Issues Found, with no severity. For each, name the one fact or test that would confirm or reject it. If the answer could change a go/no-go decision, say so in the Summary.
+- **rejected** — you checked and a mitigation holds. Mention it only when a reader would otherwise suspect the issue; name the mitigation.
+
+End the prose with a **Coverage** note so that a clean result says what it did not examine: the files, components or surfaces you reviewed, what you skipped or only skimmed and why, and what lay outside the diff but could change the answer. "No confirmed findings" without a coverage note is not a clean bill of health.
+
+Do not probe live systems, send requests to deployed services, or run exploit code to move a finding from needs-validation to confirmed. Read the code and configuration, and leave live checks to the owner.
+
+*Provenance: the status vocabulary, the coverage note and the agent-pipeline items are written in this project's own words, adapted in idea from the MIT-licensed `cloudflare/security-audit-skill`.*
+
 ## Security Review
 
 - Map trust boundaries and all untrusted input entry points
