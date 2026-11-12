@@ -30,11 +30,23 @@ install -m 0755 "$work/gitleaks" "$HOME/.local/bin/gitleaks"
 [[ "$("$HOME/.local/bin/gitleaks" version)" == "$GITLEAKS_VERSION" ]] || { echo "gitleaks version mismatch" >&2; exit 2; }
 
 echo "== pytest =="
+# The guest clone holds only the admitted commit's history and no `main` ref, but the isolation
+# tests diff against `main`. Point a local `main` at the pull request's base commit (CI_BASE_SHA)
+# when it is in the clone, and otherwise at HEAD (no diff), so they still check a pull request's
+# own changes.
+if ! git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+  if [[ -n "${CI_BASE_SHA:-}" ]] && git cat-file -e "${CI_BASE_SHA}^{commit}" 2>/dev/null; then
+    git branch main "$CI_BASE_SHA"
+  else
+    git branch main HEAD
+  fi
+fi
+export PYTHONDONTWRITEBYTECODE=1
 # test_public_files_carry_no_private_task_local_denylist_terms needs a private term list that is
 # never committed (MELANGE_IMPORT_PRIVATE_DENYLIST), so it cannot run in CI; it is the only
 # deselected test and it stays a local check. The explicit `.` collects every test
 # under tests/, including the top-level modules that tests/pyproject.toml testpaths leaves out;
 # -ra lists every skip with its reason.
 cd tests
-python3 -m pytest -q -ra . \
+python3 -m pytest -q -ra -p no:cacheprovider . \
   --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms
