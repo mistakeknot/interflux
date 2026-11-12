@@ -458,6 +458,19 @@ def test_a_legacy_token_glued_to_a_non_ascii_letter_in_an_oversized_stretch_is_r
     assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
 
 
+@pytest.mark.parametrize("glue", ["\u00e9", "\u0663"])
+def test_bearer_context_before_an_oversized_stretch_is_kept(glue):
+    scanner = load_module("scan_ascii_bearer", SCAN_SCRIPT)
+    text = glue + "Bearer " + "A1b2C3d4" * 4 + "=" * 82000
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
+
+
+@pytest.mark.parametrize("text", ["Beareré" + "a" * 82000, "api_keyé=" + "a" * 82000])
+def test_a_filler_does_not_invent_whitespace_syntax_in_a_harmless_stretch(text):
+    scanner = load_module("scan_ascii_filler", SCAN_SCRIPT)
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
 def test_a_non_ascii_oversized_stretch_without_a_token_is_not_residue():
     scanner = load_module("scan_ascii_boundary_clean", SCAN_SCRIPT)
     text = "\u00e9" + "word" + "=" * 82000

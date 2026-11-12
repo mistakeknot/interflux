@@ -269,8 +269,8 @@ def gitleaks_pieces(view: bytes, oversized: list | None = None):
     bytes (one base64 blob, a long dotted chain) cannot be cut safely: it is not given to
     Gitleaks at all, and only the Python scrubber, which reads every view whole and has no
     length limit, judges it. Nothing is transformed, so no rule's boundary character changes.
-    Each such stretch is appended to `oversized` when a list is given, so the caller can judge
-    it under Gitleaks' ASCII word boundaries (see `ascii_boundary_residue`).
+    Each such stretch is appended to `oversized` when a list is given, so the caller can also
+    judge the view under Gitleaks' ASCII word boundaries (see `ascii_boundary_residue`).
     """
     pos, size = 0, len(view)
     while pos < size:
@@ -294,20 +294,25 @@ def gitleaks_pieces(view: bytes, oversized: list | None = None):
 
 
 _NON_ASCII = re.compile(r"[^\x00-\x7f]")
+# Neither a word character nor whitespace, so a substituted character changes only word
+# boundaries and never creates or joins whitespace-separated syntax (Bearer x, key = x).
+_ASCII_FILLER = "\x01"
 
 
-def ascii_boundary_residue(scrub, stretch: bytes) -> bool:
-    """Judge a stretch Gitleaks was not given the way Gitleaks would read its word boundaries.
+def ascii_boundary_residue(scrub, text: str) -> bool:
+    """Judge a whole view the way Gitleaks reads word boundaries.
 
     The inherited token patterns use Python's Unicode word boundaries, so a token glued to a
-    non-ASCII letter (an accented letter before `npm_`) looks unbounded to the scrubber, while
-    Gitleaks, whose boundaries are ASCII, matches it. Each non-ASCII character becomes a space
-    in a detection-only copy, which is never written, and the scrubber judges that copy too.
+    non-ASCII letter (an accented letter before `npm_`, or before `Bearer `) looks unbounded
+    to the scrubber, while Gitleaks, whose boundaries are ASCII, matches it. Gitleaks is not
+    given a stretch longer than PIECE_MAX, so when a view has one, the whole view (not just the
+    stretch, which would lose the context before it) is also judged with each non-ASCII
+    character replaced by a filler that is neither a word character nor whitespace. The copy
+    is detection-only and never written.
     """
-    text = stretch.decode("utf-8", errors="replace")
     if text.isascii():
         return False
-    ascii_text = _NON_ASCII.sub(" ", text)
+    ascii_text = _NON_ASCII.sub(_ASCII_FILLER, text)
     return scrub(ascii_text) != ascii_text
 
 
@@ -348,9 +353,12 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
             views.append(unescaped.encode("utf-8", errors="replace"))
     if binary is None:
         return residue, True
-    oversized: list[bytes] = []
-    pieces = [piece for view in views for piece in gitleaks_pieces(view, oversized)]
-    residue = residue or any(ascii_boundary_residue(scrub, stretch) for stretch in oversized)
+    pieces = []
+    for view in views:
+        oversized: list[bytes] = []
+        pieces.extend(gitleaks_pieces(view, oversized))
+        if oversized and not residue:
+            residue = ascii_boundary_residue(scrub, view.decode("utf-8", errors="replace"))
     with ThreadPoolExecutor(max_workers=min(4, max(1, len(pieces)))) as pool:
         for outcome in pool.map(lambda piece: _flags_or_fault(binary, piece), pieces):
             if outcome is None:
