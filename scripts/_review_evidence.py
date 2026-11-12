@@ -84,49 +84,75 @@ def load_findings(rows, mode='snapshot'):
         'duplicate_count':sum(len(v)-1 for v in provenance.values())}
 
 
-def markdown_regions(text):
+def source_lines(text):
+    """Physical source lines end only at LF; preserve exact bytes/characters."""
+    return re.findall(r'[^\n]*\n|[^\n]+$', text)
+
+
+def markdown_regions(text, diagnostics=None):
     """Character classes: prose, code, excluded. Offsets always address original text."""
     mask = ['prose'] * len(text)
-    lines = text.splitlines(keepends=True)
-    offset, fence, front, comment = 0, None, False, False
+    lines = source_lines(text)
+    offset, fence, comment = 0, None, False
+    front_end = None
+    if lines and lines[0].rstrip('\r\n') == '---':
+        front_end = next((i for i,line in enumerate(lines[1:],1)
+                          if line.rstrip('\r\n') in ('---','...')),None)
+        if front_end is None and diagnostics is not None:
+            diagnostics.append(dict(code='unclosed_frontmatter',count=1,spans=[span(text,0,len(lines[0]))]))
+    list_content_indents = []
     for n, line in enumerate(lines):
         stripped = line.rstrip('\r\n')
         kind = 'prose'
-        if n == 0 and stripped == '---':
-            front = True
+        if front_end is not None and n <= front_end:
             kind = 'excluded'
-        elif front:
-            kind = 'excluded'
-            if stripped in ('---', '...'):
-                front = False
         elif fence:
             kind = 'code'
             if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}\s*$', stripped):
                 fence = None
-        else:
+        elif not comment:
             opening = re.match(r'^ {0,3}(`{3,}|~{3,})', stripped)
             if opening:
                 fence = (opening[1][0], len(opening[1]))
                 kind = 'code'
-            elif stripped.startswith(('    ', '\t')):
-                kind = 'code'
+            else:
+                indent_text = re.match(r'[ \t]*',stripped)[0]
+                indent = len(indent_text.expandtabs(4))
+                marker = re.match(r'(?:[-*+]|\d+[.)])[ \t]+',stripped[len(indent_text):])
+                if stripped.strip():
+                    while list_content_indents and indent < list_content_indents[-1]:
+                        list_content_indents.pop()
+                    content_indent = list_content_indents[-1] if list_content_indents else 0
+                    is_code = indent >= content_indent+4
+                    if marker and not is_code:
+                        list_content_indents.append(indent+len(marker[0]))
+                    elif is_code:
+                        kind = 'code'
         mask[offset:offset+len(line)] = [kind]*len(line)
         if kind == 'prose':
             cursor = 0
             while cursor < len(line):
-                start = cursor if comment else line.find('<!--', cursor)
-                if start < 0:
-                    break
-                end = line.find('-->', start + (0 if comment else 4))
-                stop = len(line) if end < 0 else end+3
-                mask[offset+start:offset+stop] = ['excluded']*(stop-start)
-                comment = end < 0
-                cursor = stop
-            for match in re.finditer(r'(`+)([^`]*?)\1(?!`)', line):
-                a,b = offset+match.start(), offset+match.end()
-                if all(x == 'prose' for x in mask[a:b]):
-                    mask[a:b] = ['code']*(b-a)
+                # An active comment owns its contents, including indentation and ticks.
+                if comment or line.startswith('<!--',cursor):
+                    end = line.find('-->',cursor+(0 if comment else 4))
+                    stop = len(line) if end < 0 else end+3
+                    mask[offset+cursor:offset+stop] = ['excluded']*(stop-cursor)
+                    comment = end < 0
+                    cursor = stop
+                elif line[cursor] == '`':
+                    run = re.match(r'`+',line[cursor:])[0]
+                    close = re.search(r'(?<!`)'+re.escape(run)+r'(?!`)',line[cursor+len(run):])
+                    if close:
+                        stop = cursor+len(run)+close.end()
+                        mask[offset+cursor:offset+stop] = ['code']*(stop-cursor)
+                        cursor = stop
+                    else:
+                        cursor += len(run)
+                else:
+                    cursor += 1
         offset += len(line)
+    if comment and diagnostics is not None:
+        diagnostics.append(dict(code='unclosed_comment',count=1,spans=[span(text,len(text),len(text))]))
     return mask
 
 
@@ -140,6 +166,6 @@ def span(text, start, end):
 
 def line_offsets(text):
     offsets = [0]
-    for line in text.splitlines(keepends=True):
+    for line in source_lines(text):
         offsets.append(offsets[-1]+len(line))
     return offsets

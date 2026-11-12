@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 from _review_evidence import (PARSER_VERSION, canonical_json, digest, document_id,
-    line_offsets, load_findings, markdown_regions, parser_hash, read_json, seal_index, span)
+    line_offsets, load_findings, markdown_regions, parser_hash, read_json, seal_index, source_lines, span)
 
 
 def redaction_marker():
@@ -71,6 +71,54 @@ def drop_emphasis(text):
     return text
 
 
+def markup_matches(text, quote, start, end, regions):
+    """Diagnostic-only emphasis removal, preserving original character positions."""
+    query = normalized(drop_emphasis(quote))[0]
+    found = []
+    cursor = start
+    while cursor < end:
+        stop = cursor+1
+        while stop < end and regions[stop] == regions[cursor]:
+            stop += 1
+        if regions[cursor] == 'prose':
+            chars = [(c,cursor+i) for i,c in enumerate(text[cursor:stop])]
+            for delimiter in ('**','__','*','_'):
+                d = re.escape(delimiter)
+                pattern = r'(?<!\w)'+d+r'(?=\S)(.+?)(?<=\S)'+d+r'(?!\w)'
+                remove = set()
+                for m in re.finditer(pattern,''.join(c for c,_ in chars)):
+                    remove.update(range(m.start(),m.start()+len(delimiter)))
+                    remove.update(range(m.end()-len(delimiter),m.end()))
+                chars = [p for i,p in enumerate(chars) if i not in remove]
+            value, positions = normalized(''.join(c for c,_ in chars))
+            found.extend((chars[positions[a][0]][1],chars[positions[b-1][1]-1][1]+1)
+                         for a,b in occurrences(value,query))
+        cursor = stop
+    return found
+
+
+def parse_location(value):
+    """Canonical path plus line range; uncertain forms remain unparseable."""
+    m = re.fullmatch(r'([^:\n]+):(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?',value)
+    if not m:
+        return None
+    try:
+        path = document_id(m[1])
+    except ValueError:
+        return None
+    first,last = int(m[2]),int(m[4] or m[2])
+    if first < 1 or last < first or any(int(m[k])<1 for k in (3,5) if m[k]):
+        return None
+    return path,first,last
+
+
+def target_spelling(value, doc_id):
+    canonical = document_id(value)
+    # The index identifies one document. A bare basename is an unambiguous alias
+    # within this invocation; paths with other directories remain distinct.
+    return doc_id if canonical == doc_id.rsplit('/',1)[-1] else canonical
+
+
 def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
     base = dict(schema_version=1, document_id=doc_id, document_sha256=digest(data), results=[], findings=[])
     failures = []
@@ -86,7 +134,7 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
             failures.append('parser_contract_mismatch')
         findings, provenance = load_findings(rows, input_mode)
         text = data.decode('utf-8')
-        nlines = len(text.splitlines(keepends=True))
+        nlines = len(source_lines(text))
         for s in index['sections']:
             if not isinstance(s['section_id'],str) or not s['section_id']:
                 raise ValueError('invalid_section')
@@ -109,9 +157,13 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
     for finding in findings:
         fid = finding['id']
         # Explicit document attribution wins; otherwise use the location's path.
-        loc = re.fullmatch(r'(.+?):(\d+)(?:-(\d+))?', finding['location'])
-        attributed = finding.get('document_id', loc[1] if loc else doc_id)
-        if attributed != doc_id:
+        loc = parse_location(finding['location'])
+        attributed = finding.get('document_id', loc[0] if loc else doc_id)
+        try:
+            attributed = target_spelling(attributed,doc_id)
+        except (ValueError,AttributeError):
+            attributed = None
+        if attributed is not None and attributed != doc_id:
             base['findings'].append(dict(finding_id=fid,status='out_of_scope',quote_count=0,
                 counts=dict(matched=0,mismatched=0,unverifiable=0),complete=True,support='unverified'))
             continue
@@ -163,18 +215,20 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
                             a,b = bounds(other)
                             hits,_ = matches(text,q['text'],a,b,regions)
                             if hits and a > start and a < bounds(section,'subtree_line_range')[1]:
-                                result['diagnostics'].append(dict(code='present_in_descendant',count=len(hits)))
+                                result['diagnostics'].append(dict(code='present_in_descendant',count=len(hits),spans=[span(text,x,y) for x,y in hits]))
                         whole,_ = matches(text,q['text'],0,len(text),regions)
-                        if any(a < end < b for a,b in whole):
-                            result['diagnostics'].append(dict(code='crosses_heading_boundary'))
-                        if all(x == 'prose' for x in regions[start:end]) and normalized(drop_emphasis(q['text']))[0] in normalized(drop_emphasis(text[start:end]))[0]:
-                            result['diagnostics'].append(dict(code='markup_drop_match'))
+                        crossing = [(a,b) for a,b in whole if a < start < b or a < end < b]
+                        if crossing:
+                            result['diagnostics'].append(dict(code='crosses_heading_boundary',count=len(crossing),spans=[span(text,a,b) for a,b in crossing]))
+                        markup = markup_matches(text,q['text'],start,end,regions)
+                        if markup:
+                            result['diagnostics'].append(dict(code='markup_drop_match',count=len(markup),spans=[span(text,a,b) for a,b in markup]))
                     if not loc:
-                        result['diagnostics'].append(dict(code='location_unparseable'))
-                    elif loc[1] != doc_id:
-                        result['diagnostics'].append(dict(code='location_other_document'))
-                    elif not (int(loc[2]) <= section['line_range']['end'] and int(loc[3] or loc[2]) >= section['line_range']['start']):
-                        result['diagnostics'].append(dict(code='location_section_disagreement'))
+                        result['diagnostics'].append(dict(code='location_unparseable',count=1,spans=[]))
+                    elif target_spelling(loc[0],doc_id) != doc_id:
+                        result['diagnostics'].append(dict(code='location_other_document',count=1,spans=[]))
+                    elif not (loc[1] <= section['line_range']['end'] and loc[2] >= section['line_range']['start']):
+                        result['diagnostics'].append(dict(code='location_section_disagreement',count=1,spans=[]))
             results.append(result)
         base['results'].extend(results)
         counts = {s:sum(r['status']==s for r in results) for s in ('matched','mismatched','unverifiable')}
@@ -197,7 +251,7 @@ def main():
             value = read_json(raw)
             rows = value['findings'] if isinstance(value,dict) and 'findings' in value else value if isinstance(value,list) else [value]
         except ValueError:
-            rows = [read_json(line) for line in raw.splitlines() if line.strip()]
+            rows = [read_json(line) for line in source_lines(raw) if line.strip()]
         report,code = check_document(Path(args.document).read_bytes(),args.document_id,args.expected_sha256,
             read_json(Path(args.index).read_text(encoding='utf-8')),rows,args.input_mode)
     except (ValueError, OSError, KeyError, TypeError):

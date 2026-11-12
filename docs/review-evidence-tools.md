@@ -68,6 +68,11 @@ one with `source.import` (the import branch contract), or explicit
 `transformation_unknown`. Raw imported output is never used to recover originals.
 Explicit document attribution or a parsed location identifying a different
 document yields `out_of_scope`, without forcing exit 1.
+Location paths use the same canonicalization as document identities. A bare
+basename matching the indexed target is an alias within this single-document
+invocation. Line/column forms such as `example.md:2:5` and
+`example.md:2:5-3:9` retain their line range. Unparseable or invalid location
+identities never silently skip quote evaluation; their agreement stays unknown.
 
 The findings reader accepts JSONL, a JSON array, one finding, or a `findings`
 array wrapper. Explicit `type`/`record_type` metadata and event rows are skipped
@@ -87,6 +92,17 @@ an empty document has no owned lines. Fenced/indented code, frontmatter and HTML
 comments cannot contribute headings or declarations. This is a conservative
 subset, without Markdown rendering or HTML parsing. Seven-plus hash headings
 produce unsupported-heading diagnostics.
+Source lines end only at LF, consistently with locations and span reporting;
+CRLF is preserved and other whitespace characters do not create new lines.
+Inline code protects literal comment markers; active HTML comments close even
+on indented lines. Trailing heading comments are excluded from heading identity.
+Nested list content is prose when supported by a preceding list container;
+indentation at least four spaces beyond that container's content column is code.
+An unclosed opening frontmatter delimiter produces an explicit diagnostic and
+the source is parsed as Markdown. Multiline Setext headings are explicitly
+unsupported and diagnosed across their whole block, without guessing a shorter
+heading. Text-search diagnostics include counts and original source spans;
+emphasis diagnostics search each prose segment independently of adjacent code.
 
 Explicit trailing `{#anchor}` IDs are hashed with document identity; duplicate
 anchors invalidate the index. Otherwise IDs hash document identity, exact trimmed
@@ -128,6 +144,9 @@ resolve by canonical number: zero targets unresolved, one resolved, multiple
 ambiguous with all target IDs. `§a–b`, `§a—b`, `§a-b` are explicit
 `range_unexpanded` references retaining both endpoints; intermediate sections are
 never inferred or silently counted as resolved.
+A bare range endpoint requires an adjacent dash and number (`§2–3`). Spaced
+dashes require an explicit second section marker (`§2 — §3`); prose punctuation
+such as `§2 — 3 seats` retains the ordinary resolved `§2` reference.
 
 Relationship candidates retain direction and source section. After the literal
 phrase, the allowed gap is ASCII spaces/tabs, colons and emphasis characters

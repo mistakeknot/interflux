@@ -9,11 +9,12 @@ import re
 from pathlib import Path
 
 from _review_evidence import (PARSER_VERSION, canonical_json, digest, document_id,
-    line_offsets, markdown_regions, parser_hash, read_json, seal_index, span)
+    line_offsets, markdown_regions, parser_hash, read_json, seal_index, source_lines, span)
 
 RECOGNIZERS = {'numbered_heading', 'section_reference', 'heading_annotation',
                'heading_status', 'relationship', 'bold_lead'}
-SECTION_REF = re.compile(r'§\s*(\d+(?:\.\d+)*)(?:\s*([–—-])\s*§?\s*(\d+(?:\.\d+)*))?')
+# A bare endpoint needs a compact dash; spaced punctuation requires another §.
+SECTION_REF = re.compile(r'§\s*(\d+(?:\.\d+)*)(?:(?:([–—-])|\s*([–—-])\s*§\s*)(\d+(?:\.\d+)*))?')
 
 
 def validate_profile(profile):
@@ -49,14 +50,15 @@ def build_index(data, doc_id, profile=None, previous=None):
     doc_id = document_id(doc_id)
     rules = validate_profile(profile)
     text = data.decode('utf-8')
-    lines, offsets = text.splitlines(keepends=True), line_offsets(text)
-    regions = markdown_regions(text)
     diagnostics, headings = [], []
+    lines, offsets = source_lines(text), line_offsets(text)
+    regions = markdown_regions(text,diagnostics)
     for i,line in enumerate(lines):
         start = offsets[i]
         # Heading syntax must be wholly outside comments/code/frontmatter.
-        body = line.rstrip('\r\n')
-        active = bool(body.strip()) and regions[start+len(body)-len(body.lstrip())] == 'prose' and 'excluded' not in regions[start:start+len(body)]
+        raw_body = line.removesuffix('\n').removesuffix('\r')
+        body = ''.join(' ' if regions[start+j]=='excluded' else c for j,c in enumerate(raw_body)).rstrip(' \t')
+        active = bool(body.strip(' \t')) and regions[start+len(body)-len(body.lstrip(' \t'))] == 'prose'
         if not active:
             continue
         atx = re.fullmatch(r' {0,3}(#{1,6})(?:[ \t]+(.*?)|[ \t]*)',body)
@@ -64,9 +66,16 @@ def build_index(data, doc_id, profile=None, previous=None):
             heading = re.sub(r'[ \t]+#+[ \t]*$', '', atx[2] or '').strip()
             headings.append(dict(heading=heading,level=len(atx[1]),line=i+1,last=i+1))
         elif i+1 < len(lines) and re.fullmatch(r' {0,3}(=+|-+)\s*',lines[i+1]) and all(r=='prose' for r in regions[offsets[i+1]:offsets[i+2]]) and not re.match(r'\s*(?:[-*+] |>|#{1,6} )',body):
-            headings.append(dict(heading=body.strip(),level=1 if lines[i+1].lstrip().startswith('=') else 2,line=i+1,last=i+2))
+            # Multiline paragraph headings are outside this conservative subset.
+            first = i
+            while first > 0 and lines[first-1].strip() and not re.match(r' {0,3}(?:#{1,6}\s|[-*+]\s|[=-]+\s*$)',lines[first-1]) and regions[offsets[first-1]]=='prose':
+                first -= 1
+            if first < i:
+                diagnostics.append(dict(code='unsupported_multiline_setext',count=1,spans=[span(text,offsets[first],offsets[i+2])]))
+            else:
+                headings.append(dict(heading=body.strip(),level=1 if lines[i+1].lstrip().startswith('=') else 2,line=i+1,last=i+2))
         elif re.match(r' {0,3}#{7,}\s',body):
-            diagnostics.append(dict(code='unsupported_heading',line=i+1))
+            diagnostics.append(dict(code='unsupported_heading',line=i+1,count=1,spans=[span(text,start,offsets[i+1])]))
     # Underlines must not themselves become headings.
     headings = [h for h in headings if not any(o['last']==h['line'] and o['line']!=h['line'] for o in headings)]
     anchors, stack, siblings = {}, [], collections.Counter()
@@ -167,8 +176,8 @@ def build_index(data, doc_id, profile=None, previous=None):
                 for m in SECTION_REF.finditer(line):
                     if visible(m,off):
                         r = record('section',m[1],rule['id'],off+m.start(),off+m.end())
-                        if m[3]:
-                            r['range_end'] = m[3]
+                        if m[4]:
+                            r['range_end'] = m[4]
                         references.append(r)
             elif recognizer == 'bold_lead':
                 m = re.match(r'^\s*(?:[-*+]\s+)?\*\*([^*\n]+?):?\*\*[^\n]*',line)
@@ -176,7 +185,7 @@ def build_index(data, doc_id, profile=None, previous=None):
                     c = candidate('term_candidate',m[1].rstrip(':'),m)
                     c['label_span'] = span(text,off+m.start(1),off+m.end(1))
                 elif re.match(r'^\s*(?:[-*+]\s+)?\*\*',line):
-                    diagnostics.append(dict(code='unsupported_bold_lead',line=n,rule_id=rule['id']))
+                    diagnostics.append(dict(code='unsupported_bold_lead',line=n,rule_id=rule['id'],count=1,spans=[span(text,off,offsets[n])]))
             elif recognizer in ('relationship','heading_status','heading_annotation'):
                 accepted = []
                 for word in sorted(rule['vocabulary'],key=lambda w:(-len(w),w)):
@@ -204,8 +213,8 @@ def build_index(data, doc_id, profile=None, previous=None):
                                 if not target:
                                     break
                                 t = dict(number=target[1],span=span(text,off+m.end()+gap+target.start(),off+m.end()+gap+target.end()))
-                                if target[3]:
-                                    t.update(range_end=target[3],resolution='range_unexpanded')
+                                if target[4]:
+                                    t.update(range_end=target[4],resolution='range_unexpanded')
                                 targets.append(t)
                                 sep = re.match(r'(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)',target_text[target.end():],re.I)
                                 if not sep:
@@ -242,7 +251,9 @@ def build_index(data, doc_id, profile=None, previous=None):
                 t.update(resolve(numbers[t['number']]))
     for number, ids in numbers.items():
         if len(ids)>1:
-            diagnostics.append(dict(code='duplicate_number',number=number,count=len(ids)))
+            diagnostics.append(dict(code='duplicate_number',number=number,count=len(ids),
+                spans=[span(text,offsets[s['heading_span']['start_line']-1],offsets[s['heading_span']['end_line']])
+                       for s in sections if s['section_id'] in ids]))
     result = dict(schema_version=1,document_id=doc_id,document_sha256=digest(data),parser_version=PARSER_VERSION,
         parser_sha256=parser_hash(),syntax_profile=None if profile is None else dict(id=profile['id'],version=profile['version'],sha256=digest(canonical_json(profile))),
         sections=sections,definitions=definitions,candidates=candidates,references=references,diagnostics=diagnostics)
