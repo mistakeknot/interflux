@@ -86,6 +86,8 @@ An import after synthesis has started is refused (exit 16): a `*-synthesis.md`, 
 
 Escape sequences in the report (`\uXXXX`, `\UXXXXXXXX`, `\xXX`) are decoded to a fixpoint before scrubbing, so an escaped credential is found at any nesting depth up to 64 (deeper is refused, exit 14). A sequence that cannot be shown as text (a control character, a surrogate or a value beyond U+10FFFF) is written as the visible placeholder `[encoded U+XXXX]` instead of a character: it neither forges line structure nor hides a credential behind a hexadecimal digit.
 
+The completion scan runs two detectors on every view: the shared Python scrubber, which reads each view whole and has no length limit, and a pinned Gitleaks run. Gitleaks reads its input in chunks of about 90 KB and a chunk end can fake or hide a token boundary, so it is given pieces of at most 80,000 bytes, cut right after whitespace or punctuation that no token contains. Nothing is rewritten before Gitleaks sees it. A stretch longer than that with no such character (one base64 blob, a long dotted chain) is judged by the Python scrubber alone.
+
 ## Scope and Limitations
 
 - Not a live peer. There is no live mirror, no adaptive loop, no Parley session and no egress proxy. The reviewer ran elsewhere, earlier, and what arrives is files.

@@ -420,45 +420,70 @@ def test_a_long_header_jwt_is_found_in_the_run_tree(ctx):
 # ------------------------------- review follow-up: scanner robustness and long tokens
 
 
-@pytest.mark.parametrize("header_length", [5000, 150000, 1000000])
-def test_gitleaks_alone_finds_a_jwt_whose_header_is_longer_than_its_read_chunk(header_length):
+def _scrub():
+    return load_module("hook_for_long_tokens", HOOK).scrub
+
+
+def _alone(scanner, text):
+    """Gitleaks as the only detector: a scrubber that never reports anything."""
+    return scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
+
+
+@pytest.mark.parametrize("header_length", [5000, 60000])
+def test_gitleaks_alone_finds_a_long_header_jwt_below_its_read_chunk(header_length):
     scanner = load_module("scan_long_jwt", SCAN_SCRIPT)
     token = "ey" + "Jhbgc" + "a" * header_length + ".abcdefgh12.ABCDEFGH12"
-    # A scrubber that never reports anything isolates Gitleaks as the only detector.
-    residue, failed = scanner.bytes_have_residue(lambda text: text, str(GITLEAKS), ("t=" + token + "\n").encode(), "x.md")
-    assert residue is True and failed is False
+    assert _alone(scanner, "t=" + token + "\n") == (True, False)
 
 
-@pytest.mark.parametrize("prefix_length", [5000, 20000, 100000])
-def test_gitleaks_alone_finds_a_long_jwt_that_starts_after_a_hyphen_in_a_long_run(prefix_length):
-    scanner = load_module("scan_hyphen_jwt", SCAN_SCRIPT)
-    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
-    text = "a" * prefix_length + "-" + token + " tail " + "b" * 6000 + "-" + token + "\n"
-    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
-    assert residue is True and failed is False
-
-
-def test_gitleaks_alone_finds_a_jwt_whose_payload_holds_many_header_looking_starts():
-    scanner = load_module("scan_repeated_starts", SCAN_SCRIPT)
-    head = "ey" + "Jaaaaa"
-    text = head + "." + ("a" * 100 + "-" + head) * 2000 + ".ABCDEFGH12"
-    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
-    assert residue is True and failed is False
+@pytest.mark.parametrize("header_length", [150000, 1000000])
+def test_the_scrubber_finds_a_jwt_too_long_for_gitleaks_and_gitleaks_is_not_asked(header_length):
+    scanner = load_module("scan_huge_jwt", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * header_length + ".abcdefgh12.ABCDEFGH12"
+    text = ("t=" + token + "\n").encode()
+    assert list(scanner.gitleaks_pieces(text)) == []
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text, "x.md") == (True, False)
+    assert _alone(scanner, text.decode()) == (False, False)
 
 
 @pytest.mark.parametrize("tail", ["=", ".fourthpart", ".="])
-def test_a_chunk_end_cannot_turn_a_rejected_jwt_shape_into_residue(tail):
+def test_a_rejected_jwt_shape_in_a_huge_run_is_not_residue(tail):
     scanner = load_module("scan_rejected_shape", SCAN_SCRIPT)
+    text = "ey" + "Jaaaaa" + ".abcdefgh12." + "a" * 150000 + tail
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
+@pytest.mark.parametrize("separator", [" ", ",", ";", "|", ")", '"', "a="])
+@pytest.mark.parametrize("pad", [45000, 120000])
+def test_a_rejected_shape_cannot_be_carried_across_a_gitleaks_chunk(separator, pad):
+    scanner = load_module("scan_chunk_shape", SCAN_SCRIPT)
+    unit = "a=" if separator == "a=" else "a" + separator
+    text = unit * pad + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "="
+    # "a=" has no break character: it is an oversized stretch and Gitleaks is not asked.
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
+    assert _alone(scanner, text) == (False, False)
+
+
+@pytest.mark.parametrize("before", [" ", "-", "(", "="])
+def test_the_scrubber_finds_a_huge_jwt_after_each_admissible_boundary(before):
+    scanner = load_module("scan_huge_boundaries", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
+    text = "b" * 5000 + "-" + token if before == "-" else before + token
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
+
+
+@pytest.mark.parametrize("before", [".", "_"])
+def test_neither_detector_invents_a_huge_jwt_start_after_a_dot_or_underscore(before):
+    scanner = load_module("scan_huge_refused", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), (before + token).encode(), "x.md") == (False, False)
+
+
+def test_a_jwt_whose_payload_holds_many_header_looking_starts_is_found():
+    scanner = load_module("scan_repeated_starts", SCAN_SCRIPT)
     head = "ey" + "Jaaaaa"
-    text = head + ".abcdefgh12." + "a" * 150000 + tail
-    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
-
-
-@pytest.mark.parametrize("pad", [44000, 50000, 120000])
-def test_many_short_runs_cannot_carry_a_rejected_shape_across_a_gitleaks_chunk(pad):
-    scanner = load_module("scan_many_runs", SCAN_SCRIPT)
-    text = "a " * pad + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "="
-    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
+    text = head + "." + ("a" * 100 + "-" + head) * 2000 + ".ABCDEFGH12"
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
 
 
 def test_the_unsplit_view_really_trips_gitleaks_at_a_chunk_end():
@@ -468,58 +493,49 @@ def test_the_unsplit_view_really_trips_gitleaks_at_a_chunk_end():
     assert scanner.gitleaks_flags(str(GITLEAKS), text) is True
 
 
-def test_a_real_jwt_is_still_found_after_a_long_run_of_short_words():
+@pytest.mark.parametrize("pad", [44000, 45000, 90000])
+def test_a_real_jwt_is_still_found_after_a_long_run_of_short_words(pad):
     scanner = load_module("scan_words_then_jwt", SCAN_SCRIPT)
     token = "ey" + "Jhbgcd" + ".abcdefgh12.ABCDEFGH12"
-    for pad in (44000, 45000, 90000):
-        text = "a " * pad + token
-        residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
-        assert (residue, failed) == (True, False)
+    assert _alone(scanner, "a " * pad + token) == (True, False)
 
 
-def test_pieces_cover_the_view_exactly_and_never_split_a_token():
-    scanner = load_module("scan_pieces", SCAN_SCRIPT)
-    for view in (b"", b"abc", b"a b\n" * 30000, b"x" * 100000, b"x" * 100000 + b" y", b"a " * 70000):
+def test_nothing_is_transformed_so_no_rule_boundary_can_change():
+    scanner = load_module("scan_untransformed", SCAN_SCRIPT)
+    for view in (b"", b"abc", b"a b\n" * 30000, b"xox" + b"b-" + b"a" * 5000 + b"_", b"a," * 100000, b"a " * 70000):
         pieces = list(scanner.gitleaks_pieces(view))
         assert b"".join(pieces) == view
-        for piece in pieces[:-1]:
-            assert piece[-1:] in (b" ", b"\n", b"\t", b"\r") or b" " not in piece
-        if b" " in view or b"\n" in view:
-            assert all(len(piece) <= scanner.PIECE_LIMIT + 2 for piece in pieces[:-1]) or b"x" * 100000 in view
-
-
-@pytest.mark.parametrize("mark", [",", ";", "|", ")", '"'])
-@pytest.mark.parametrize("pad", [45000, 120000])
-def test_views_without_whitespace_are_cut_at_punctuation_not_inside_a_token(mark, pad):
-    scanner = load_module("scan_punctuation", SCAN_SCRIPT)
-    text = ("a" + mark) * pad + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "="
-    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
+        assert all(len(piece) <= scanner.PIECE_MAX for piece in pieces)
 
 
 @pytest.mark.parametrize("last", ["_", "a", "-"])
-def test_shortening_keeps_the_character_that_ends_a_long_run(last):
+def test_a_long_slack_shape_is_judged_whole(last):
     scanner = load_module("scan_run_end", SCAN_SCRIPT)
     text = "xox" + "b-" + "a" * 5000 + last
-    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
-    # "_" disqualifies the Slack shape in both detectors; "a" and "-" leave it a real token.
+    residue, failed = _alone(scanner, text)
     assert failed is False
     assert residue is (last != "_")
 
 
-@pytest.mark.parametrize("before", [" ", "-", "(", "="])
-def test_bounding_keeps_a_start_after_each_admissible_boundary(before):
-    scanner = load_module("scan_boundaries", SCAN_SCRIPT)
-    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
-    text = before + token if before != "-" else "b" * 5000 + "-" + token
-    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
-    assert residue is True and failed is False
+def test_an_underscore_inside_a_long_run_still_disqualifies_the_slack_shape():
+    scanner = load_module("scan_run_inside", SCAN_SCRIPT)
+    assert _alone(scanner, "xox" + "b-" + "a" * 4100 + "_" + "a" * 1000) == (False, False)
 
 
-@pytest.mark.parametrize("before", [".", "_"])
-def test_bounding_does_not_invent_a_start_where_both_detectors_refuse_one(before):
-    scanner = load_module("scan_refused_boundaries", SCAN_SCRIPT)
-    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
-    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), (before + token).encode(), "x.md") == (False, False)
+def test_a_header_that_ends_short_of_the_minimum_is_not_lengthened():
+    scanner = load_module("scan_short_header", SCAN_SCRIPT)
+    text = "a" * 5000 + "-ey" + "Jaaaa" + ".abcdefgh12.ABCDEFGH12"
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
+def test_a_scratch_directory_fault_is_a_scanner_failure_not_a_crash(monkeypatch):
+    scanner = load_module("scan_scratch_fault", SCAN_SCRIPT)
+
+    def broken(prefix=None):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(scanner.tempfile, "TemporaryDirectory", broken)
+    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), b"plain text", "x.md") == (False, True)
 
 
 def test_a_json_surrogate_before_a_secret_is_residue_not_a_crash(ctx):

@@ -249,64 +249,26 @@ def decoded_view(data: bytes, name: str) -> str | None:
     return "\n".join(strings)
 
 
-RUN_LIMIT = 4096
-LONG_RUN = re.compile(r"[A-Za-z0-9_-]{4097,}")
-HYPHEN_START = re.compile(r"-eyJ")
-
-
-def _shorten_run(match: re.Match[str]) -> str:
-    """Bound one long base64url run, keeping the first place a JWT could start in it.
-
-    A JWT may start at the run's first character (unless a dot precedes it) or right after a
-    hyphen inside the run. Every such start sees the same tail (the rest of the run, then its
-    dot-separated segments), so keeping the earliest admissible start with the head of its
-    header is enough to preserve the shape; later starts add nothing. The result is at most
-    two heads long however many starts the run holds.
-    """
-    run = match.group(0)
-    last = run[-1]  # a rule's trailing boundary can turn on this character, so it stays
-    before = match.string[match.start() - 1] if match.start() > 0 else ""
-    start = 0 if run.startswith("eyJ") and before != "." else -1
-    if start < 0:
-        found = HYPHEN_START.search(run)
-        if found is None:
-            return run[:RUN_LIMIT] + last
-        start = found.start() + 1
-    lead = run[: min(start, RUN_LIMIT)]
-    if start > 0 and not lead.endswith("-"):
-        lead += "-"  # the hyphen that made this start admissible
-    return lead + run[start : start + RUN_LIMIT] + last
-
-
-def shrink_long_runs(text: str) -> str:
-    """Bound each run of base64url characters longer than 4096.
-
-    Gitleaks reads its input in roughly 100 KB chunks, so a token whose segment is longer than
-    a chunk is never matched whole, and a chunk end can fake a token ending. A JWT needs only
-    a few characters per segment to be recognised, so the bounded text keeps its shape. When
-    a view holds such a run, Gitleaks is given the bounded text instead of the raw one; the
-    Python scrubber still sees every view whole.
-    """
-    return LONG_RUN.sub(_shorten_run, text)
-
-
 PIECE_LIMIT = 64_000
+PIECE_MAX = 80_000
 _BREAKS = (b"\n", b" ", b"\t", b"\r")
 # Punctuation that no rule's token class contains, used only where a window has no whitespace.
 _SOFT_BREAKS = (b",", b";", b"|", b"(", b")", b"[", b"]", b"{", b"}", b"<", b">", b'"', b"'")
 
 
 def gitleaks_pieces(view: bytes):
-    """Yield the view in pieces of about PIECE_LIMIT bytes, each cut right after whitespace.
+    """Yield the parts of a view that Gitleaks may be given, each below its read chunk.
 
-    Gitleaks reads its input in chunks (observed to end near 90 KB in 8.30.1, with or without line breaks) and a chunk end can fake the
-    end of a token, so a harmless shape that the Python detector rejects can be flagged at an
-    artificial boundary. A piece that is smaller than a chunk never reaches one, and whitespace
-    cannot lie inside a token, so no token is split. A line break is preferred, since a rule
-    may span a space, and punctuation that no token contains is used when a window has no
-    whitespace. A view with neither to cut at is passed on whole from the first such character
-    after the limit, which is no worse than the unsplit view. The Python scrubber
-    reads every view whole, so a context that spans a cut is still caught there.
+    Gitleaks reads its input in chunks (observed to end near 90 KB in 8.30.1, with or without
+    line breaks) and a chunk end can fake the end of a token, so a harmless shape that the
+    Python detector rejects is flagged at an artificial boundary, and a token that straddles
+    an end is missed. A piece below PIECE_MAX never reaches a chunk end. The view is cut about
+    every PIECE_LIMIT bytes, right after whitespace (a line break preferred, since a rule may
+    span a space), else after punctuation that no token contains; neither can lie inside a
+    token, so no token is split. A stretch with no such character for more than PIECE_MAX
+    bytes (one base64 blob, a long dotted chain) cannot be cut safely: it is not given to
+    Gitleaks at all, and only the Python scrubber, which reads every view whole and has no
+    length limit, judges it. Nothing is transformed, so no rule's boundary character changes.
     """
     pos, size = 0, len(view)
     while pos < size:
@@ -322,7 +284,8 @@ def gitleaks_pieces(view: bytes):
             else:
                 later = [i for i in (view.find(mark, end) for mark in _BREAKS + _SOFT_BREAKS) if i >= 0]
                 end = min(later) + 1 if later else size
-        yield view[pos:end]
+        if end - pos <= PIECE_MAX:
+            yield view[pos:end]
         pos = end
 
 
@@ -330,7 +293,7 @@ def _flags_or_fault(binary: str, piece: bytes) -> bool | None:
     """Gitleaks' verdict on one piece, or None when it could not be had."""
     try:
         return gitleaks_flags(binary, piece)
-    except ScannerFailure:
+    except (ScannerFailure, OSError):  # an OSError is the scratch directory, not the run tree
         return None
 
 
@@ -361,11 +324,6 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
         if unescaped != candidate:
             residue = residue or scrub(unescaped) != unescaped
             views.append(unescaped.encode("utf-8", errors="replace"))
-    for index, view in enumerate(views):
-        original = view.decode("utf-8", errors="replace")
-        shrunk = shrink_long_runs(original)
-        if shrunk != original:
-            views[index] = shrunk.encode("utf-8", errors="replace")
     if binary is None:
         return residue, True
     pieces = [piece for view in views for piece in gitleaks_pieces(view)]
