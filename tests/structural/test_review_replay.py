@@ -566,3 +566,24 @@ def test_ablation_cannot_hide_missing_or_out_of_scope_primary_pass(tmp_path,prov
     path.write_text(json.dumps(manifest))
     (tmp_path/'pre.jsonl').write_text(json.dumps(dict(id='f',claim='Issue.',location='docs/example.md:2',**provenance))+'\n')
     assert evaluate(tmp_path)[1]==2
+
+
+@pytest.mark.parametrize('manifest_change',['run','ablation','token_ledger'])
+def test_whole_manifest_edits_invalidate_all_existing_scope_judgments(tmp_path,manifest_change):
+    prepare(tmp_path,count=2); candidates,_=evaluate(tmp_path)
+    judgments(tmp_path,candidates,[('f','g-d','same_issue')],coverage=True)
+    path=tmp_path/'runs.json'; manifest=json.loads(path.read_text())
+    if manifest_change=='run':
+        manifest['runs'].append(dict(manifest['runs'][0],id='new-run'))
+    elif manifest_change=='ablation':
+        manifest['runs'][0]['ablations']=[dict(id='missing',stage='blind',passes=['blind-a'])]
+    else:
+        manifest['runs'][0]['token_ledger']='usage.json'
+    path.write_text(json.dumps(manifest))
+    newer,code=evaluate(tmp_path)
+    assert code==0
+    for old in candidates['runs']:
+        current=next(r for r in newer['runs'] if r['run_id']==old['run_id'] and r['ablation_id'] is None)
+        assert current['inputs_sha256']!=old['inputs_sha256']
+    report,code=evaluate(tmp_path,'score')
+    assert code==2 and report['reasons']==['stale_judgment_binding']

@@ -68,6 +68,12 @@ The hash is repeatable for identical inputs and deliberately sensitive to exact
 file bytes. Reordering source rows changes the file hash and invalidates prior
 judgments even though the matching algorithm itself is permutation-invariant.
 Separate ablations have separate hashes; judgments are not silently reused.
+The exact **whole runs manifest** is also hashed for every scope. Any edit to
+that file invalidates prior judgments for every existing run and ablation,
+including adding another run, adding an ablation, or adding/changing a
+`token_ledger` path. Finalize the manifest before obtaining external judgments;
+after an edit, regenerate candidate bindings and obtain fresh bound judgments
+rather than copying old hashes. This conservative invalidation is deliberate.
 
 Judgment JSON has `schema_version: 1` and arrays `judgments`, `resolutions` and
 `coverage` (omitted arrays default empty). A judgment has unique `id`, `run_id`,
