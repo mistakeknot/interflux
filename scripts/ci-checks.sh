@@ -31,15 +31,20 @@ install -m 0755 "$work/gitleaks" "$HOME/.local/bin/gitleaks"
 
 echo "== pytest =="
 # The guest clone holds only the admitted commit's history and no `main` ref, but the isolation
-# tests diff against `main`. Point a local `main` at the pull request's base commit (CI_BASE_SHA)
-# when it is in the clone, and otherwise at HEAD (no diff), so they still check a pull request's
-# own changes.
-if ! git rev-parse --verify --quiet refs/heads/main >/dev/null; then
-  if [[ -n "${CI_BASE_SHA:-}" ]] && git cat-file -e "${CI_BASE_SHA}^{commit}" 2>/dev/null; then
-    git branch main "$CI_BASE_SHA"
-  else
-    git branch main HEAD
-  fi
+# tests diff against `main`. For a pull request run, point a local `main` at its base commit
+# (CI_BASE_SHA) and fail if that commit is missing from the clone. A run with no base (a push to the
+# default branch) has nothing to compare against, so `main` is HEAD and those tests see an empty
+# diff; the log says which case ran.
+if git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+  echo "unexpected pre-existing main ref in the CI clone" >&2; exit 2
+fi
+if [[ -n "${CI_BASE_SHA:-}" ]]; then
+  git cat-file -e "${CI_BASE_SHA}^{commit}" 2>/dev/null || { echo "CI_BASE_SHA ${CI_BASE_SHA} is not in the clone" >&2; exit 2; }
+  git branch main "$CI_BASE_SHA"
+  echo "isolation tests compare against base ${CI_BASE_SHA}"
+else
+  git branch main HEAD
+  echo "no CI_BASE_SHA: isolation tests compare against HEAD (empty diff)"
 fi
 export PYTHONDONTWRITEBYTECODE=1
 # test_public_files_carry_no_private_task_local_denylist_terms needs a private term list that is
@@ -53,9 +58,10 @@ set +e
 python3 -m pytest -q -ra -p no:cacheprovider . \
   --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms \
   2>&1 | tee "$out"
-rc=${PIPESTATUS[0]}
+rc=("${PIPESTATUS[@]}")
 set -e
-[[ $rc -eq 0 ]] || { echo "pytest failed (exit $rc)" >&2; exit "$rc"; }
+[[ ${rc[0]} -eq 0 ]] || { echo "pytest failed (exit ${rc[0]})" >&2; exit "${rc[0]}"; }
+[[ ${rc[1]} -eq 0 ]] || { echo "could not record the pytest report" >&2; exit 2; }
 # A green run must not hide a skip or a deselection that was meant to run. The only accepted skips
 # are tests whose optional inputs (Linsenkasten source, Hermes, the real spec corpora) are absent
 # from the guest; anything else, and an unmatched --deselect, fails the check.
