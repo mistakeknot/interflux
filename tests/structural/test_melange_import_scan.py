@@ -438,6 +438,38 @@ def test_gitleaks_alone_finds_a_long_jwt_that_starts_after_a_hyphen_in_a_long_ru
     assert residue is True and failed is False
 
 
+def test_gitleaks_alone_finds_a_jwt_whose_payload_holds_many_header_looking_starts():
+    scanner = load_module("scan_repeated_starts", SCAN_SCRIPT)
+    head = "ey" + "Jaaaaa"
+    text = head + "." + ("a" * 100 + "-" + head) * 2000 + ".ABCDEFGH12"
+    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
+    assert residue is True and failed is False
+
+
+@pytest.mark.parametrize("tail", ["=", ".fourthpart", ".="])
+def test_a_chunk_end_cannot_turn_a_rejected_jwt_shape_into_residue(tail):
+    scanner = load_module("scan_rejected_shape", SCAN_SCRIPT)
+    head = "ey" + "Jaaaaa"
+    text = head + ".abcdefgh12." + "a" * 150000 + tail
+    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
+@pytest.mark.parametrize("before", [" ", "-", "(", "="])
+def test_bounding_keeps_a_start_after_each_admissible_boundary(before):
+    scanner = load_module("scan_boundaries", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
+    text = before + token if before != "-" else "b" * 5000 + "-" + token
+    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
+    assert residue is True and failed is False
+
+
+@pytest.mark.parametrize("before", [".", "_"])
+def test_bounding_does_not_invent_a_start_where_both_detectors_refuse_one(before):
+    scanner = load_module("scan_refused_boundaries", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * 150000 + ".abcdefgh12.ABCDEFGH12"
+    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), (before + token).encode(), "x.md") == (False, False)
+
+
 def test_a_json_surrogate_before_a_secret_is_residue_not_a_crash(ctx):
     (ctx.run / "findings.json").write_text('{"a": "\\ud800' + AWS_KEY + '"}\n')
     result = scan(ctx)

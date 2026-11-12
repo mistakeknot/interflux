@@ -248,24 +248,42 @@ def decoded_view(data: bytes, name: str) -> str | None:
     return "\n".join(strings)
 
 
+RUN_LIMIT = 4096
 LONG_RUN = re.compile(r"[A-Za-z0-9_-]{4097,}")
-JWT_AFTER_HYPHEN = re.compile(r"(?=-eyJ)")
+HYPHEN_START = re.compile(r"-eyJ")
 
 
 def _shorten_run(match: re.Match[str]) -> str:
-    # A JWT may begin right after a hyphen inside a long run (both detectors allow that
-    # boundary), so cut the run into pieces that each start at such a hyphen and keep the head
-    # of every piece: no admissible start is discarded.
-    return "".join(piece[:4096] for piece in JWT_AFTER_HYPHEN.split(match.group(0)))
+    """Bound one long base64url run, keeping the first place a JWT could start in it.
+
+    A JWT may start at the run's first character (unless a dot precedes it) or right after a
+    hyphen inside the run. Every such start sees the same tail (the rest of the run, then its
+    dot-separated segments), so keeping the earliest admissible start with the head of its
+    header is enough to preserve the shape; later starts add nothing. The result is at most
+    two heads long however many starts the run holds.
+    """
+    run = match.group(0)
+    before = match.string[match.start() - 1] if match.start() > 0 else ""
+    start = 0 if run.startswith("eyJ") and before != "." else -1
+    if start < 0:
+        found = HYPHEN_START.search(run)
+        if found is None:
+            return run[:RUN_LIMIT]
+        start = found.start() + 1
+    lead = run[: min(start, RUN_LIMIT)]
+    if start > 0 and not lead.endswith("-"):
+        lead += "-"  # the hyphen that made this start admissible
+    return lead + run[start : start + RUN_LIMIT]
 
 
 def shrink_long_runs(text: str) -> str:
-    """Cut each run of base64url characters longer than 4096 down to a bounded size.
+    """Bound each run of base64url characters longer than 4096.
 
-    Gitleaks reads its input in roughly 100 KB chunks, so a token whose segment is longer
-    than a chunk is never matched whole. A JWT only needs a few characters per segment to be
-    recognised, so the shortened view keeps its shape and lets Gitleaks see it. It is an
-    extra view: the original bytes are scanned as well.
+    Gitleaks reads its input in roughly 100 KB chunks, so a token whose segment is longer than
+    a chunk is never matched whole, and a chunk end can fake a token ending. A JWT needs only
+    a few characters per segment to be recognised, so the bounded text keeps its shape. When
+    a view holds such a run, Gitleaks is given the bounded text instead of the raw one; the
+    Python scrubber still sees every view whole.
     """
     return LONG_RUN.sub(_shorten_run, text)
 
@@ -297,11 +315,11 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
         if unescaped != candidate:
             residue = residue or scrub(unescaped) != unescaped
             views.append(unescaped.encode("utf-8", errors="replace"))
-    for view in list(views):
+    for index, view in enumerate(views):
         original = view.decode("utf-8", errors="replace")
         shrunk = shrink_long_runs(original)
         if shrunk != original:
-            views.append(shrunk.encode("utf-8", errors="replace"))
+            views[index] = shrunk.encode("utf-8", errors="replace")
     if binary is None:
         return residue, True
     for view in views:
