@@ -119,6 +119,11 @@ def target_spelling(value, doc_id):
     return doc_id if canonical == doc_id.rsplit('/',1)[-1] else canonical
 
 
+def prefix_uncertain(value, doc_id):
+    """A suffix at a directory boundary is evidence of possible identity only."""
+    return value != doc_id and (value.endswith('/'+doc_id) or doc_id.endswith('/'+value))
+
+
 def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
     base = dict(schema_version=1, document_id=doc_id, document_sha256=digest(data), results=[], findings=[])
     failures = []
@@ -163,7 +168,8 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
             attributed = target_spelling(attributed,doc_id)
         except (ValueError,AttributeError):
             attributed = None
-        if attributed is not None and attributed != doc_id:
+        uncertain = attributed is not None and prefix_uncertain(attributed,doc_id)
+        if attributed is not None and attributed != doc_id and not uncertain:
             base['findings'].append(dict(finding_id=fid,status='out_of_scope',quote_count=0,
                 counts=dict(matched=0,mismatched=0,unverifiable=0),complete=True,support='unverified'))
             continue
@@ -180,6 +186,8 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
         for qi,q,status,reason in members:
             result = dict(finding_id=fid,quote_index=qi,section_id=q.get('section_id') if isinstance(q,dict) else None,
                 status=status,reason=reason,match_mode=None,spans=[],diagnostics=[],support='unverified',occurrence_ambiguous=False)
+            if uncertain or loc and prefix_uncertain(target_spelling(loc[0],doc_id),doc_id):
+                result['diagnostics'].append(dict(code='location_uncertain',count=1,spans=[]))
             def fail(why):
                 result.update(status='unverifiable',reason=why)
             if status is None:
@@ -225,6 +233,8 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
                             result['diagnostics'].append(dict(code='markup_drop_match',count=len(markup),spans=[span(text,a,b) for a,b in markup]))
                     if not loc:
                         result['diagnostics'].append(dict(code='location_unparseable',count=1,spans=[]))
+                    elif prefix_uncertain(target_spelling(loc[0],doc_id),doc_id):
+                        pass  # The uncertainty signal above does not establish line agreement.
                     elif target_spelling(loc[0],doc_id) != doc_id:
                         result['diagnostics'].append(dict(code='location_other_document',count=1,spans=[]))
                     elif not (loc[1] <= section['line_range']['end'] and loc[2] >= section['line_range']['start']):

@@ -57,8 +57,9 @@ def build_index(data, doc_id, profile=None, previous=None):
         start = offsets[i]
         # Heading syntax must be wholly outside comments/code/frontmatter.
         raw_body = line.removesuffix('\n').removesuffix('\r')
-        body = ''.join(' ' if regions[start+j]=='excluded' else c for j,c in enumerate(raw_body)).rstrip(' \t')
-        active = bool(body.strip(' \t')) and regions[start+len(body)-len(body.lstrip(' \t'))] == 'prose'
+        body = ''.join(c for j,c in enumerate(raw_body) if regions[start+j]!='excluded').rstrip(' \t')
+        first_visible = next((start+j for j,c in enumerate(raw_body) if c not in ' \t' and regions[start+j]!='excluded'),None)
+        active = bool(body.strip(' \t')) and first_visible is not None and regions[first_visible] == 'prose'
         if not active:
             continue
         atx = re.fullmatch(r' {0,3}(#{1,6})(?:[ \t]+(.*?)|[ \t]*)',body)
@@ -222,7 +223,7 @@ def build_index(data, doc_id, profile=None, previous=None):
                                 cursor = target.end()+sep.end()
                             c.update(targets=targets,resolution='candidate' if targets else 'no_target')
                         elif recognizer == 'heading_annotation':
-                            value = re.match(r'[ \t:]+([^\n,;]+)',line[m.end():])
+                            value = re.match(r'[ \t:]+([^\n,;)]+)',line[m.end():])
                             c['value'] = value[1].strip() if value else None
     numbers = collections.defaultdict(list)
     for s in sections:

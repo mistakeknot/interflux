@@ -73,6 +73,10 @@ basename matching the indexed target is an alias within this single-document
 invocation. Line/column forms such as `example.md:2:5` and
 `example.md:2:5-3:9` retain their line range. Unparseable or invalid location
 identities never silently skip quote evaluation; their agreement stays unknown.
+When either path differs by a leading directory prefix at a slash boundary,
+the checker evaluates source presence with `location_uncertain`. This is neither
+an alias assertion nor evidence of location agreement. Other directory paths
+remain distinct; a shared basename alone does not equate two qualified paths.
 
 The findings reader accepts JSONL, a JSON array, one finding, or a `findings`
 array wrapper. Explicit `type`/`record_type` metadata and event rows are skipped
@@ -96,8 +100,15 @@ Source lines end only at LF, consistently with locations and span reporting;
 CRLF is preserved and other whitespace characters do not create new lines.
 Inline code protects literal comment markers; active HTML comments close even
 on indented lines. Trailing heading comments are excluded from heading identity.
+Comment contents are removed without padding, so changing an embedded comment's
+length cannot change an implicit ID. A standalone HTML comment block owns its
+whole closing line; text there cannot introduce a heading. A multiline inline
+comment is explicitly diagnosed at its opener, including any potential hidden
+structure; unclosed-comment spans also identify their original opener.
 Nested list content is prose when supported by a preceding list container;
 indentation at least four spaces beyond that container's content column is code.
+Fences use indentation relative to the list content column. Fences and thematic
+breaks reset list context, so stale list state cannot reclassify later code as prose.
 An unclosed opening frontmatter delimiter produces an explicit diagnostic and
 the source is parsed as Markdown. Multiline Setext headings are explicitly
 unsupported and diagnosed across their whole block, without guessing a shorter

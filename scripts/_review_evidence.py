@@ -94,6 +94,7 @@ def markdown_regions(text, diagnostics=None):
     mask = ['prose'] * len(text)
     lines = source_lines(text)
     offset, fence, comment = 0, None, False
+    comment_open, comment_block, comment_multiline = None, False, False
     front_end = None
     if lines and lines[0].rstrip('\r\n') == '---':
         front_end = next((i for i,line in enumerate(lines[1:],1)
@@ -108,21 +109,27 @@ def markdown_regions(text, diagnostics=None):
             kind = 'excluded'
         elif fence:
             kind = 'code'
-            if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}\s*$', stripped):
+            closing = re.fullmatch(r'([ \t]*)' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}[ \t]*',stripped)
+            if closing and fence[2] <= len(closing[1].expandtabs(4)) <= fence[2]+3:
                 fence = None
         elif not comment:
-            opening = re.match(r'^ {0,3}(`{3,}|~{3,})', stripped)
+            indent_text = re.match(r'[ \t]*',stripped)[0]
+            indent = len(indent_text.expandtabs(4))
+            if stripped.strip():
+                while list_content_indents and indent < list_content_indents[-1]:
+                    list_content_indents.pop()
+            content_indent = list_content_indents[-1] if list_content_indents else 0
+            relative = stripped[len(indent_text):]
+            opening = re.match(r'(`{3,}|~{3,})',relative) if 0 <= indent-content_indent <= 3 else None
             if opening:
-                fence = (opening[1][0], len(opening[1]))
+                fence = (opening[1][0], len(opening[1]), content_indent)
+                list_content_indents.clear()
                 kind = 'code'
+            elif re.fullmatch(r'(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,}',relative) and 0 <= indent-content_indent <= 3:
+                list_content_indents.clear()
             else:
-                indent_text = re.match(r'[ \t]*',stripped)[0]
-                indent = len(indent_text.expandtabs(4))
                 marker = re.match(r'(?:[-*+]|\d+[.)])[ \t]+',stripped[len(indent_text):])
                 if stripped.strip():
-                    while list_content_indents and indent < list_content_indents[-1]:
-                        list_content_indents.pop()
-                    content_indent = list_content_indents[-1] if list_content_indents else 0
                     is_code = indent >= content_indent+4
                     if marker and not is_code:
                         list_content_indents.append(indent+len(marker[0]))
@@ -134,10 +141,18 @@ def markdown_regions(text, diagnostics=None):
             while cursor < len(line):
                 # An active comment owns its contents, including indentation and ticks.
                 if comment or line.startswith('<!--',cursor):
+                    if not comment:
+                        comment_open = offset+cursor
+                        comment_block = not line[:cursor].strip(' \t')
+                        comment_multiline = False
                     end = line.find('-->',cursor+(0 if comment else 4))
-                    stop = len(line) if end < 0 else end+3
+                    stop = len(line) if end < 0 or comment_block else end+3
                     mask[offset+cursor:offset+stop] = ['excluded']*(stop-cursor)
                     comment = end < 0
+                    if not comment_block and end < 0 and not comment_multiline:
+                        comment_multiline = True
+                        if diagnostics is not None:
+                            diagnostics.append(dict(code='multiline_inline_comment',count=1,spans=[span(text,comment_open,comment_open+4)]))
                     cursor = stop
                 elif line[cursor] == '`':
                     run = re.match(r'`+',line[cursor:])[0]
@@ -152,7 +167,7 @@ def markdown_regions(text, diagnostics=None):
                     cursor += 1
         offset += len(line)
     if comment and diagnostics is not None:
-        diagnostics.append(dict(code='unclosed_comment',count=1,spans=[span(text,len(text),len(text))]))
+        diagnostics.append(dict(code='unclosed_comment',count=1,spans=[span(text,comment_open,comment_open+4)]))
     return mask
 
 

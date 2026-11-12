@@ -104,7 +104,7 @@ def test_p2_planned_metadata_and_event_skip_counts():
 def test_p2_planned_heading_annotation_capture():
     text='# A (card 17, ruled yes)\n'
     idx=build_index(text.encode(),'docs/example.md',profile())
-    assert sorted((c['key'],c['value']) for c in idx['candidates'])==[('card','17'),('ruled','yes)')]
+    assert sorted((c['key'],c['value']) for c in idx['candidates'])==[('card','17'),('ruled','yes')]
 
 
 def test_p2_planned_heading_status_identity_drift():
