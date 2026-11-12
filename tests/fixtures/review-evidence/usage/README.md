@@ -14,6 +14,9 @@ turn events and is not independent scope proof. Multi-turn additive Codex
 accounting stays disabled until independently supported, version-bound evidence
 is added through a reviewed change. Single selected turns report their observed
 usage only, relative to the explicitly declared manifest scope.
+Any additional started, failed or error turn (including a resumed thread) keeps
+scope unknown even when only one completion was selected. The receipt gate uses
+the Codex usage basis even if backend metadata is absent or inconsistent.
 
 Run the complete synthetic example from the repository root:
 
@@ -30,6 +33,18 @@ explicit session plus zero-based physical record indices. Cumulative Claude
 records select dispatch and invocation IDs. Unknown selectors/formats remain
 unaccounted, with reason codes.
 
+A receipt source used alongside a provider source requires an explicit
+`provider_session_id` in the manifest source object. This binding must match the
+selected provider records. Clavain 0.6.332's receipt `session_id` is ambient caller
+context and is never used as worker identity or for deduplication. For example,
+add `"provider_session_id":"session-a"` to a receipt source when its selected
+provider messages belong to `session-a`. Missing/conflicting bindings leave exact
+accounting incomplete while retaining observations. Two distinct attempts cannot
+be alternative views of one invocation. Cross-invocation receipt/provider views
+with an unproven relationship report `unresolved_overlap` and are not added.
+Correctly bound, disjoint worker sessions remain independent even when their
+receipts share the same ambient parent session.
+
 Output completeness is relative to the declared inventory. It cannot prove that
 every review invocation was listed. Observed subtotals, estimates, missing usage
 and conflicts remain separate. Last Claude message records replace earlier
@@ -40,6 +55,16 @@ visible even when separate provider evidence completes the accounting.
 Alternative views compare only categories both observed. A disagreement is a
 conflict; preferred evidence can fill missing categories only. Historical Claude
 receipt zeros remain unknown until original provider evidence establishes zero.
+Requested identity and lifecycle disagreements are conflicts too, not preference
+choices. Malformed optional counts produce diagnostics and incomplete accounting.
 Raw records, transcript bodies, commands, provider error text and source paths
 are excluded from output; caller aliases must be public-safe. Optional price
 tables produce `estimated_list_cost`, never subscription quota consumption.
+Nonzero cache-write pricing requires observed TTL subsets covering all writes
+and a rate for each nonzero subset. TTL-specific rates take precedence over a
+flat `cache_write` entry; a flat rate cannot fill unknown TTL/rate coverage.
+
+Remaining adapter limits are explicit: partial receipts can contain display-derived
+fallback counts (kept incomplete), and Claude terminal results with `modelUsage`
+stay incomplete because whole-parent/subagent inclusion is not established by
+that adapter. These observations are not promoted into exact totals or pricing.

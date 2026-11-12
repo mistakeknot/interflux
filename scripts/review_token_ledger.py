@@ -10,6 +10,9 @@ Each invocation represents one explicitly declared attempt. Sources are alternat
 views, not additional charges. Estimates require category/value/scope/method.
 Optional price JSON: schema_version 1, currency, effective_date, models mapping
 observed model to per-million category rates (or TTL-specific cache-write rates).
+Nonzero cache writes require TTL-specific coverage. Receipt/provider alternatives
+require a manifest provider_session_id on each receipt source; receipt.session_id
+is ambient parent context, not worker identity.
 Exit 0: complete relative to manifest; 1: incomplete/conflicted; 2: invalid input.
 """
 from __future__ import annotations
@@ -39,7 +42,9 @@ def validate(manifest,prices):
             raise ValueError()
         ids.add(inv['id']); aliases=set()
         for s in inv['sources']:
-            if not isinstance(s,dict) or set(s)-{'source_id','format','path','selector','related_selector'} or not all(k in s for k in ('source_id','format','path')) or not alias(s['source_id']) or not alias(s['format']) or not isinstance(s['path'],str) or not s['path'] or '\0' in s['path'] or s['source_id'] in aliases:
+            if not isinstance(s,dict) or set(s)-{'source_id','format','path','selector','related_selector','provider_session_id'} or not all(k in s for k in ('source_id','format','path')) or not alias(s['source_id']) or not alias(s['format']) or not isinstance(s['path'],str) or not s['path'] or '\0' in s['path'] or s['source_id'] in aliases:
+                raise ValueError()
+            if 'provider_session_id' in s and (s['format']!='clavain-receipt-v1' or not isinstance(s['provider_session_id'],str) or not s['provider_session_id'] or '\0' in s['provider_session_id']):
                 raise ValueError()
             aliases.add(s['source_id'])
             if not isinstance(s.get('selector',{}),dict):
@@ -91,9 +96,33 @@ def reconcile(inv,sources):
         row['reasons'].append('usage_conflict'); row['complete']=False
     if len(actual)>1:
         row['reasons'].append('model_conflict'); row['complete']=False
+    # Requested identity and lifecycle are observations, not preference choices.
+    for key in ('requested_model','requested_effort','actual_effort','lifecycle'):
+        values={s[key] for s in sources if s[key] not in (None,'unknown')}
+        if len(values)>1:
+            row[key]='unknown' if key=='lifecycle' else None
+            row['reasons'].append(key+'_conflict')
+    attempts={key for s in sources for key in s['_coverage'] if key[0]=='attempt'}
+    if len(attempts)>1:
+        row['reasons'].append('multiple_attempts')
+        row['usage']=empty_fields()
+    receipts=[s for s in sources if s['format']=='clavain-receipt-v1']
+    providers=[s for s in sources if s['format']!='clavain-receipt-v1']
+    if receipts and providers:
+        sessions=set().union(*(s['_sessions'] for s in providers))
+        for receipt in receipts:
+            binding=receipt['_provider_binding']
+            if binding is None:
+                row['reasons'].append('provider_session_binding_missing')
+            elif sessions!={binding}:
+                row['reasons'].append('provider_session_binding_conflict')
+            else:
+                receipt['_binding_validated']=True
     fatal={'duplicate_receipt_conflict','message_identity_conflict','session_identity_conflict',
         'cumulative_sequence_conflict','cumulative_counter_regression','malformed_usage_record',
-        'ambiguous_attempt_selection','parent_scope_unknown','model_conflict','model_identity_conflict'}
+        'ambiguous_attempt_selection','parent_scope_unknown','model_conflict','model_identity_conflict',
+        'requested_model_conflict','requested_effort_conflict','actual_effort_conflict','lifecycle_conflict',
+        'multiple_attempts','provider_session_binding_missing','provider_session_binding_conflict'}
     if fatal & set(row['reasons']):
         row['complete']=False
         for field in row['usage'].values():
@@ -115,10 +144,14 @@ def estimate_cost(rows,prices):
         write=usage['cache_write']
         if write['value']==0 and write['complete']:
             pass
-        elif 'cache_write' in rates and write['value'] is not None and write['complete']:
-            value+=write['value']*rates['cache_write']/1_000_000
-        elif all(usage[k]['value'] is not None and usage[k]['complete'] and k in rates for k in ('cache_write_5m','cache_write_1h')) and write['value']==usage['cache_write_5m']['value']+usage['cache_write_1h']['value']:
-            value+=sum(usage[k]['value']*rates[k]/1_000_000 for k in ('cache_write_5m','cache_write_1h'))
+        elif all(usage[k]['value'] is not None and usage[k]['complete'] for k in ('cache_write_5m','cache_write_1h')) and write['value']==usage['cache_write_5m']['value']+usage['cache_write_1h']['value']:
+            for key in ('cache_write_5m','cache_write_1h'):
+                if usage[key]['value']==0:
+                    continue
+                if key not in rates:
+                    complete=False
+                else:
+                    value+=usage[key]['value']*rates[key]/1_000_000
         else:
             complete=False
         subtotal+=value
@@ -126,6 +159,19 @@ def estimate_cost(rows,prices):
             missing+=1
     return dict(value=subtotal if not missing else None,known_subtotal=subtotal,currency=prices['currency'],
         effective_date=prices['effective_date'],complete=not missing,unknown_invocations=missing,basis='estimated_list_prices')
+
+
+def relationship(first,second):
+    if first['_coverage']&second['_coverage'] or first['_whole_sessions']&second['_sessions'] or second['_whole_sessions']&first['_sessions']:
+        return 'overlapping_invocations'
+    if (first['format']=='clavain-receipt-v1') != (second['format']=='clavain-receipt-v1'):
+        receipt,provider=(first,second) if first['format']=='clavain-receipt-v1' else (second,first)
+        binding=receipt['_provider_binding']
+        if binding is not None and binding in provider['_sessions']:
+            return 'overlapping_invocations'
+        if not receipt['_binding_validated'] or not provider['_sessions']:
+            return 'unresolved_overlap'
+    return None
 
 
 def build_ledger(manifest,directory,prices=None):
@@ -145,11 +191,11 @@ def build_ledger(manifest,directory,prices=None):
     for i in range(len(rows)):
         for j in range(i):
             first,second=all_sources[i],all_sources[j]
-            overlap=any(a['_coverage']&b['_coverage'] or a['_whole_sessions']&b['_sessions'] or b['_whole_sessions']&a['_sessions'] for a in first for b in second)
-            if overlap:
+            issues={issue for a in first for b in second if (issue:=relationship(a,b))}
+            if issues:
                 for n in (i,j):
                     rows[n]['usage']=empty_fields(); rows[n]['complete']=False
-                    rows[n]['reasons']=sorted(set(rows[n]['reasons']+['overlapping_invocations']))
+                    rows[n]['reasons']=sorted(set(rows[n]['reasons'])|issues)
     totals={}
     for key in FIELDS:
         fields=[r['usage'][key] for r in rows]

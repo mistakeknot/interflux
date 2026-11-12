@@ -45,7 +45,8 @@ def empty_fields():
 def observation(alias,fmt):
     return dict(source_id=alias,format=fmt,usage_status=None,basis=None,usage=empty_fields(),raw_counts=[],
         requested_model=None,actual_model=None,requested_effort=None,actual_effort=None,lifecycle='unknown',
-        reasons=[],complete=False,_coverage=set(),_sessions=set(),_whole_sessions=set(),_related=set(),_listed=set(),_related_unknown=False)
+        reasons=[],complete=False,_coverage=set(),_sessions=set(),_whole_sessions=set(),_related=set(),_listed=set(),_related_unknown=False,
+        _provider_binding=None,_binding_validated=False)
 
 
 def normalize(raw,basis,complete,reasons):
@@ -143,6 +144,8 @@ def select_equal(row,selector,keys):
 def combine_messages(raws,complete,reasons):
     """Required missing fields remain missing across distinct logical messages."""
     keys=set().union(*(r.keys() for r in raws)) if raws else set()
+    if any(value is not None and number(value) is None for raw in raws for value in raw.values()):
+        reasons.append('invalid_count')
     return {k:sum(r[k] for r in raws) if all(number(r.get(k)) is not None for r in raws) else None for k in keys}
 
 
@@ -178,6 +181,11 @@ def adapt_receipt(out,records,selector,related):
         requested_model=model(row.get('model')),requested_effort=effort(row.get('effort')),lifecycle=state(row.get('outcome')))
     raw={k:row[v] for k,v in RECEIPT_KEYS.items() if v in row}
     out['raw_counts']=[native_counts(row)]
+    if out['basis']=='codex-input-includes-cached' or row.get('backend')=='codex':
+        out['reasons'].append('usage_scope_unknown')
+        # This gate follows the accounting basis even if backend metadata is
+        # missing or inconsistent. Ambient receipt.session_id is never a join.
+        return
     if status=='unavailable':
         out['reasons'].append('usage_unavailable'); return
     # Older Claude adapters may have supplied these zeros for absent fields.
@@ -185,11 +193,6 @@ def adapt_receipt(out,records,selector,related):
         for key in list(raw):
             if raw[key]==0:
                 raw[key]=None; out['reasons'].append('legacy_zero_uncertain')
-    if row.get('backend')=='codex':
-        out['reasons'].append('usage_scope_unknown')
-        # Its counters were summed by the receipt adapter without independent
-        # scope evidence. Preserve native observations, not an asserted total.
-        return
     if row.get('parent_tool_use_id') or row.get('includes_subagents'):
         out['reasons'].append('parent_scope_unknown')
     complete=status=='complete' and not (set(out['reasons'])-{'related_identity_missing'})
@@ -238,16 +241,23 @@ def adapt_assistant(out,records,selector):
         out['reasons'].append('model_conflict')
     out.update(basis='claude-input-excludes-cache',usage_status='partial' if out['reasons'] else 'complete')
     out['usage']=normalize(combine_messages(raws,False,out['reasons']),out['basis'],bool(raws) and not out['reasons'],out['reasons'])
+    if out['reasons']:
+        out['usage_status']='partial'
 
 
 def adapt_codex(out,records,selector):
     session=selector.get('session_id'); indices=selector.get('record_indices')
     if not isinstance(session,str) or not isinstance(indices,list) or not indices or not all(type(i) is int and i>=0 for i in indices):
         out['reasons'].append('selector_missing'); return
-    active=None; chosen=[]; session_turns=0
+    active=None; chosen=[]; session_turns=0; started=0; failed=False; bindings=0; later_start=False
     for i,row in records:
         if row.get('type')=='thread.started':
             active=row.get('thread_id')
+            bindings+=active==session
+        if active==session:
+            later_start=later_start or row.get('type')=='turn.started' and session_turns>0
+            started+=row.get('type')=='turn.started'
+            failed=failed or row.get('type') in ('turn.failed','turn.error','error')
         if row.get('type')=='turn.completed' and active==session:
             session_turns+=1
         if i in indices and row.get('type')=='turn.completed' and active==session:
@@ -261,7 +271,7 @@ def adapt_codex(out,records,selector):
         raws.append(provider_counts(usage,'codex') if isinstance(usage,dict) else {})
         out['raw_counts'].append(native_counts(usage) if isinstance(usage,dict) else {})
         out['_coverage'].add(('codex-turn',session,i)); out['_sessions'].add(session)
-    if len(raws)!=1 or session_turns!=1:
+    if len(raws)!=1 or session_turns!=1 or started>1 or failed or bindings>1 or later_start:
         out['reasons'].append('usage_scope_unknown')
         out['usage_status']='partial'; return
     out['usage_status']='partial' if out['reasons'] else 'complete'
@@ -327,6 +337,7 @@ def adapt_cumulative(out,records,selector,terminal_result=False):
 
 def adapt(source,directory):
     out=observation(source['source_id'],source['format'])
+    out['_provider_binding']=source.get('provider_session_id')
     records,reasons=read_records(directory/source['path']); out['reasons'].extend(reasons)
     selector=source.get('selector',{})
     fmt=source['format']

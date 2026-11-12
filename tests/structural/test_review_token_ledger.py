@@ -83,6 +83,7 @@ def test_conflicting_message_request_mapping_prevents_exact_total(tmp_path):
 
 def test_duplicate_receipts_and_alternative_views_not_added(tmp_path):
     r=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    r['provider_session_id']='session-a'
     t=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
     report,code=run(tmp_path,[invocation([r,t])],{'r':[receipt(),receipt()],'t':[assistant()]})
     assert code==0 and field(report,'input_total')['value']==60
@@ -93,6 +94,7 @@ def test_n4_conflicts_only_compare_observed_values(tmp_path):
     r=receipt(); r.pop('tokens_cached_in'); r['usage_status']='partial'
     ss=[source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a')),
         source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))]
+    ss[0]['provider_session_id']='session-a'
     report,code=run(tmp_path,[invocation(ss)],{'r':[r],'t':[assistant()]})
     assert code==0 and field(report,'cache_read')['value']==20
     assert report['invocations'][0]['sources'][0]['usage_status']=='partial'
@@ -204,12 +206,13 @@ def test_explicit_estimates_do_not_become_measurements(tmp_path):
 def test_price_cost_is_estimate_with_unknown_models_incomplete(tmp_path):
     s=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
     prices=dict(schema_version=1,currency='USD',effective_date='2026-01-01',models={'claude-test':dict(
-        input_uncached=1,cache_read=0.1,cache_write=2,output=3)})
-    report,code=run(tmp_path,[invocation([s])],{'t':[assistant()]},prices=prices)
+        input_uncached=1,cache_read=0.1,cache_write_5m=1.25,cache_write_1h=2,output=3)})
+    row=assistant(); row['message']['usage']['cache_creation']=dict(ephemeral_5m_input_tokens=0,ephemeral_1h_input_tokens=30)
+    report,code=run(tmp_path,[invocation([s])],{'t':[row]},prices=prices)
     assert code==0 and report['estimated_list_cost']['complete']
     assert report['estimated_list_cost']['value']==pytest.approx(0.000087)
     prices['models']={}
-    report,code=run(tmp_path,[invocation([s])],{'t':[assistant()]},prices=prices)
+    report,code=run(tmp_path,[invocation([s])],{'t':[row]},prices=prices)
     assert code==1 and not report['estimated_list_cost']['complete']
 
 
@@ -364,3 +367,144 @@ def test_raw_observations_keep_native_count_names(tmp_path):
     raw=report['invocations'][0]['sources'][0]['raw_counts'][0]
     assert raw['tokens_in']==10 and raw['tokens_cached_in']==20
     assert 'input_uncached' not in raw
+
+
+@pytest.mark.parametrize('tail',[
+    [dict(type='turn.started')],
+    [dict(type='turn.started'),dict(type='turn.failed',error={'message':'PRIVATE ERROR'})],
+    [dict(type='error',message='PRIVATE ERROR')],
+    [dict(type='thread.started',thread_id='session-a'),dict(type='turn.started'),dict(type='turn.failed')]])
+def test_review_p1_started_failed_or_error_turn_cannot_hide_scope(tmp_path,tail):
+    events=[dict(type='thread.started',thread_id='session-a'),dict(type='turn.started'),
+        dict(type='turn.completed',usage=dict(input_tokens=100,cached_input_tokens=30,
+            cache_write_input_tokens=0,output_tokens=4))]+tail
+    s=source('codex-events-v1','c',dict(session_id='session-a',record_indices=[2]))
+    report,code=run(tmp_path,[invocation([s])],{'c':events})
+    assert code==1 and 'usage_scope_unknown' in report['invocations'][0]['reasons']
+    assert field(report,'input_total')['value'] is None
+    assert not report['totals']['output']['complete'] and 'PRIVATE ERROR' not in json.dumps(report)
+
+
+def test_review_p1_later_start_is_unknown_even_without_initial_start_record(tmp_path):
+    events=[dict(type='thread.started',thread_id='session-a'),dict(type='turn.completed',
+        usage=dict(input_tokens=100,cached_input_tokens=30,cache_write_input_tokens=0,output_tokens=4)),dict(type='turn.started')]
+    s=source('codex-events-v1','c',dict(session_id='session-a',record_indices=[1]))
+    report,code=run(tmp_path,[invocation([s])],{'c':events})
+    assert code==1 and field(report,'output')['value'] is None
+    assert 'usage_scope_unknown' in report['invocations'][0]['reasons']
+
+
+@pytest.mark.parametrize('optional',[
+    dict(output_tokens_details=dict(thinking_tokens=-3)),
+    dict(cache_creation=dict(ephemeral_5m_input_tokens=True)),
+    dict(output_tokens='bad')])
+def test_review_p2_1_invalid_message_counts_have_diagnostic(tmp_path,optional):
+    row=assistant(); row['message']['usage'].update(optional)
+    s=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
+    report,code=run(tmp_path,[invocation([s])],{'t':[row]})
+    assert code==1 and 'invalid_count' in report['invocations'][0]['reasons']
+    assert report['invocations'][0]['sources'][0]['usage_status']=='partial'
+
+
+def test_review_p2_2_requested_identity_and_lifecycle_conflicts(tmp_path):
+    r=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a')); r['provider_session_id']='session-a'
+    c=source('claude-cumulative-v1','c',dict(dispatch_id='dispatch-a',invocation_id='inv-a'))
+    record=dict(type='usage.cumulative',schema_version=1,dispatch_id='dispatch-a',invocation_id='inv-a',
+        session_id='session-a',requested_identity='claude-other',status='failed',sequence=1,
+        input_tokens=10,cache_read_input_tokens=20,cache_creation_input_tokens=30,output_tokens=5,terminal=True,complete=True)
+    report,code=run(tmp_path,[invocation([r,c])],{'r':[receipt()],'c':[record]})
+    row=report['invocations'][0]
+    assert code==1 and row['requested_model'] is None and row['lifecycle']=='unknown'
+    assert {'requested_model_conflict','lifecycle_conflict'}<=set(row['reasons'])
+    assert not report['totals']['output']['complete']
+
+
+def test_review_p2_3_distinct_attempts_are_not_alternative_views(tmp_path):
+    first,last=receipt(),receipt(); last['attempt_id']='attempt-b'
+    sources=[source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a',attempt_id=a)) for a in ('attempt-a','attempt-b')]
+    sources[1]['source_id']='second'
+    report,code=run(tmp_path,[invocation(sources)],{'r':[first,last]})
+    assert code==1 and 'multiple_attempts' in report['invocations'][0]['reasons']
+    assert not report['totals']['input_total']['complete']
+
+
+@pytest.mark.parametrize('binding,expected',[(None,'provider_session_binding_missing'),('wrong','provider_session_binding_conflict'),('session-a',None)])
+def test_review_p2_3_explicit_provider_binding_ignores_ambient_parent(tmp_path,binding,expected):
+    r=receipt(); r['session_id']='ambient-parent'
+    s=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    if binding is not None:
+        s['provider_session_id']=binding
+    t=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
+    report,code=run(tmp_path,[invocation([s,t])],{'r':[r],'t':[assistant()]})
+    assert code==(1 if expected else 0)
+    if expected:
+        assert expected in report['invocations'][0]['reasons']
+    assert 'ambient-parent' not in json.dumps(report)
+
+
+def test_review_p2_3_shared_parent_is_not_attempt_identity(tmp_path):
+    first,last=receipt(),receipt(); last['attempt_id']='attempt-b'
+    first['session_id']=last['session_id']='same-parent'
+    calls=[invocation([source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a',attempt_id=a))],ident=i)
+        for a,i in [('attempt-a','one'),('attempt-b','two')]]
+    report,code=run(tmp_path,calls,{'r':[first,last]})
+    assert code==0 and report['totals']['input_total']['known_subtotal']==120
+
+
+@pytest.mark.parametrize('binding,reason',[(None,'unresolved_overlap'),('session-a','overlapping_invocations')])
+def test_review_p2_4_cross_kind_overlap_cannot_double_charge(tmp_path,binding,reason):
+    r=receipt(); r['session_id']='ambient-parent'
+    s=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    if binding:
+        s['provider_session_id']=binding
+    t=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
+    report,code=run(tmp_path,[invocation([s],'receipt-view'),invocation([t],'provider-view')],{'r':[r],'t':[assistant()]})
+    assert code==1 and report['totals']['input_total']['known_subtotal']==0
+    assert all(reason in row['reasons'] for row in report['invocations'])
+
+
+@pytest.mark.parametrize('backend',[None,'unknown','claude'])
+def test_review_p2_5_codex_basis_keeps_receipt_scope_unknown(tmp_path,backend):
+    r=receipt(); r.update(backend=backend,usage_basis='codex-input-includes-cached',tokens_in=100)
+    report,code=run(tmp_path,[invocation([source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))])],{'r':[r]})
+    assert code==1 and field(report,'input_total')['value'] is None
+    assert 'usage_scope_unknown' in report['invocations'][0]['reasons']
+
+
+@pytest.mark.parametrize('ttl_rate',[2,None])
+def test_review_p2_6_cache_writes_require_ttl_rates(tmp_path,ttl_rate):
+    row=assistant(); row['message']['usage']['cache_creation']=dict(ephemeral_5m_input_tokens=0,ephemeral_1h_input_tokens=30)
+    rates=dict(input_uncached=1,cache_read=.1,output=3,cache_write=1.25,cache_write_5m=1.25)
+    if ttl_rate is not None:
+        rates['cache_write_1h']=ttl_rate
+    prices=dict(schema_version=1,currency='USD',effective_date='2026-01-01',models={'claude-test':rates})
+    s=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
+    report,code=run(tmp_path,[invocation([s])],{'t':[row]},prices=prices)
+    assert code==(0 if ttl_rate else 1)
+    if ttl_rate:
+        assert report['estimated_list_cost']['value']==pytest.approx(0.000087)
+    else:
+        assert not report['estimated_list_cost']['complete']
+
+
+def test_review_bound_disjoint_provider_sessions_can_be_added(tmp_path):
+    calls=[]; receipts=[]; messages=[]
+    for suffix in ('a','b'):
+        r=receipt(); r.update(attempt_id='attempt-'+suffix,session_id='shared-parent')
+        receipts.append(r)
+        message=assistant('message-'+suffix); message['sessionId']='session-'+suffix
+        messages.append(message)
+        rs=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a',attempt_id='attempt-'+suffix))
+        rs['provider_session_id']='session-'+suffix
+        ts=source('claude-assistant-v1','t',dict(session_id='session-'+suffix,message_ids=['message-'+suffix]))
+        calls.append(invocation([rs,ts],ident='call-'+suffix))
+    report,code=run(tmp_path,calls,{'r':receipts,'t':messages})
+    assert code==0 and report['totals']['input_total']['known_subtotal']==120
+
+
+def test_review_invalid_required_count_in_distinct_messages_has_reason(tmp_path):
+    first,last=assistant('one'),assistant('two'); last['message']['usage']['output_tokens']=-1
+    s=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['one','two']))
+    report,code=run(tmp_path,[invocation([s])],{'t':[first,last]})
+    assert code==1 and field(report,'output')['value'] is None
+    assert 'invalid_count' in report['invocations'][0]['reasons']
