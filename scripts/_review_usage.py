@@ -225,10 +225,12 @@ def adapt_codex(out,records,selector):
     session=selector.get('session_id'); indices=selector.get('record_indices')
     if not isinstance(session,str) or not isinstance(indices,list) or not indices or not all(type(i) is int and i>=0 for i in indices):
         out['reasons'].append('selector_missing'); return
-    active=None; chosen=[]
+    active=None; chosen=[]; session_turns=0
     for i,row in records:
         if row.get('type')=='thread.started':
             active=row.get('thread_id')
+        if row.get('type')=='turn.completed' and active==session:
+            session_turns+=1
         if i in indices and row.get('type')=='turn.completed' and active==session:
             chosen.append((i,row))
     if len(chosen)!=len(set(indices)):
@@ -240,7 +242,7 @@ def adapt_codex(out,records,selector):
         raws.append(provider_counts(usage,'codex') if isinstance(usage,dict) else {})
         out['_coverage'].add(('codex-turn',session,i)); out['_sessions'].add(session)
     out['raw_counts']=[{k:number(v) for k,v in r.items()} for r in raws]
-    if len(raws)!=1:
+    if len(raws)!=1 or session_turns!=1:
         out['reasons'].append('usage_scope_unknown')
         out['usage_status']='partial'; return
     out['usage_status']='partial' if out['reasons'] else 'complete'

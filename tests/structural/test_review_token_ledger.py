@@ -344,3 +344,13 @@ def test_runnable_synthetic_manifest_fixture():
     assert proc.returncode==0
     report=json.loads(proc.stdout)
     assert report['totals']['input_total']['known_subtotal']==60
+
+
+def test_selecting_one_codex_record_cannot_hide_multiturn_scope(tmp_path):
+    fixture=ROOT/'tests/fixtures/review-evidence/usage/codex-two-turns.jsonl'
+    events=[json.loads(line) for line in fixture.read_text().splitlines()]
+    events[2]['usage']['cache_write_input_tokens']=0
+    s=source('codex-events-v1','c',dict(session_id='session-a',record_indices=[2]))
+    report,code=run(tmp_path,[invocation([s])],{'c':events})
+    assert code==1 and field(report,'input_total')['value'] is None
+    assert 'usage_scope_unknown' in report['invocations'][0]['reasons']
