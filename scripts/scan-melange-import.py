@@ -249,17 +249,25 @@ def decoded_view(data: bytes, name: str) -> str | None:
 
 
 LONG_RUN = re.compile(r"[A-Za-z0-9_-]{4097,}")
+JWT_AFTER_HYPHEN = re.compile(r"(?=-eyJ)")
+
+
+def _shorten_run(match: re.Match[str]) -> str:
+    # A JWT may begin right after a hyphen inside a long run (both detectors allow that
+    # boundary), so cut the run into pieces that each start at such a hyphen and keep the head
+    # of every piece: no admissible start is discarded.
+    return "".join(piece[:4096] for piece in JWT_AFTER_HYPHEN.split(match.group(0)))
 
 
 def shrink_long_runs(text: str) -> str:
-    """Cut each run of base64url characters longer than 4096 down to 4096.
+    """Cut each run of base64url characters longer than 4096 down to a bounded size.
 
     Gitleaks reads its input in roughly 100 KB chunks, so a token whose segment is longer
     than a chunk is never matched whole. A JWT only needs a few characters per segment to be
     recognised, so the shortened view keeps its shape and lets Gitleaks see it. It is an
     extra view: the original bytes are scanned as well.
     """
-    return LONG_RUN.sub(lambda match: match.group(0)[:4096], text)
+    return LONG_RUN.sub(_shorten_run, text)
 
 
 def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tuple[bool, bool]:
