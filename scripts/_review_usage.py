@@ -99,6 +99,19 @@ def provider_counts(usage,backend='claude'):
     return result
 
 
+def native_counts(value):
+    """Allowlisted original field names, without renaming cached-inclusive input."""
+    keys={'input_tokens','output_tokens','cached_input_tokens','cache_read_input_tokens',
+        'cache_creation_input_tokens','cache_write_input_tokens','reasoning_output_tokens',
+        'tokens_in','tokens_cached_in','tokens_cache_write_in','tokens_out','tokens_reasoning_out'}
+    result={k:number(value[k]) for k in sorted(keys) if k in value}
+    for parent,children in (('cache_creation',('ephemeral_5m_input_tokens','ephemeral_1h_input_tokens')),
+                            ('output_tokens_details',('thinking_tokens',))):
+        if isinstance(value.get(parent),dict):
+            result[parent]={k:number(value[parent][k]) for k in children if k in value[parent]}
+    return result
+
+
 def read_records(path):
     try:
         text=Path(path).read_bytes().decode('utf-8')
@@ -164,7 +177,7 @@ def adapt_receipt(out,records,selector,related):
     out.update(basis=row.get('usage_basis') if row.get('usage_basis') in ('codex-input-includes-cached','claude-input-excludes-cache') else None,
         requested_model=model(row.get('model')),requested_effort=effort(row.get('effort')),lifecycle=state(row.get('outcome')))
     raw={k:row[v] for k,v in RECEIPT_KEYS.items() if v in row}
-    out['raw_counts']=[{k:number(v) for k,v in raw.items()}]
+    out['raw_counts']=[native_counts(row)]
     if status=='unavailable':
         out['reasons'].append('usage_unavailable'); return
     # Older Claude adapters may have supplied these zeros for absent fields.
@@ -174,10 +187,16 @@ def adapt_receipt(out,records,selector,related):
                 raw[key]=None; out['reasons'].append('legacy_zero_uncertain')
     if row.get('backend')=='codex':
         out['reasons'].append('usage_scope_unknown')
+        # Its counters were summed by the receipt adapter without independent
+        # scope evidence. Preserve native observations, not an asserted total.
+        return
     if row.get('parent_tool_use_id') or row.get('includes_subagents'):
         out['reasons'].append('parent_scope_unknown')
     complete=status=='complete' and not (set(out['reasons'])-{'related_identity_missing'})
     out['usage']=normalize(raw,out['basis'],complete,out['reasons'])
+    for field in out['usage'].values():
+        if field['value'] is not None:
+            field['quality']='derived'
 
 
 def adapt_assistant(out,records,selector):
@@ -211,8 +230,8 @@ def adapt_assistant(out,records,selector):
         msg=row['message']; usage=msg.get('usage')
         if not isinstance(usage,dict):
             usage={}; out['reasons'].append('usage_missing')
+        out['raw_counts'].append(native_counts(usage))
         raws.append(provider_counts(usage)); models.add(model(msg.get('model')))
-    out['raw_counts']=[{k:number(v) for k,v in r.items()} for r in raws]
     if len(models)==1:
         out['actual_model']=next(iter(models))
     elif models:
@@ -240,8 +259,8 @@ def adapt_codex(out,records,selector):
     for i,row in chosen:
         usage=row.get('usage')
         raws.append(provider_counts(usage,'codex') if isinstance(usage,dict) else {})
+        out['raw_counts'].append(native_counts(usage) if isinstance(usage,dict) else {})
         out['_coverage'].add(('codex-turn',session,i)); out['_sessions'].add(session)
-    out['raw_counts']=[{k:number(v) for k,v in r.items()} for r in raws]
     if len(raws)!=1 or session_turns!=1:
         out['reasons'].append('usage_scope_unknown')
         out['usage_status']='partial'; return
@@ -302,7 +321,7 @@ def adapt_cumulative(out,records,selector,terminal_result=False):
     if 'model_identity_conflict' in out['reasons']:
         out['actual_model']=None
     raw=provider_counts(usage)
-    out['raw_counts']=[{k:number(v) for k,v in raw.items()}]
+    out['raw_counts']=[native_counts(usage)]
     out['usage']=normalize(raw,out['basis'],complete and not out['reasons'],out['reasons'])
 
 

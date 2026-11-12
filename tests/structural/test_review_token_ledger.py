@@ -156,6 +156,7 @@ def test_codex_multi_turn_scope_stays_unknown_in_events_and_receipts(tmp_path):
     r=receipt(); r.update(backend='codex',usage_basis='codex-input-includes-cached',tokens_in=100)
     report,code=run(tmp_path,[invocation([source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))])],{'r':[r]})
     assert code==1 and 'usage_scope_unknown' in report['invocations'][0]['reasons']
+    assert field(report,'input_total')['value'] is None
 
 
 def test_cumulative_terminal_is_used_once_and_not_added_to_messages(tmp_path):
@@ -354,3 +355,12 @@ def test_selecting_one_codex_record_cannot_hide_multiturn_scope(tmp_path):
     report,code=run(tmp_path,[invocation([s])],{'c':events})
     assert code==1 and field(report,'input_total')['value'] is None
     assert 'usage_scope_unknown' in report['invocations'][0]['reasons']
+
+
+def test_raw_observations_keep_native_count_names(tmp_path):
+    s=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    report,code=run(tmp_path,[invocation([s])],{'r':[receipt()]})
+    assert code==0
+    raw=report['invocations'][0]['sources'][0]['raw_counts'][0]
+    assert raw['tokens_in']==10 and raw['tokens_cached_in']==20
+    assert 'input_uncached' not in raw
