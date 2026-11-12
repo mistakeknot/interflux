@@ -385,8 +385,11 @@ def evaluate_files(gold_path,runs_path,judgments_path=None,mode='candidates'):
                     public['complete']=False
             results.append(public)
         complete=all(r['available'] and r.get('complete',False) for r in results)
+        limitations=['semantic_review_not_evaluated'] if mode=='candidates' else []
+        if any(not r['available'] for r in results):
+            limitations.append('ablation_unavailable')
         report=dict(schema_version=1,mode=mode,run_status='complete' if complete or mode=='candidates' else 'incomplete',
-            snapshot=gold['snapshot'],labels_complete=gold['labels_complete'],runs=results,
+            snapshot=gold['snapshot'],labels_complete=gold['labels_complete'],limitations=limitations,runs=results,
             gold_items=[dict(id=g['id'],disposition=g['disposition'],kind=g['kind'],
                 eligible=g['disposition']=='accepted' and g['kind'] in ('decision','plain_fix')) for g in gold['items']],
             judgments=records,coverage=coverage)

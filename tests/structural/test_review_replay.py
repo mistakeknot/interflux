@@ -511,3 +511,15 @@ def test_matched_findings_keep_extra_validity_and_explicit_diagnostics(tmp_path,
     report,code=evaluate(tmp_path,'score')
     assert code==0 and report['runs'][0]['matched_finding_validity'][0]['diagnostics']==[]
     assert len(report['judgments'])==3
+
+
+@pytest.mark.parametrize('unavailable_ablation',[False,True])
+def test_candidates_top_level_reports_semantic_and_unavailable_scope_limits(tmp_path,unavailable_ablation):
+    prepare(tmp_path)
+    if unavailable_ablation:
+        path=tmp_path/'runs.json'; data=json.loads(path.read_text())
+        data['runs'][0]['ablations']=[dict(id='missing',stage='blind',passes=['blind-a'])]
+        path.write_text(json.dumps(data))
+    report,code=evaluate(tmp_path)
+    assert code==0 and 'semantic_review_not_evaluated' in report['limitations']
+    assert ('ablation_unavailable' in report['limitations'])==unavailable_ablation

@@ -151,4 +151,9 @@ Exit 0: candidates generated (semantic limitation explicit), or fully covered
 scoring. Exit 1: incomplete labels, semantic adjudication, extra validity,
 requested cost coverage or unavailable ablations. Exit 2: invalid structure,
 snapshot/parser mismatch, stale binding or dangling judgment references.
+In candidates mode, top-level `run_status: "complete"` describes candidate
+generation only. The top-level `limitations` always includes
+`semantic_review_not_evaluated`, and includes `ablation_unavailable` when a
+declared ablation has no usable separate artifact. Individual scope records
+retain their availability reasons and semantic-coverage flags.
 No acceptance threshold, default-review change or actual replay is introduced.
