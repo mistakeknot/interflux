@@ -471,6 +471,13 @@ def test_a_filler_does_not_invent_whitespace_syntax_in_a_harmless_stretch(text):
     assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
 
 
+@pytest.mark.parametrize("pad", [65000, 70000, 82000])
+def test_bearer_context_split_by_a_piece_cut_is_kept_at_any_size(pad):
+    scanner = load_module("scan_ascii_bearer_split", SCAN_SCRIPT)
+    text = "\u00e9Bearer " + "A1b2C3d4" * 4 + "=" * pad
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
+
+
 def test_a_non_ascii_oversized_stretch_without_a_token_is_not_residue():
     scanner = load_module("scan_ascii_boundary_clean", SCAN_SCRIPT)
     text = "\u00e9" + "word" + "=" * 82000
