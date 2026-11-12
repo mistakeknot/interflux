@@ -1,0 +1,66 @@
+# Gitleaks configuration for the melange review-import residue scan.
+#
+# Independently authored RE2 rules. Each rule mirrors one scrubber pattern in
+# hooks/redact-melange-write.py so that a scrubbed artifact scans clean and a
+# residual secret is flagged. There is deliberately no base-config block, no
+# inherited rule set and no suppression list: nothing can be suppressed from here.
+#
+# Boundary form for the five named formats: a body must not touch another
+# identifier character (letters, digits, underscore, hyphen) on either side.
+# RE2 has no lookaround, so the neighbouring character is consumed and the
+# secret is reported through secretGroup = 1.
+
+title = "melange import residue scan"
+
+[[rules]]
+id = "melange-private-key-block"
+description = "PEM private key block"
+regex = '''-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----'''
+
+[[rules]]
+id = "melange-assigned-secret"
+description = "Named credential assigned a literal value"
+regex = '''(?i)(?:_authToken|api[_-]?key|auth[_-]?token|access[_-]?token|secret[_-]?key)["']?\s*[:=]\s*["']?([A-Za-z0-9_./+=:$!@%&~^-]{8,})'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-package-and-vcs-tokens"
+description = "npm, GitHub and sk- style tokens"
+regex = '''\b((?:npm_[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}))\b'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-bearer-token"
+description = "Bearer authorization value"
+regex = '''(?i)\bBearer\s+([A-Za-z0-9._~+/-]{20,})'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-aws-access-key"
+description = "AWS access key identifier"
+regex = '''(?:^|[^A-Za-z0-9_-])((?:AKIA|ASIA)[A-Z0-9]{16})(?:$|[^A-Za-z0-9_-])'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-slack-token"
+description = "Slack API token"
+regex = '''(?:^|[^A-Za-z0-9_-])((?:xoxa|xoxb|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{10,})(?:$|[^A-Za-z0-9_-])'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-stripe-key"
+description = "Stripe secret or restricted key"
+regex = '''(?:^|[^A-Za-z0-9_-])((?:sk_live|sk_test|rk_live|rk_test)_[A-Za-z0-9_-]{16,})(?:$|[^A-Za-z0-9_-])'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-google-api-key"
+description = "Google API key"
+regex = '''(?:^|[^A-Za-z0-9_-])(AIza[A-Za-z0-9_-]{35})(?:$|[^A-Za-z0-9_-])'''
+secretGroup = 1
+
+[[rules]]
+id = "melange-jwt"
+description = "JSON web token: exactly three dot-separated segments"
+regex = '''(?:^|[^A-Za-z0-9_.])(eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?:$|[^A-Za-z0-9_.=-]|\.(?:$|[^A-Za-z0-9_=-]))'''
+secretGroup = 1
