@@ -454,6 +454,40 @@ def test_a_chunk_end_cannot_turn_a_rejected_jwt_shape_into_residue(tail):
     assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
 
 
+@pytest.mark.parametrize("pad", [44000, 50000, 120000])
+def test_many_short_runs_cannot_carry_a_rejected_shape_across_a_gitleaks_chunk(pad):
+    scanner = load_module("scan_many_runs", SCAN_SCRIPT)
+    text = "a " * pad + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "="
+    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
+def test_the_unsplit_view_really_trips_gitleaks_at_a_chunk_end():
+    # Guards the test above against passing vacuously: with no splitting, this shape is flagged.
+    scanner = load_module("scan_unsplit", SCAN_SCRIPT)
+    text = ("a " * 45000 + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "=").encode()
+    assert scanner.gitleaks_flags(str(GITLEAKS), text) is True
+
+
+def test_a_real_jwt_is_still_found_after_a_long_run_of_short_words():
+    scanner = load_module("scan_words_then_jwt", SCAN_SCRIPT)
+    token = "ey" + "Jhbgcd" + ".abcdefgh12.ABCDEFGH12"
+    for pad in (44000, 45000, 90000):
+        text = "a " * pad + token
+        residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
+        assert (residue, failed) == (True, False)
+
+
+def test_pieces_cover_the_view_exactly_and_never_split_a_token():
+    scanner = load_module("scan_pieces", SCAN_SCRIPT)
+    for view in (b"", b"abc", b"a b\n" * 30000, b"x" * 100000, b"x" * 100000 + b" y", b"a " * 70000):
+        pieces = list(scanner.gitleaks_pieces(view))
+        assert b"".join(pieces) == view
+        for piece in pieces[:-1]:
+            assert piece[-1:] in (b" ", b"\n", b"\t", b"\r") or b" " not in piece
+        if b" " in view or b"\n" in view:
+            assert all(len(piece) <= scanner.PIECE_LIMIT + 2 for piece in pieces[:-1]) or b"x" * 100000 in view
+
+
 @pytest.mark.parametrize("before", [" ", "-", "(", "="])
 def test_bounding_keeps_a_start_after_each_admissible_boundary(before):
     scanner = load_module("scan_boundaries", SCAN_SCRIPT)

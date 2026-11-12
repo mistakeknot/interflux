@@ -29,6 +29,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 EXIT_OK = 0
@@ -288,6 +289,45 @@ def shrink_long_runs(text: str) -> str:
     return LONG_RUN.sub(_shorten_run, text)
 
 
+PIECE_LIMIT = 64_000
+_BREAKS = (b"\n", b" ", b"\t", b"\r")
+
+
+def gitleaks_pieces(view: bytes):
+    """Yield the view in pieces of about PIECE_LIMIT bytes, each cut right after whitespace.
+
+    Gitleaks reads its input in chunks (observed to end near 90 KB in 8.30.1, with or without line breaks) and a chunk end can fake the
+    end of a token, so a harmless shape that the Python detector rejects can be flagged at an
+    artificial boundary. A piece that is smaller than a chunk never reaches one, and whitespace
+    cannot lie inside a token, so no token is split. A line break is preferred, since a rule
+    may span a space. A view with no whitespace to cut at is passed on whole from the first
+    whitespace after the limit, which is no worse than the unsplit view. The Python scrubber
+    reads every view whole, so a context that spans a cut is still caught there.
+    """
+    pos, size = 0, len(view)
+    while pos < size:
+        end = min(pos + PIECE_LIMIT, size)
+        if end < size:
+            cut = max(view.rfind(b"\n", pos, end), -1)
+            if cut < 0:
+                cut = max(view.rfind(mark, pos, end) for mark in _BREAKS)
+            if cut >= 0:
+                end = cut + 1
+            else:
+                later = [i for i in (view.find(mark, end) for mark in _BREAKS) if i >= 0]
+                end = min(later) + 1 if later else size
+        yield view[pos:end]
+        pos = end
+
+
+def _flags_or_fault(binary: str, piece: bytes) -> bool | None:
+    """Gitleaks' verdict on one piece, or None when it could not be had."""
+    try:
+        return gitleaks_flags(binary, piece)
+    except ScannerFailure:
+        return None
+
+
 def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tuple[bool, bool]:
     """Return (residue, failed). A scrubber hit is residue even when Gitleaks failed."""
     if not data:
@@ -322,12 +362,13 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
             views[index] = shrunk.encode("utf-8", errors="replace")
     if binary is None:
         return residue, True
-    for view in views:
-        try:
-            if gitleaks_flags(binary, view):
+    pieces = [piece for view in views for piece in gitleaks_pieces(view)]
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(pieces)))) as pool:
+        for outcome in pool.map(lambda piece: _flags_or_fault(binary, piece), pieces):
+            if outcome is None:
+                failed = True
+            elif outcome:
                 residue = True
-        except ScannerFailure:
-            failed = True
     return residue, failed
 
 
