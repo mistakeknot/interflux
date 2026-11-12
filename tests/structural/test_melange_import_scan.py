@@ -415,3 +415,37 @@ def test_a_long_header_jwt_is_found_in_the_run_tree(ctx):
     token = "ey" + "Jhbgc" + "a" * 1200 + ".abcdefgh12.ABCDEFGH12"
     (ctx.run / "round-1-synthesis.md").write_text("t " + token + "\n")
     assert scan(ctx).returncode == 20
+
+
+# ------------------------------- review follow-up: scanner robustness and long tokens
+
+
+@pytest.mark.parametrize("header_length", [5000, 150000, 1000000])
+def test_gitleaks_alone_finds_a_jwt_whose_header_is_longer_than_its_read_chunk(header_length):
+    scanner = load_module("scan_long_jwt", SCAN_SCRIPT)
+    token = "ey" + "Jhbgc" + "a" * header_length + ".abcdefgh12.ABCDEFGH12"
+    # A scrubber that never reports anything isolates Gitleaks as the only detector.
+    residue, failed = scanner.bytes_have_residue(lambda text: text, str(GITLEAKS), ("t=" + token + "\n").encode(), "x.md")
+    assert residue is True and failed is False
+
+
+def test_a_json_surrogate_before_a_secret_is_residue_not_a_crash(ctx):
+    (ctx.run / "findings.json").write_text('{"a": "\\ud800' + AWS_KEY + '"}\n')
+    result = scan(ctx)
+    assert result.returncode == 20
+    assert "Traceback" not in result.stderr
+
+
+def test_a_secret_free_surrogate_file_does_not_stop_the_scan(ctx):
+    (ctx.run / "a-surrogate.json").write_text('{"a": "\\ud800 plain"}\n')
+    (ctx.run / "z-later.md").write_text("key " + AWS_KEY + "\n")
+    result = scan(ctx)
+    assert result.returncode == 20
+    assert "z-later.md" in result.stdout + result.stderr
+
+
+def test_json_nested_too_deeply_is_a_scanner_failure_not_a_crash(ctx):
+    (ctx.run / "deep.json").write_text("[" * 10000 + "]" * 10000 + "\n")
+    result = scan(ctx)
+    assert result.returncode == 22
+    assert "Traceback" not in result.stderr

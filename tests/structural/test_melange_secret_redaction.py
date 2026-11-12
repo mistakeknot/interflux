@@ -516,6 +516,21 @@ def test_import_and_scan_commands_are_admitted_in_their_exact_form():
     assert bash_decision(import_cmd(hash=HASH, run=RUN)) == "allow"
 
 
+@pytest.mark.parametrize("doc", ["skills/flux-melange-engine/references/import-review.md", "commands/flux-melange.md"])
+def test_the_documented_import_command_is_admitted_as_written(doc):
+    text = (ROOT / doc).read_text()
+    lines = [l for l in text.splitlines() if l.startswith("python3 -I ") and "import-melange-review.py" in l]
+    assert lines, "the documentation must show the import command on one line"
+    for line in lines:
+        command = (
+            line.replace("<run>", f'"{RUN}"')
+            .replace("<receipt.json>", f'"{RECEIPT}"')
+            .replace("<report.md>", f'"{REPORT}"')
+            .replace("<64 lowercase hex>", f'"{HASH}"')
+        )
+        assert bash_decision(command) == "allow", line
+
+
 @pytest.mark.parametrize(
     "command",
     [

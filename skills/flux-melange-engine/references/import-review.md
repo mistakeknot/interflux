@@ -6,12 +6,10 @@ Everything in a bundle is **external evidence**, not a run finding. The importer
 
 ## Commands
 
-Always run both scripts under isolated mode, with the literal plugin-root prefix. Absolute script paths are not admitted by the melange Bash guard.
+Always run both scripts under isolated mode, with the literal plugin-root prefix, each as a single line (the guard rejects backslash continuations and newlines). Absolute script paths are not admitted by the melange Bash guard.
 
 ```bash
-python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py" \
-  --run-dir <run> --receipt <receipt.json> --report <report.md> \
-  --report-sha256 <64 lowercase hex>
+python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py" --run-dir <run> --receipt <receipt.json> --report <report.md> --report-sha256 <64 lowercase hex>
 
 python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py" --run-dir <run>
 ```

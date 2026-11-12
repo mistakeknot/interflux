@@ -1277,3 +1277,34 @@ def test_an_unremovable_published_bundle_is_reported_not_hidden(ctx, monkeypatch
     monkeypatch.setattr(mod, "_renameat2", rename_then_fail)
     monkeypatch.setattr(mod.shutil, "rmtree", rmtree_fails)
     assert mod.main(argv) == 21
+
+
+def test_an_interrupt_right_after_the_rename_still_takes_the_bundle_back(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_rename = mod._renameat2
+
+    calls = {"n": 0}
+
+    def rename_then_interrupt(*args):
+        calls["n"] += 1
+        real_rename(*args)
+        if calls["n"] == 1:
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(mod, "_renameat2", rename_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        mod.main(argv)
+    assert not any(ctx.imports.iterdir())
+    assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")
+
+
+def test_a_rename_that_really_failed_is_not_taken_back(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+
+    def failing_rename(*args):
+        raise OSError(errno.ENOSPC, "no space")
+
+    monkeypatch.setattr(mod, "_renameat2", failing_rename)
+    assert mod.main(argv) == 21
+    assert not any(ctx.imports.iterdir())
+    assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")

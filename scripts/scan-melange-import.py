@@ -231,6 +231,8 @@ def decoded_view(data: bytes, name: str) -> str | None:
             strings = json_strings(json.loads(text, object_pairs_hook=Pairs))
         except ValueError:
             return None
+        except RecursionError as exc:
+            raise ScannerFailure("JSON is nested too deeply to decode") from exc
     elif lowered.endswith(".jsonl"):
         for line in text.splitlines():
             if not line.strip():
@@ -239,9 +241,25 @@ def decoded_view(data: bytes, name: str) -> str | None:
                 strings.extend(json_strings(json.loads(line, object_pairs_hook=Pairs)))
             except ValueError:
                 strings.append(line)
+            except RecursionError as exc:
+                raise ScannerFailure("JSON is nested too deeply to decode") from exc
     else:
         return None
     return "\n".join(strings)
+
+
+LONG_RUN = re.compile(r"[A-Za-z0-9_-]{4097,}")
+
+
+def shrink_long_runs(text: str) -> str:
+    """Cut each run of base64url characters longer than 4096 down to 4096.
+
+    Gitleaks reads its input in roughly 100 KB chunks, so a token whose segment is longer
+    than a chunk is never matched whole. A JWT only needs a few characters per segment to be
+    recognised, so the shortened view keeps its shape and lets Gitleaks see it. It is an
+    extra view: the original bytes are scanned as well.
+    """
+    return LONG_RUN.sub(lambda match: match.group(0)[:4096], text)
 
 
 def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tuple[bool, bool]:
@@ -252,12 +270,16 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
     views: list[bytes] = [data]
     residue = scrub(text) != text
     candidates = [text]
-    decoded = decoded_view(data, name)
+    failed = False
+    try:
+        decoded = decoded_view(data, name)
+    except ScannerFailure:
+        decoded, failed = None, True
     if decoded is not None:
         residue = residue or scrub(decoded) != decoded
-        views.append(decoded.encode("utf-8"))
+        # A lone surrogate from a JSON escape cannot be encoded: it becomes a replacement mark.
+        views.append(decoded.encode("utf-8", errors="replace"))
         candidates.append(decoded)
-    failed = False
     for candidate in candidates:
         try:
             unescaped = unescape_text(candidate)
@@ -266,7 +288,12 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
             continue
         if unescaped != candidate:
             residue = residue or scrub(unescaped) != unescaped
-            views.append(unescaped.encode("utf-8"))
+            views.append(unescaped.encode("utf-8", errors="replace"))
+    for view in list(views):
+        original = view.decode("utf-8", errors="replace")
+        shrunk = shrink_long_runs(original)
+        if shrunk != original:
+            views.append(shrunk.encode("utf-8", errors="replace"))
     if binary is None:
         return residue, True
     for view in views:

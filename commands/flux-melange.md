@@ -19,9 +19,7 @@ melange stops before dispatch when peer mode is requested. The default is
 A run can take in one separately produced review (a receipt plus a report) as external, unverified evidence. This is a file import, not a live peer, and it does not change `--peers=off` or ordinary runs. The operator imports it into an existing run before synthesis begins:
 
 ```bash
-python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py" \
-  --run-dir <run> --receipt <receipt.json> --report <report.md> \
-  --report-sha256 <64 lowercase hex>
+python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py" --run-dir <run> --receipt <receipt.json> --report <report.md> --report-sha256 <64 lowercase hex>
 ```
 
 `--report-sha256` is the hash the operator recorded when the report was packaged; a mismatch is refused. The coordinator then records why the review applies to the target and assimilates the bundle after the loop (`skills/flux-melange-engine/references/import-review.md`).

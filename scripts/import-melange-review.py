@@ -873,6 +873,16 @@ def _take_back(imports_fd: int, bundle: str, staging_fd: int) -> str | None:
     raise ImportFailure(EXIT_CONFLICT, "the published bundle could not be removed; delete it before assimilating")
 
 
+def _staging_entry_gone(staging_fd: int, name: str) -> bool:
+    try:
+        os.lstat(name, dir_fd=staging_fd)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], binary: str) -> None:
     """Publish the bundle through pinned directory descriptors.
 
@@ -923,9 +933,11 @@ def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], bina
             return
         if late_import(run_fd) or other_bundles(imports_fd, bundle):
             raise ImportFailure(EXIT_LATE)
+        stage = "none"  # none -> staged (work directory exists) -> renamed (bundle is visible)
         try:
             work_name = f"{bundle[:16]}-{secrets.token_hex(8)}"
             os.mkdir(work_name, 0o700, dir_fd=staging_fd)
+            stage = "staged"
             work_fd = keep(_open_dir(work_name, staging_fd))
             for name, data in sorted(files.items()):
                 *directories, leaf = name.split("/")
@@ -934,16 +946,20 @@ def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], bina
                     target = keep(_ensure_dir_at(target, part))
                 _write_file_at(target, leaf, data)
             _renameat2(staging_fd, work_name, imports_fd, bundle)
+            stage = "renamed"
             work_name = None
-        except OSError as exc:
-            raise ImportFailure(EXIT_CONFLICT, "could not publish the bundle") from exc
-        # The bundle is visible now. Any failure from here on must take it back out, so that
-        # no admissible bundle is left that an assimilation snapshot may have missed.
-        try:
+            # The bundle is visible now. Any failure from here on must take it back out, so
+            # that no admissible bundle is left that an assimilation snapshot may have missed.
             if late_import(run_fd):
                 raise ImportFailure(EXIT_LATE)
-        except BaseException:
-            work_name = _take_back(imports_fd, bundle, staging_fd)
+        except BaseException as exc:
+            if stage == "staged" and work_name is not None and _staging_entry_gone(staging_fd, work_name):
+                # The rename completed but an interruption landed before it was recorded.
+                stage, work_name = "renamed", None
+            if stage == "renamed":
+                work_name = _take_back(imports_fd, bundle, staging_fd)
+            if isinstance(exc, OSError):
+                raise ImportFailure(EXIT_CONFLICT, "could not publish the bundle") from exc
             raise
     finally:
         if work_name is not None and staging_fd >= 0:
