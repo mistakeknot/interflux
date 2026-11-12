@@ -264,17 +264,18 @@ def _shorten_run(match: re.Match[str]) -> str:
     two heads long however many starts the run holds.
     """
     run = match.group(0)
+    last = run[-1]  # a rule's trailing boundary can turn on this character, so it stays
     before = match.string[match.start() - 1] if match.start() > 0 else ""
     start = 0 if run.startswith("eyJ") and before != "." else -1
     if start < 0:
         found = HYPHEN_START.search(run)
         if found is None:
-            return run[:RUN_LIMIT]
+            return run[:RUN_LIMIT] + last
         start = found.start() + 1
     lead = run[: min(start, RUN_LIMIT)]
     if start > 0 and not lead.endswith("-"):
         lead += "-"  # the hyphen that made this start admissible
-    return lead + run[start : start + RUN_LIMIT]
+    return lead + run[start : start + RUN_LIMIT] + last
 
 
 def shrink_long_runs(text: str) -> str:
@@ -291,6 +292,8 @@ def shrink_long_runs(text: str) -> str:
 
 PIECE_LIMIT = 64_000
 _BREAKS = (b"\n", b" ", b"\t", b"\r")
+# Punctuation that no rule's token class contains, used only where a window has no whitespace.
+_SOFT_BREAKS = (b",", b";", b"|", b"(", b")", b"[", b"]", b"{", b"}", b"<", b">", b'"', b"'")
 
 
 def gitleaks_pieces(view: bytes):
@@ -300,21 +303,24 @@ def gitleaks_pieces(view: bytes):
     end of a token, so a harmless shape that the Python detector rejects can be flagged at an
     artificial boundary. A piece that is smaller than a chunk never reaches one, and whitespace
     cannot lie inside a token, so no token is split. A line break is preferred, since a rule
-    may span a space. A view with no whitespace to cut at is passed on whole from the first
-    whitespace after the limit, which is no worse than the unsplit view. The Python scrubber
+    may span a space, and punctuation that no token contains is used when a window has no
+    whitespace. A view with neither to cut at is passed on whole from the first such character
+    after the limit, which is no worse than the unsplit view. The Python scrubber
     reads every view whole, so a context that spans a cut is still caught there.
     """
     pos, size = 0, len(view)
     while pos < size:
         end = min(pos + PIECE_LIMIT, size)
         if end < size:
-            cut = max(view.rfind(b"\n", pos, end), -1)
+            cut = view.rfind(b"\n", pos, end)
             if cut < 0:
                 cut = max(view.rfind(mark, pos, end) for mark in _BREAKS)
+            if cut < 0:
+                cut = max(view.rfind(mark, pos, end) for mark in _SOFT_BREAKS)
             if cut >= 0:
                 end = cut + 1
             else:
-                later = [i for i in (view.find(mark, end) for mark in _BREAKS) if i >= 0]
+                later = [i for i in (view.find(mark, end) for mark in _BREAKS + _SOFT_BREAKS) if i >= 0]
                 end = min(later) + 1 if later else size
         yield view[pos:end]
         pos = end

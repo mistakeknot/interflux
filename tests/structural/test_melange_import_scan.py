@@ -488,6 +488,24 @@ def test_pieces_cover_the_view_exactly_and_never_split_a_token():
             assert all(len(piece) <= scanner.PIECE_LIMIT + 2 for piece in pieces[:-1]) or b"x" * 100000 in view
 
 
+@pytest.mark.parametrize("mark", [",", ";", "|", ")", '"'])
+@pytest.mark.parametrize("pad", [45000, 120000])
+def test_views_without_whitespace_are_cut_at_punctuation_not_inside_a_token(mark, pad):
+    scanner = load_module("scan_punctuation", SCAN_SCRIPT)
+    text = ("a" + mark) * pad + "ey" + "Jaaaaa" + ".abcdefgh12." + "b" * 3000 + "="
+    assert scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
+@pytest.mark.parametrize("last", ["_", "a", "-"])
+def test_shortening_keeps_the_character_that_ends_a_long_run(last):
+    scanner = load_module("scan_run_end", SCAN_SCRIPT)
+    text = "xox" + "b-" + "a" * 5000 + last
+    residue, failed = scanner.bytes_have_residue(lambda value: value, str(GITLEAKS), text.encode(), "x.md")
+    # "_" disqualifies the Slack shape in both detectors; "a" and "-" leave it a real token.
+    assert failed is False
+    assert residue is (last != "_")
+
+
 @pytest.mark.parametrize("before", [" ", "-", "(", "="])
 def test_bounding_keeps_a_start_after_each_admissible_boundary(before):
     scanner = load_module("scan_boundaries", SCAN_SCRIPT)
