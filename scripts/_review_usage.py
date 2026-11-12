@@ -271,6 +271,9 @@ def adapt_codex(out,records,selector):
         raws.append(provider_counts(usage,'codex') if isinstance(usage,dict) else {})
         out['raw_counts'].append(native_counts(usage) if isinstance(usage,dict) else {})
         out['_coverage'].add(('codex-turn',session,i)); out['_sessions'].add(session)
+        # Turn indices are local to a stream file, not thread-global identities.
+        # Without additive-scope proof, resumed captures share whole-thread scope.
+        out['_whole_sessions'].add(session)
     if len(raws)!=1 or session_turns!=1 or started>1 or failed or bindings>1 or later_start:
         out['reasons'].append('usage_scope_unknown')
         out['usage_status']='partial'; return

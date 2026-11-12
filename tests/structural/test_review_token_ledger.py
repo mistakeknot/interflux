@@ -532,3 +532,31 @@ def test_review_n1_one_invocation_cannot_collapse_distinct_workers(tmp_path,kind
         assert 'provider_session_conflict' in report['invocations'][0]['reasons']
         assert not report['totals']['input_total']['complete']
         assert len(report['invocations'][0]['sources'])==2
+
+
+@pytest.mark.parametrize('same_thread,different_indices,cache_write',[
+    (True,True,True),(True,False,True),(True,True,False),(False,True,True)])
+def test_store_review_codex_resume_across_streams_is_not_additive(tmp_path,same_thread,different_indices,cache_write):
+    usage=dict(input_tokens=100,cached_input_tokens=30,output_tokens=4)
+    if cache_write:
+        usage['cache_write_input_tokens']=0
+    files={}; calls=[]
+    for label in ('a','b'):
+        thread='worker-thread-a' if label=='a' or same_thread else 'worker-thread-b'
+        events=[dict(type='thread.started',thread_id=thread)]
+        if label=='b' and different_indices:
+            events.append(dict(type='item.completed',item={'id':'padding'}))
+        events.extend([dict(type='turn.started'),dict(type='turn.completed',usage=usage)])
+        files[label]=events
+        calls.append(invocation([source('codex-events-v1',label,
+            dict(session_id=thread,record_indices=[len(events)-1]))],ident='call-'+label))
+    report,code=run(tmp_path,calls,files)
+    if same_thread:
+        assert code==1 and report['totals']['input_total']['known_subtotal']==0
+        assert not report['totals']['input_total']['complete']
+        assert all('overlapping_invocations' in row['reasons'] for row in report['invocations'])
+        assert all(row['usage']['input_total']['value'] is None for row in report['invocations'])
+        assert all(row['sources'][0]['raw_counts'] for row in report['invocations'])
+    else:
+        assert code==0 and report['totals']['input_total']['known_subtotal']==200
+    assert 'worker-thread-' not in json.dumps(report)
