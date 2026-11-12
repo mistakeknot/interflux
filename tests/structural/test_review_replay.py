@@ -447,3 +447,49 @@ def test_synthetic_fixture_example_is_runnable(tmp_path):
     assert code==0 and report['runs'][0]['metrics']['decision_recall']['value']==1
     assert report['runs'][0]['metrics']['plain_fix_recall']['value']==1
     assert report['runs'][0]['extras'][0]['status']=='valid'
+
+
+@pytest.mark.parametrize('positive_attestation',[False,True])
+@pytest.mark.parametrize('all_pairs_reviewed',[False,True])
+def test_bound_negative_coverage_keeps_unmatched_gold_unresolved(tmp_path,positive_attestation,all_pairs_reviewed):
+    prepare(tmp_path); candidates,_=evaluate(tmp_path)
+    pairs=[('f','g-d','same_issue')]
+    if all_pairs_reviewed:
+        pairs.append(('f','g-p','different_issue'))
+    data=judgments(tmp_path,candidates,pairs,coverage=True)
+    negative=dict(data['coverage'][0],id='negative-coverage',complete=False,
+        judge=dict(id='other-human',family='human',kind='human'),reason='Review coverage is incomplete.')
+    data['coverage']=(data['coverage'] if positive_attestation else [])+[negative]
+    (tmp_path/'judgments.json').write_text(json.dumps(data))
+    report,code=evaluate(tmp_path,'score'); scope=report['runs'][0]
+    assert code==1 and not scope['semantic_coverage_complete']
+    assert not scope['metrics']['plain_fix_recall']['complete']
+    assert scope['unmatched_gold']==[dict(gold_id='g-p',status='unresolved')]
+
+
+@pytest.mark.parametrize('complete',[False,True])
+def test_coverage_resolution_explicitly_supersedes_dispute_and_preserves_records(tmp_path,complete):
+    prepare(tmp_path); candidates,_=evaluate(tmp_path)
+    data=judgments(tmp_path,candidates,[('f','g-d','same_issue')],coverage=True)
+    data['coverage'].append(dict(data['coverage'][0],id='negative-coverage',complete=False))
+    data['resolutions']=[dict(data['coverage'][0],id='coverage-resolution',complete=complete,
+        supersedes=['coverage-0','negative-coverage'])]
+    (tmp_path/'judgments.json').write_text(json.dumps(data))
+    report,code=evaluate(tmp_path,'score')
+    assert code==(0 if complete else 1)
+    assert report['runs'][0]['semantic_coverage_complete']==complete
+    assert {r['id'] for r in report['coverage']}=={'coverage-0','negative-coverage','coverage-resolution'}
+    assert report['runs'][0]['unmatched_gold'][0]['status']==('missed' if complete else 'unresolved')
+
+
+@pytest.mark.parametrize('problem',['dangling','cross_group','cycle','stale'])
+def test_coverage_resolution_requires_same_group_acyclic_current_binding(tmp_path,problem):
+    prepare(tmp_path); candidates,_=evaluate(tmp_path)
+    data=judgments(tmp_path,candidates,[('f','g-d','same_issue')],coverage=True)
+    row=dict(data['coverage'][0],id='coverage-resolution',supersedes=['coverage-0'])
+    if problem=='dangling': row['supersedes']=['missing']
+    if problem=='cross_group': row['supersedes']=['j-0']
+    if problem=='cycle': row['supersedes']=['coverage-resolution']
+    if problem=='stale': row['inputs_sha256']='0'*64
+    data['resolutions']=[row]; (tmp_path/'judgments.json').write_text(json.dumps(data))
+    assert evaluate(tmp_path,'score')[1]==2

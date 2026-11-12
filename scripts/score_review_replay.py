@@ -230,7 +230,8 @@ def load_judgments(path,scopes,gold):
             require(isinstance(raw,dict) and identifier(raw.get('id')) and raw['id'] not in all_ids,'duplicate_judgment_id')
             all_ids.add(raw['id']); row=dict(raw,ablation_id=raw.get('ablation_id'))
             allowed={'id','run_id','ablation_id','type','inputs_sha256','judge','reason'}
-            allowed|={'complete'} if category=='coverage' else {'finding_id','gold_id','verdict'}
+            is_coverage=category=='coverage' or category=='resolutions' and row.get('type')=='semantic'
+            allowed|={'complete'} if is_coverage else {'finding_id','gold_id','verdict'}
             if category=='resolutions':
                 allowed.add('supersedes')
             require(set(row)<=allowed and judge_valid(row.get('judge')) and isinstance(row.get('reason'),str) and row['reason'],'invalid_judgment')
@@ -238,7 +239,9 @@ def load_judgments(path,scopes,gold):
             scope=by_scope.get((row.get('run_id'),row['ablation_id']))
             require(scope is not None,'dangling_scope')
             require(row.get('inputs_sha256')==scope['inputs_sha256'],'stale_judgment_binding')
-            if category=='coverage':
+            if category=='resolutions':
+                row['supersedes']=string_set(row.get('supersedes'),identifier,True)
+            if is_coverage:
                 require(row.get('type')=='semantic' and type(row.get('complete')) is bool,'invalid_coverage')
                 coverage.append(row); continue
             require(row.get('finding_id') in {f['original']['id'] for f in scope['_findings']},'dangling_finding')
@@ -249,11 +252,10 @@ def load_judgments(path,scopes,gold):
                 require(row.get('verdict') in ('same_issue','different_issue','uncertain'),'invalid_match_verdict')
             else:
                 require('gold_id' not in row and row.get('verdict') in ('valid','invalid','uncertain'),'invalid_extra_verdict')
-            if category=='resolutions':
-                row['supersedes']=string_set(row.get('supersedes'),identifier,True)
             records.append(row)
-    by_id={r['id']:r for r in records}; removed=set(); adjacency={r['id']:[] for r in records}; degrees=dict.fromkeys(by_id,0)
-    for row in records:
+    all_records=records+coverage
+    by_id={r['id']:r for r in all_records}; removed=set(); adjacency={r['id']:[] for r in all_records}; degrees=dict.fromkeys(by_id,0)
+    for row in all_records:
         for target in row.get('supersedes',[]):
             require(target in by_id and group_key(by_id[target])==group_key(row),'invalid_superseded_reference')
             adjacency[row['id']].append(target); degrees[target]+=1; removed.add(target)
@@ -264,9 +266,9 @@ def load_judgments(path,scopes,gold):
             degrees[target]-=1
             if degrees[target]==0:
                 queue.append(target)
-    require(visited==len(records),'resolution_cycle')
+    require(visited==len(all_records),'resolution_cycle')
     groups=defaultdict(list)
-    for row in records:
+    for row in all_records:
         if row['id'] not in removed:
             groups[group_key(row)].append(row)
     return sorted(records,key=lambda r:r['id']),sorted(coverage,key=lambda r:r['id']),groups
@@ -277,7 +279,7 @@ def resolved(rows):
     return next(iter(values)) if len(values)==1 else 'uncertain'
 
 
-def score_scope(scope,gold,groups,coverage):
+def score_scope(scope,gold,groups):
     eligible={g['id']:g['kind'] for g in gold['items'] if g['disposition']=='accepted' and g['kind'] in ('decision','plain_fix')}
     fids=[f['original']['id'] for f in scope['_findings']]
     run,ablation=scope['run_id'],scope['ablation_id']
@@ -285,11 +287,13 @@ def score_scope(scope,gold,groups,coverage):
     edges={(f,g) for (f,g),rows in matches.items() if g in eligible and resolved(rows)=='same_issue'}
     result=PriorityMatcher(eligible,fids,edges).analyze()
     chosen={r['gold_id']:r['finding_id'] for r in result['matching']['assignment']}
-    attested=any(c['run_id']==run and c['ablation_id']==ablation and c['complete'] for c in coverage)
+    active_coverage=groups.get((run,ablation,'semantic',None,None),[])
+    coverage_blocked=any(not c['complete'] for c in active_coverage)
+    attested=bool(active_coverage) and not coverage_blocked
     all_pairs={(f,g) for f in fids for g in eligible}
     complete_pairs={pair for pair,rows in matches.items() if pair in all_pairs and resolved(rows)!='uncertain'}
     unresolved_pairs=any(pair in all_pairs and resolved(rows)=='uncertain' for pair,rows in matches.items())
-    semantic=(attested or complete_pairs==all_pairs) and not unresolved_pairs
+    semantic=(attested or complete_pairs==all_pairs) and not unresolved_pairs and not coverage_blocked
     metrics={}
     for kind,key in (('decision','decision_recall'),('plain_fix','plain_fix_recall')):
         denominator=sum(value==kind for value in eligible.values()); matched=sum(eligible[g]==kind for g in chosen)
@@ -368,7 +372,7 @@ def evaluate_files(gold_path,runs_path,judgments_path=None,mode='candidates'):
             if scope['available']:
                 public['cost']=cost_summary(scope)
             if scope['available'] and mode=='score':
-                public.update(score_scope(scope,gold,groups,coverage))
+                public.update(score_scope(scope,gold,groups))
                 if scope['_token_ledger'] is not None and not public['cost'].get('coverage_complete',False):
                     public['complete']=False
             results.append(public)

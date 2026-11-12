@@ -85,6 +85,13 @@ and `reason`. `complete: true` attests review of the entire selected finding/gol
 universe and completeness of supplied positive edges. Exhaustively resolved
 pairs also establish coverage; an empty pair universe is vacuously covered.
 An attestation cannot resolve a conflicting or uncertain pair.
+Any unsuperseded `complete: false` coverage record keeps semantic review
+incomplete, even if another record says true or all individual pairs have
+judgments. An external coverage resolution uses `type: "semantic"`, `complete`,
+judge/reason/binding and nonempty `supersedes` IDs in `resolutions`. It may
+supersede only coverage records for that same run/ablation and current binding.
+Cycles and dangling references fail. Original coverage records and coverage
+resolutions are all retained in the report's `coverage` array.
 
 ## Matching and ambiguity
 
