@@ -107,8 +107,10 @@ comment is explicitly diagnosed at its opener, including any potential hidden
 structure; unclosed-comment spans also identify their original opener.
 Nested list content is prose when supported by a preceding list container;
 indentation at least four spaces beyond that container's content column is code.
-Fences use indentation relative to the list content column. Fences and thematic
-breaks reset list context, so stale list state cannot reclassify later code as prose.
+Fences use indentation relative to the list content column. Fences, thematic
+breaks and Setext underlines pop list context only to their own container:
+column-zero blocks end list context, while blocks inside an item preserve the
+enclosing list so later nested bullets and paragraphs remain prose.
 An unclosed opening frontmatter delimiter produces an explicit diagnostic and
 the source is parsed as Markdown. Multiline Setext headings are explicitly
 unsupported and diagnosed across their whole block, without guessing a shorter

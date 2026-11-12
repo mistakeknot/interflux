@@ -123,10 +123,12 @@ def markdown_regions(text, diagnostics=None):
             opening = re.match(r'(`{3,}|~{3,})',relative) if 0 <= indent-content_indent <= 3 else None
             if opening:
                 fence = (opening[1][0], len(opening[1]), content_indent)
-                list_content_indents.clear()
                 kind = 'code'
             elif re.fullmatch(r'(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,}',relative) and 0 <= indent-content_indent <= 3:
-                list_content_indents.clear()
+                # The indentation pass already popped to this block's container.
+                # A break (or Setext underline) is not a new list marker and must
+                # retain its enclosing list; a column-zero block already popped it.
+                pass
             else:
                 marker = re.match(r'(?:[-*+]|\d+[.)])[ \t]+',stripped[len(indent_text):])
                 if stripped.strip():

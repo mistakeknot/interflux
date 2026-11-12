@@ -26,8 +26,8 @@ def test_n1_list_fences_do_not_extract_or_hide_later_headings(indent):
     assert not idx['references'] and not idx['definitions']
 
 
-@pytest.mark.parametrize('prefix',['* * *\n','- item\n```\nexample\n```\n','- item\n    * * *\n'])
-def test_n1_fences_and_thematic_break_reset_list_context(prefix):
+@pytest.mark.parametrize('prefix',['* * *\n','- item\n```\nexample\n```\n'])
+def test_n1_top_level_boundaries_end_list_context(prefix):
     text=prefix+'\n    real code §88\n'
     idx=build_index(text.encode(),'docs/d.md',profile())
     assert not idx['references']
