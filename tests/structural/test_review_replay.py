@@ -131,6 +131,7 @@ def prepare(tmp_path,findings=None,items=None,count=1):
             dict(id='g-p',disposition='accepted',kind='plain_fix',sections=[sections[1]],claim='Plain issue.')]
     if findings is None:
         findings=[dict(id='f',claim='Paraphrase needing external judgment.',location='docs/example.md:2')]
+    findings=[dict(row,pass_id='blind-a') if 'pass_id' not in row and 'pass_ids' not in row else row for row in findings]
     (tmp_path/'index.json').write_bytes(canonical_json(idx))
     (tmp_path/'gold.json').write_bytes(canonical_json(dict(schema_version=1,snapshot=snapshot,index='index.json',items=items)))
     runs=[]
@@ -249,7 +250,7 @@ def test_stale_judgment_binding_or_dangling_ids_invalid(tmp_path,mutation):
 
 def test_location_ranges_keep_declared_and_derived_representations(tmp_path):
     sections=prepare(tmp_path)
-    row=dict(id='f',claim='Cross-section issue.',location='./docs//example.md:2-4',sections=[sections[0]])
+    row=dict(id='f',claim='Cross-section issue.',location='./docs//example.md:2-4',sections=[sections[0]],pass_id='blind-a')
     (tmp_path/'findings-0.jsonl').write_text(json.dumps(row)+'\n')
     report,code=evaluate(tmp_path)
     finding=report['runs'][0]['findings'][0]
@@ -534,3 +535,34 @@ def test_non_ascii_location_digits_do_not_infer_sections(tmp_path,suffix):
     judgments(tmp_path,report,[('f','g-d','same_issue')],coverage=True)
     scored,code=evaluate(tmp_path,'score')
     assert code==0 and scored['runs'][0]['matching']['decision_matches']==1
+
+
+@pytest.mark.parametrize('provenance,valid',[
+    ({'pass_id':'blind-a'},True),({'pass_ids':['blind-a']},True),
+    ({'pass_id':'blind-a','pass_ids':['blind-a','blind-b']},True),
+    ({},False),({'pass_ids':[]},False),({'pass_ids':'blind-a'},False),
+    ({'pass_id':None},False),({'pass_id':['blind-a']},False),
+    ({'pass_id':'outside','pass_ids':['blind-a']},False),
+    ({'pass_id':None,'pass_ids':['blind-a']},False),
+    ({'pass_id':'blind-a','pass_ids':['blind-b']},False),
+    ({'pass_ids':['blind-a','blind-a']},False),
+    ({'pass_id':'blind-a','pass_ids':[]},False),
+    ({'pass_id':'blind-a','pass_ids':['outside']},False)])
+def test_pass_provenance_is_required_validated_and_consistent(tmp_path,provenance,valid):
+    prepare(tmp_path)
+    path=tmp_path/'runs.json'; manifest=json.loads(path.read_text()); manifest['runs'][0]['passes']=['blind-a','blind-b']
+    path.write_text(json.dumps(manifest))
+    row=dict(id='f',claim='Issue.',location='docs/example.md:2',**provenance)
+    (tmp_path/'findings-0.jsonl').write_text(json.dumps(row)+'\n')
+    report,code=evaluate(tmp_path)
+    assert code==(0 if valid else 2)
+
+
+@pytest.mark.parametrize('provenance',[{}, {'pass_id':'blind-b','pass_ids':['blind-a']}])
+def test_ablation_cannot_hide_missing_or_out_of_scope_primary_pass(tmp_path,provenance):
+    prepare(tmp_path)
+    path=tmp_path/'runs.json'; manifest=json.loads(path.read_text()); manifest['runs'][0]['passes']=['blind-a','blind-b']
+    manifest['runs'][0]['ablations']=[dict(id='only-a',stage='blind',passes=['blind-a'],findings='pre.jsonl')]
+    path.write_text(json.dumps(manifest))
+    (tmp_path/'pre.jsonl').write_text(json.dumps(dict(id='f',claim='Issue.',location='docs/example.md:2',**provenance))+'\n')
+    assert evaluate(tmp_path)[1]==2

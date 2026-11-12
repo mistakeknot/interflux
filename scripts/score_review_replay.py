@@ -151,8 +151,14 @@ def load_findings_file(path,mode,gold,passes):
     result=[]
     for row in effective:
         require(identifier(row['id']),'invalid_finding_id')
-        row_passes=string_set(row['pass_ids'],alias) if 'pass_ids' in row else [row['pass_id']] if 'pass_id' in row else []
+        require('pass_id' in row or 'pass_ids' in row,'missing_finding_pass_provenance')
+        primary=row.get('pass_id')
+        if 'pass_id' in row:
+            require(alias(primary),'invalid_finding_pass_id')
+            require(primary in passes,'finding_pass_outside_scope')
+        row_passes=string_set(row['pass_ids'],alias,True) if 'pass_ids' in row else [primary]
         require(set(row_passes)<=set(passes),'finding_pass_outside_scope')
+        require('pass_id' not in row or primary in row_passes,'inconsistent_finding_pass_provenance')
         if 'split_from' in row:
             provenance=row.get('split_provenance')
             require(identifier(row['split_from']) and isinstance(provenance,dict)

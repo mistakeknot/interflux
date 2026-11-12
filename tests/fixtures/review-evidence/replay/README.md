@@ -32,7 +32,11 @@ has a unique public-safe `id`, the same `snapshot`, a relative `findings` path,
 `input_mode` (`snapshot` or `ledger`), a public-safe `stage`, and nonempty `passes`.
 The supplied artifact is the explicit selected finding set; the scorer never
 derives surfaced findings from verification stamps or pools separate runs.
-Optional finding `pass_id`/`pass_ids` must lie within the declared scope.
+Every finding must declare `pass_id`, a nonempty `pass_ids` array, or both.
+All values must be public-safe pass aliases within the selected scope. If both
+fields are present, both are validated and `pass_ids` must include `pass_id`;
+empty, malformed, contradictory or out-of-scope provenance is invalid. These
+checks also apply independently to each ablation's selected pass subset.
 
 Finding records require `id`, `claim` and `location`. The shared findings loader
 handles full-row ledger stamps, duplicate records and immutable-field conflicts.
