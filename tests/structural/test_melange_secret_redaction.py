@@ -340,3 +340,228 @@ def test_shell_wrapper_forwards_melange_write_to_scrubber():
     )
 
     assert json.loads(proc.stdout)["hookSpecificOutput"]["updatedInput"]["content"] == MARKER
+
+
+# --- Five named secret formats (bead mk-shn5e) -------------------------------
+# Credential-shaped strings are assembled from fragments so this file never
+# contains a literal that a scanner would flag.
+
+AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
+AWS_SESSION_KEY = "ASIA" + "IOSFODNN7EXAMPLE"
+SLACK_TOKEN = "xox" + "b-123456789012-abcdefghijkl"
+STRIPE_KEY = "sk_" + "live_" + "A1b2C3d4E5f6G7h8I9j0"
+STRIPE_RESTRICTED = "rk_" + "test_" + "A1b2C3d4E5f6G7h8I9j0"
+GOOGLE_KEY = "AI" + "za" + "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p67"
+JWT = "ey" + "J" + "hbGci." + "abcdefgh12." + "ABCDEFGH12"
+
+FORMATS = {
+    "aws": AWS_KEY,
+    "aws-session": AWS_SESSION_KEY,
+    "slack": SLACK_TOKEN,
+    "stripe": STRIPE_KEY,
+    "stripe-restricted": STRIPE_RESTRICTED,
+    "google": GOOGLE_KEY,
+    "jwt": JWT,
+}
+
+
+def hook_filter(text: str) -> str:
+    proc = subprocess.run(
+        [sys.executable, str(HOOK), "--filter"],
+        input=text,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return proc.stdout
+
+
+@pytest.mark.parametrize("name", sorted(FORMATS))
+@pytest.mark.parametrize(
+    "template",
+    [
+        "{s}",
+        "value {s} end",
+        "name={s}",
+        "name: {s}",
+        '{{"name": "{s}"}}',
+        "https://example.test/x?token={s}&y=1",
+        "X-Token: {s}",
+        "Authorization: Bearer {s}",
+        "see ({s}).",
+        "quoted '{s}' text",
+    ],
+)
+def test_named_formats_are_scrubbed_in_every_context(name, template):
+    secret = FORMATS[name]
+    scrubbed = hook_filter(template.format(s=secret))
+    assert secret not in scrubbed
+    assert MARKER in scrubbed
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit"])
+def test_named_formats_are_scrubbed_by_every_write_tool(tool, tmp_path: Path):
+    path = tmp_path / "docs" / "research" / "flux-melange" / "r" / "heat-ledger.jsonl"
+    text = " | ".join(FORMATS.values())
+    if tool == "Write":
+        original = {"file_path": str(path), "content": text}
+        key = lambda d: d["content"]
+    elif tool == "Edit":
+        original = {"file_path": str(path), "old_string": "x", "new_string": text}
+        key = lambda d: d["new_string"]
+    else:
+        original = {"file_path": str(path), "edits": [{"old_string": "x", "new_string": text}]}
+        key = lambda d: d["edits"][0]["new_string"]
+    guarded = key(updated_input(call_hook(tool, original), original))
+    for secret in FORMATS.values():
+        assert secret not in guarded
+    assert guarded.count(MARKER) == len(FORMATS)
+
+
+def test_named_format_boundaries_avoid_identifier_over_redaction():
+    # Longer identifier-like runs and glued prefixes are not credentials.
+    for glued in ("x" + AWS_KEY, AWS_KEY + "Z", "my_" + STRIPE_KEY):
+        assert hook_filter(glued) == glued
+    # Too-short bodies are not credentials.
+    assert hook_filter("AKIA" + "SHORT") == "AKIA" + "SHORT"
+    assert hook_filter("xox" + "b-short") == "xox" + "b-short"
+    assert hook_filter("AI" + "za" + "tooshort") == "AI" + "za" + "tooshort"
+
+
+def test_jwt_boundaries():
+    # '=' directly before a token is an assignment, so it is redacted.
+    assert MARKER in hook_filter("jwt=" + JWT)
+    assert MARKER in hook_filter("id_token==" + JWT)
+    # Sentence-final dot and surrounding punctuation still redact.
+    assert hook_filter("it was " + JWT + ".") == "it was " + MARKER + "."
+    assert hook_filter("(" + JWT + ")") == "(" + MARKER + ")"
+    # A token inside a longer dotted chain is not a JWT.
+    assert hook_filter("x." + JWT) == "x." + JWT
+    assert hook_filter(JWT + ".extra4th") == JWT + ".extra4th"
+    # Base64 padding after the last segment is not a JWT boundary.
+    assert hook_filter(JWT + "=") == JWT + "="
+    # Alphanumeric text touching either side is not a JWT.
+    assert hook_filter("a" + JWT) == "a" + JWT
+
+
+def test_named_format_scrub_is_idempotent_and_keeps_legacy_order():
+    text = "api_key=" + AWS_KEY + " and " + SLACK_TOKEN + " Bearer " + "A" * 24
+    once = hook_filter(text)
+    assert hook_filter(once) == once
+    assert AWS_KEY not in once and SLACK_TOKEN not in once
+    assert once.count(MARKER) == 3
+    # Existing formats keep their behavior.
+    legacy = "npm_" + "E" * 36
+    assert hook_filter(legacy) == MARKER
+
+
+def test_scrub_function_exposes_module_for_importer():
+    spec_name = "melange_redactor_probe"
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(spec_name, HOOK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.scrub(AWS_KEY) == MARKER
+    assert module.MARKER == MARKER
+
+
+# --- Bash admission for the two import scripts ------------------------------
+
+RUN = "/tmp/proj/docs/research/flux-melange/example-run"
+RECEIPT = "/tmp/out/receipt.json"
+REPORT = "/tmp/out/report.md"
+HASH = "a" * 64
+IMPORT_SCRIPT = '"${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py"'
+SCAN_SCRIPT = '"${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py"'
+
+
+def import_cmd(**over) -> str:
+    parts = {
+        "script": IMPORT_SCRIPT,
+        "run": f'"{RUN}"',
+        "receipt": f'"{RECEIPT}"',
+        "report": f'"{REPORT}"',
+        "hash": f'"{HASH}"',
+    }
+    parts.update(over)
+    return (
+        f'python3 -I {parts["script"]} --run-dir {parts["run"]} '
+        f'--receipt {parts["receipt"]} --report {parts["report"]} --report-sha256 {parts["hash"]}'
+    )
+
+
+def scan_cmd(run: str = f'"{RUN}"') -> str:
+    return f"python3 -I {SCAN_SCRIPT} --run-dir {run}"
+
+
+def bash_decision(command: str, *, env: dict | None = None, cwd: str = "/tmp/proj") -> str:
+    proc = subprocess.run(
+        [sys.executable, str(HOOK)],
+        input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd}),
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    if not proc.stdout.strip():
+        return "allow"
+    return json.loads(proc.stdout)["hookSpecificOutput"].get("permissionDecision", "allow")
+
+
+def test_import_and_scan_commands_are_admitted_in_their_exact_form():
+    assert bash_decision(import_cmd()) == "allow"
+    assert bash_decision(scan_cmd()) == "allow"
+    # Unquoted arguments are equivalent after shell word splitting.
+    assert bash_decision(import_cmd(hash=HASH, run=RUN)) == "allow"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Absolute script paths are not admitted; only the literal plugin-root form.
+        import_cmd(script="/opt/plugin/scripts/import-melange-review.py"),
+        scan_cmd().replace('"${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py"', "/opt/plugin/scripts/scan-melange-import.py"),
+        # No isolated mode.
+        import_cmd().replace("python3 -I ", "python3 "),
+        # Env prefix, wrapper interpreter and other scripts.
+        "FOO=1 " + import_cmd(),
+        import_cmd().replace("python3", "python"),
+        import_cmd(script='"${CLAUDE_PLUGIN_ROOT}/scripts/other.py"'),
+        import_cmd(script='"${CLAUDE_PLUGIN_ROOT}/scripts/../scripts/import-melange-review.py"'),
+        # Extra, duplicate and reordered flags.
+        import_cmd() + " --extra",
+        import_cmd() + f' --run-dir "{RUN}"',
+        f'python3 -I {IMPORT_SCRIPT} --receipt "{RECEIPT}" --run-dir "{RUN}" --report "{REPORT}" --report-sha256 {HASH}',
+        # Hash must be lowercase 64-hex.
+        import_cmd(hash='"' + "A" * 64 + '"'),
+        import_cmd(hash='"' + "a" * 63 + '"'),
+        import_cmd(hash='"' + "a" * 65 + '"'),
+        # Operators, redirects, newlines and substitution.
+        import_cmd() + " && echo x",
+        import_cmd() + " > /tmp/x",
+        import_cmd() + " | cat",
+        import_cmd() + "\necho x",
+        import_cmd(report='"$(cat /etc/passwd)"'),
+        import_cmd(report='"`id`"'),
+        import_cmd(report='"$HOME/report.md"'),
+        import_cmd(receipt='"/tmp/*.json"'),
+        import_cmd(receipt='"~/receipt.json"'),
+        import_cmd(receipt='"/tmp/{a,b}.json"'),
+        import_cmd(run=f'"{RUN}/../other"'),
+        scan_cmd() + " --extra",
+        scan_cmd(run=f'"{RUN}/$(pwd)"'),
+        scan_cmd() + " && true",
+    ],
+)
+def test_import_and_scan_commands_outside_the_exact_form_are_denied(command):
+    assert bash_decision(command) == "deny"
+
+
+def test_bash_admission_rejects_a_conflicting_runtime_plugin_root(tmp_path: Path):
+    other = tmp_path / "other-plugin"
+    (other / "scripts").mkdir(parents=True)
+    env = {"PATH": "/usr/bin:/bin", "CLAUDE_PLUGIN_ROOT": str(other)}
+    assert bash_decision(import_cmd(), env=env) == "deny"
+    own = {"PATH": "/usr/bin:/bin", "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+    assert bash_decision(import_cmd(), env=own) == "allow"

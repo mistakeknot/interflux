@@ -29,12 +29,32 @@ TOKEN_SHAPE = re.compile(
 )
 BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/-]{20,}")
 
+# Five named secret formats. ASCII classes, case-sensitive. A body must not touch
+# another identifier character on either side, so longer identifiers are left alone.
+# The config/flux-melange/import-gitleaks.toml rules mirror these bodies and
+# boundaries for the import scanner.
+_ID = r"[A-Za-z0-9_-]"
+AWS_KEY = re.compile(rf"(?<!{_ID})(?:AKIA|ASIA)[A-Z0-9]{{16}}(?!{_ID})")
+SLACK_TOKEN = re.compile(rf"(?<!{_ID})(?:xoxa|xoxb|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{{10,}}(?!{_ID})")
+STRIPE_KEY = re.compile(rf"(?<!{_ID})(?:sk_live|sk_test|rk_live|rk_test)_[A-Za-z0-9_-]{{16,}}(?!{_ID})")
+# A JWT is three dot-separated segments. A fourth segment, a dotted prefix or base64
+# padding directly after the token means the text is something else.
+JWT_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_.])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
+    r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])(?![=]|\.[=])"
+)
+GOOGLE_KEY = re.compile(rf"(?<!{_ID})AIza[A-Za-z0-9_-]{{35}}(?!{_ID})")
+NAMED_FORMATS = (AWS_KEY, SLACK_TOKEN, STRIPE_KEY, JWT_TOKEN, GOOGLE_KEY)
+
 
 def scrub(value: str) -> str:
     value = PRIVATE_KEY.sub(MARKER, value)
     value = ASSIGNED_SECRET.sub(redact_assignment, value)
     value = TOKEN_SHAPE.sub(MARKER, value)
-    return BEARER.sub(lambda m: m.group(1) + MARKER, value)
+    value = BEARER.sub(lambda m: m.group(1) + MARKER, value)
+    for pattern in NAMED_FORMATS:
+        value = pattern.sub(MARKER, value)
+    return value
 
 
 def redact_assignment(match: re.Match[str]) -> str:
@@ -54,6 +74,47 @@ def is_melange_path(path: object, cwd: object = None) -> bool:
     if not posixpath.isabs(normalized) and isinstance(cwd, str):
         normalized = posixpath.join(cwd.replace("\\", "/"), normalized)
     return bool(MELANGE_PATH.search(posixpath.normpath(normalized)))
+
+
+IMPORT_SCRIPT_FLAGS = {
+    "import-melange-review.py": ("--run-dir", "--receipt", "--report", "--report-sha256"),
+    "scan-melange-import.py": ("--run-dir",),
+}
+PLUGIN_ROOT_PREFIX = "${CLAUDE_PLUGIN_ROOT}/scripts/"
+UNSAFE_PATH_CHARS = re.compile(r"[$`*?\[\]{}~!]")
+LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def allowed_import_command(words: list[str], cwd: object = None) -> bool:
+    """Admit only `python3 -I ${CLAUDE_PLUGIN_ROOT}/scripts/<import|scan> --flag value ...`."""
+    if len(words) < 3 or not words[2].startswith(PLUGIN_ROOT_PREFIX):
+        return False
+    name = words[2].removeprefix(PLUGIN_ROOT_PREFIX)
+    flags = IMPORT_SCRIPT_FLAGS.get(name)
+    if flags is None or len(words) != 3 + 2 * len(flags):
+        return False
+    plugin_root = Path(__file__).resolve().parents[1]
+    runtime_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if runtime_root and os.path.realpath(runtime_root) != str(plugin_root):
+        return False
+    script = plugin_root / "scripts" / name
+    if os.path.realpath(script) != str(script):
+        return False
+    values = {}
+    for index, flag in enumerate(flags):
+        if words[3 + 2 * index] != flag:
+            return False
+        value = words[4 + 2 * index]
+        if not value or value.startswith("-") or UNSAFE_PATH_CHARS.search(value):
+            return False
+        values[flag] = value
+    for flag in flags:
+        if flag == "--report-sha256":
+            if not LOWER_SHA256.fullmatch(values[flag]):
+                return False
+        elif ".." in values[flag].replace("\\", "/").split("/"):
+            return False
+    return is_melange_path(values["--run-dir"], cwd)
 
 
 def allowed_bash(command: str, cwd: object = None) -> bool:
@@ -86,6 +147,12 @@ def allowed_bash(command: str, cwd: object = None) -> bool:
             "$" in word or "`" in word or word in ("-o", "--ext-diff", "--textconv")
             or word.startswith("--output") for word in words
         )
+
+    # The two review-import scripts: one exact, isolated invocation each. The
+    # literal ${CLAUDE_PLUGIN_ROOT}/scripts/<name> prefix is the only expansion,
+    # and absolute script paths are not admitted.
+    if words[0] == "python3" and len(words) >= 2 and words[1] == "-I":
+        return allowed_import_command(words, cwd)
 
     # The orchestrator may read already-guarded lens specs and generate agent
     # definitions. Match the exact generator invocation; no arbitrary Python
