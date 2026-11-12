@@ -48,5 +48,19 @@ export PYTHONDONTWRITEBYTECODE=1
 # under tests/, including the top-level modules that tests/pyproject.toml testpaths leaves out;
 # -ra lists every skip with its reason.
 cd tests
+out="$work/pytest.out"
+set +e
 python3 -m pytest -q -ra -p no:cacheprovider . \
-  --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms
+  --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms \
+  2>&1 | tee "$out"
+rc=${PIPESTATUS[0]}
+set -e
+[[ $rc -eq 0 ]] || { echo "pytest failed (exit $rc)" >&2; exit "$rc"; }
+# A green run must not hide a skip or a deselection that was meant to run. The only accepted skips
+# are tests whose optional inputs (Linsenkasten source, Hermes, the real spec corpora) are absent
+# from the guest; anything else, and an unmatched --deselect, fails the check.
+grep -qE '(^|, )1 deselected( |,|$)' "$out" || { echo "expected exactly the one deselected test" >&2; exit 2; }
+accepted='Linsenkasten source package is unavailable|hermes not installed|real (brainstorm )?spec corpus not present'
+if grep -E '^SKIPPED' "$out" | grep -vE "$accepted"; then
+  echo "unexpected skipped tests (listed above)" >&2; exit 2
+fi
