@@ -128,7 +128,7 @@ An independently packaged review (see `import-review.md`) adds rows to the ledge
 }
 ```
 
-`phase` is one of `assay`, `verify`, `link`, `complete`; `bundle_ids` is sorted. `import_scan.status` is `clean` or `failed`, and `import_completion` is `complete` or `incomplete`. The presence of `import_assimilation` marks the run as past the point where a new bundle can be imported.
+`phase` is one of `snapshot`, `assay`, `verify`, `link`, `complete`; `bundle_ids` is sorted. `import_scan.status` is `clean` or `failed`, and `import_completion` is `complete` or `incomplete`. The presence of `import_assimilation` marks the run as past the point where a new bundle can be imported.
 
 ## Per-round side artifacts
 

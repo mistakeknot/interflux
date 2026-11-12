@@ -340,3 +340,36 @@ def test_scan_exit_codes_are_defined():
     mod = load_module("scan_codes", SCAN_SCRIPT)
     codes = {getattr(mod, n) for n in dir(mod) if n.startswith("EXIT_") and isinstance(getattr(mod, n), int)}
     assert codes >= {0, 2, 20, 22, 23}
+
+
+# ------------------------------------------------- review follow-up
+
+
+def test_escaped_secret_in_markdown_is_residue(ctx):
+    (ctx.run / "note.md").write_text("evidence: \\u0041" + AWS_KEY[1:] + "\n")
+    assert scan(ctx).returncode == 20
+
+
+def test_secret_in_an_overwritten_duplicate_json_key_is_residue(ctx):
+    escaped = "\\u0041" + AWS_KEY[1:]
+    (ctx.run / "dup.json").write_text('{"k": "' + escaped + '", "k": "clean"}\n')
+    assert scan(ctx).returncode == 20
+
+
+def test_scanner_refuses_a_file_swapped_for_a_symlink_after_listing(ctx, monkeypatch):
+    mod = load_module("scan_swap", SCAN_SCRIPT)
+    target = ctx.run / "note.md"
+    target.write_text("clean\n")
+    decoy = ctx.tmp / "decoy.md"
+    decoy.write_text("clean\n")
+    real_open = mod._open_nofollow
+
+    def swap_first(name, dir_fd, flags):
+        if name == "note.md":
+            os.unlink(target)
+            os.symlink(decoy, target)
+        return real_open(name, dir_fd, flags)
+
+    monkeypatch.setattr(mod, "_open_nofollow", swap_first)
+    with pytest.raises(mod.ScannerFailure):
+        list(mod.walk_files(ctx.run))

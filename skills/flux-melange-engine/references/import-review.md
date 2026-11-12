@@ -84,7 +84,7 @@ Imported rows carry `source.import`, `taste_kind: null`, status `raw`, and the a
 
 ## Late and second imports
 
-An import after synthesis has started is refused (exit 16): a `*-synthesis.md`, a `surfaced.jsonl`, or an `import_assimilation` key in `melange-state.json` marks the run as past the point where a new bundle can be assimilated. Re-running an identical existing import returns 0 after revalidating the bundle; a conflicting bundle returns 21.
+An import after synthesis has started is refused (exit 16): a `*-synthesis.md`, a `surfaced.jsonl`, or an `import_assimilation` key in `melange-state.json` marks the run as past the point where a new bundle can be assimilated. The importer checks again after it publishes and moves the new bundle back out if the marker appeared in between (exit 16), and the coordinator writes the marker before it lists bundles, so no bundle can be both missed by the snapshot and left in place. Re-running an identical existing import returns 0 after revalidating the bundle; a conflicting bundle returns 21.
 
 ## Scope and Limitations
 

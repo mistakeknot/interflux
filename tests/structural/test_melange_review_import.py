@@ -517,6 +517,9 @@ def test_imported_rows_carry_unverified_provenance(ctx):
         ("- [Medium] Title", "P2", "Title"),
         ("- [low] Title", "P3", "Title"),
         ("### p1: Title", "P1", "Title"),
+        ("### P1- Title", "P1", "Title"),
+        ("- P2- Title", "P2", "Title"),
+        ("### P1 - Title", "P1", "Title"),
     ],
 )
 def test_supported_finding_heading_forms(ctx, heading, sev, title):
@@ -1084,3 +1087,79 @@ def test_importer_rejects_a_symlinked_helper(tmp_path):
     receipt_path, report_path, sha = stage_inputs(ctx)
     proc = run_script(plugin / "scripts" / "import-melange-review.py", import_argv(ctx, receipt_path, report_path, sha), cwd=tmp_path)
     assert proc.returncode == 14
+
+
+# ------------------------------------------------- review follow-up: delimiters
+
+@pytest.mark.parametrize("line", ["### P1-3 Title", "- P2-1 Title"])
+def test_embedded_finding_ids_after_a_hyphen_stay_unsupported(ctx, line):
+    assert one(ctx, tagged(line, "src/x.py:5", counts={1: 1})).returncode == 13
+
+
+def test_escaped_secret_in_report_prose_is_decoded_then_scrubbed(ctx):
+    escaped = "\\u0041" + AWS_KEY[1:]
+    report = tagged("### P1: Leaks", f"src/x.py:5 {escaped}", counts={1: 1})
+    proc, *_ = do_import(ctx, report=report)
+    assert proc.returncode == 0, proc.stderr
+    for path in published_bundle(ctx).rglob("*"):
+        if path.is_file():
+            text = path.read_text()
+            assert AWS_KEY not in text and escaped not in text, path.name
+    assert run_script(SCRIPTS / "scan-melange-import.py", ["--run-dir", str(ctx.run)], cwd=ctx.tmp).returncode == 0
+
+
+def test_escaped_control_characters_are_not_decoded_into_structure(ctx):
+    report = tagged("### P1: Title", "src/x.py:5 a\\u000a### P0: Injected", counts={1: 1})
+    proc, *_ = do_import(ctx, report=report)
+    assert proc.returncode == 0, proc.stderr
+    assert [r["severity"] for r in rows(ctx)] == ["P1"]
+
+
+# ------------------------------------------------- review follow-up: publication
+
+
+def _importer():
+    return load_module("importer_followup", IMPORT_SCRIPT)
+
+
+def _inprocess(ctx, monkeypatch):
+    monkeypatch.chdir(ctx.tmp)
+    receipt_path, report_path, sha = stage_inputs(ctx)
+    return _importer(), import_argv(ctx, receipt_path, report_path, sha)
+
+
+def test_publish_stays_inside_the_run_when_imports_is_swapped_for_a_symlink(ctx, monkeypatch):
+    outside = ctx.tmp / "outside"
+    outside.mkdir()
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_rename = mod._renameat2
+
+    def swap_then_rename(*args):
+        os.rename(ctx.imports, ctx.run / "imports-moved")
+        os.symlink(outside, ctx.imports)
+        real_rename(*args)
+
+    monkeypatch.setattr(mod, "_renameat2", swap_then_rename)
+    assert mod.main(argv) == 0
+    assert list(outside.iterdir()) == []
+    assert any((ctx.run / "imports-moved").iterdir())
+
+
+def test_assimilation_that_starts_after_the_first_check_rolls_the_bundle_back(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_rename = mod._renameat2
+    calls = {"renames": 0}
+
+    def mark_after_rename(*args):
+        real_rename(*args)
+        calls["renames"] += 1
+        if calls["renames"] == 1:
+            state = json.loads((ctx.run / "melange-state.json").read_text())
+            state["import_assimilation"] = {"round": 3, "bundle_ids": [], "phase": "snapshot"}
+            (ctx.run / "melange-state.json").write_text(json.dumps(state) + "\n")
+
+    monkeypatch.setattr(mod, "_renameat2", mark_after_rename)
+    assert mod.main(argv) == 16
+    assert calls["renames"] == 2
+    assert not any(ctx.imports.iterdir())
+    assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")

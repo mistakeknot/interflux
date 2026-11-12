@@ -114,6 +114,8 @@ Alongside the markdown, write `{OUTPUT_ROOT}/surfaced.jsonl` — one line per fi
 
 When the run has import bundles, the surfaced pass is a separate pass pinned to the native five views. Start a fresh agent with `--surfaced` semantics: it reads the finished synthesis, includes only native rows (never any `fd-external-review-` row, which is also excluded from the union), and the pass requires that `surfaced.jsonl` is written before anything else continues. Do not mark the run complete until `surfaced.jsonl` exists.
 
+Before the scan, list `imports/` again. The sorted bundle ids on disk must equal `import_assimilation.bundle_ids`. A difference means a bundle appeared or vanished after the snapshot, which only happens when an import raced the marker; set `import_completion` to `incomplete`, tell the operator, and do not describe the import as complete.
+
 Then run the completion scan, once, after both files are written:
 
 ```bash

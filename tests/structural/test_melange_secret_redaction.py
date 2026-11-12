@@ -528,6 +528,11 @@ def test_import_and_scan_commands_are_admitted_in_their_exact_form():
         "FOO=1 " + import_cmd(),
         import_cmd().replace("python3", "python"),
         import_cmd(script='"${CLAUDE_PLUGIN_ROOT}/scripts/other.py"'),
+        # A single-quoted expansion is a literal relative path in Bash, so it must not pass.
+        import_cmd(script="'${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py'"),
+        scan_cmd().replace('"${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py"', "'${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py'"),
+        import_cmd(run="'" + RUN + "'"),
+        import_cmd(run='"' + RUN + '\\"'),
         import_cmd(script='"${CLAUDE_PLUGIN_ROOT}/scripts/../scripts/import-melange-review.py"'),
         # Extra, duplicate and reordered flags.
         import_cmd() + " --extra",
@@ -565,3 +570,34 @@ def test_bash_admission_rejects_a_conflicting_runtime_plugin_root(tmp_path: Path
     assert bash_decision(import_cmd(), env=env) == "deny"
     own = {"PATH": "/usr/bin:/bin", "CLAUDE_PLUGIN_ROOT": str(ROOT)}
     assert bash_decision(import_cmd(), env=own) == "allow"
+
+
+def test_jwt_matching_stays_linear_on_hostile_repeats():
+    import time
+
+    hook = _load_hook("hook_timing")
+    small = "eyJ-" * 8000
+    large = "eyJ-" * 32000
+    start = time.perf_counter()
+    hook.scrub(small)
+    t_small = time.perf_counter() - start
+    start = time.perf_counter()
+    hook.scrub(large)
+    t_large = time.perf_counter() - start
+    assert t_large < 1.0
+    assert t_large < max(t_small, 0.01) * 12  # four times the input; quadratic growth would be near sixteen
+
+
+def test_a_real_jwt_with_a_long_header_boundary_still_scrubs():
+    hook = _load_hook("hook_jwt_edge")
+    token = "ey" + "Jhbgc" + "a" * 900 + ".abcdefgh12.ABCDEFGH12"
+    assert hook.scrub("t=" + token) == "t=" + MARKER
+
+
+def _load_hook(name):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, HOOK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

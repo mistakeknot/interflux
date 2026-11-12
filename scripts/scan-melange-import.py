@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -169,21 +170,50 @@ def gitleaks_flags(binary: str, data: bytes) -> bool:
     raise ScannerFailure(f"gitleaks exited {proc.returncode}")
 
 
+class Pairs(list):
+    """A JSON object kept as its (key, value) pairs, so duplicate keys all survive."""
+
+
 def json_strings(value) -> list[str]:
-    """Every string in a decoded JSON value, object keys included."""
+    """Every string in a decoded JSON value, object keys and duplicate-key values included."""
     out: list[str] = []
     stack = [value]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
             out.append(item)
-        elif isinstance(item, dict):
-            for key, child in item.items():
+        elif isinstance(item, Pairs):
+            for key, child in item:
                 out.append(key)
                 stack.append(child)
         elif isinstance(item, list):
             stack.extend(item)
     return out
+
+
+ESCAPE = re.compile(r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2}))")
+
+
+def unescape_text(text: str) -> str:
+    """Decode \\uXXXX, \\UXXXXXXXX and \\xXX sequences (repeatedly, so nested escapes resolve).
+
+    Control characters stay encoded (no named secret contains one, and decoding them
+    would change line structure). Over-decoding is deliberate: this feeds a scan view and the importer's report text,
+    and an escaped credential in Markdown is still a recoverable credential.
+    """
+
+    def one(match: re.Match[str]) -> str:
+        point = int(match.group(1) or match.group(2) or match.group(3), 16)
+        if point < 0x20 or 0x7F <= point <= 0x9F or point > 0x10FFFF or 0xD800 <= point <= 0xDFFF:
+            return match.group(0)
+        return chr(point)
+
+    for _ in range(4):
+        decoded = ESCAPE.sub(one, text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
 
 
 def decoded_view(data: bytes, name: str) -> str | None:
@@ -193,7 +223,7 @@ def decoded_view(data: bytes, name: str) -> str | None:
     strings: list[str] = []
     if lowered.endswith(".json"):
         try:
-            strings = json_strings(json.loads(text))
+            strings = json_strings(json.loads(text, object_pairs_hook=Pairs))
         except ValueError:
             return None
     elif lowered.endswith(".jsonl"):
@@ -201,7 +231,7 @@ def decoded_view(data: bytes, name: str) -> str | None:
             if not line.strip():
                 continue
             try:
-                strings.extend(json_strings(json.loads(line)))
+                strings.extend(json_strings(json.loads(line, object_pairs_hook=Pairs)))
             except ValueError:
                 strings.append(line)
     else:
@@ -215,11 +245,18 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
         return False, False
     text = data.decode("utf-8", errors="replace")
     views: list[bytes] = [data]
-    decoded = decoded_view(data, name)
     residue = scrub(text) != text
+    candidates = [text]
+    decoded = decoded_view(data, name)
     if decoded is not None:
         residue = residue or scrub(decoded) != decoded
         views.append(decoded.encode("utf-8"))
+        candidates.append(decoded)
+    for candidate in candidates:
+        unescaped = unescape_text(candidate)
+        if unescaped != candidate:
+            residue = residue or scrub(unescaped) != unescaped
+            views.append(unescaped.encode("utf-8"))
     failed = False
     if binary is None:
         return residue, True
@@ -252,27 +289,66 @@ def validate_run(run_arg: str) -> Path:
     return real
 
 
-def walk_files(root: Path):
-    """Yield (relative path, absolute path) for each regular file. Unsafe entries raise."""
-    pending = [root]
-    while pending:
-        directory = pending.pop()
-        try:
-            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
-        except OSError as exc:
-            raise ScannerFailure("unreadable directory") from exc
-        for entry in entries:
+def _open_nofollow(name: str, dir_fd: int, flags: int) -> int:
+    return os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
+
+
+def walk_files(root: Path | None, root_fd: int | None = None):
+    """Yield (relative path, bytes) for each regular file, reading through pinned directory descriptors.
+
+    Every directory and file is opened with O_NOFOLLOW relative to its parent descriptor,
+    and the descriptor's own stat decides the type, so an entry swapped for a symlink
+    after listing is refused instead of followed. Unsafe entries raise ScannerFailure.
+    """
+    try:
+        if root_fd is not None:
+            root_fd = os.dup(root_fd)  # the caller keeps its own descriptor
+        else:
+            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as exc:
+        raise ScannerFailure("unreadable run directory") from exc
+    pending: list[tuple[int, str]] = [(root_fd, "")]
+    try:
+        while pending:
+            dir_fd, prefix = pending.pop()
             try:
-                mode = entry.stat(follow_symlinks=False).st_mode
+                with os.scandir(dir_fd) as listing:
+                    entries = sorted(((e.name, e.stat(follow_symlinks=False).st_mode) for e in listing))
             except OSError as exc:
-                raise ScannerFailure("unreadable entry") from exc
-            full = Path(entry.path)
-            if stat.S_ISDIR(mode):
-                pending.append(full)
-            elif stat.S_ISREG(mode):
-                yield full.relative_to(root), full
-            else:
-                raise ScannerFailure("unsafe entry in run tree (symlink or special file)")
+                os.close(dir_fd)
+                raise ScannerFailure("unreadable directory") from exc
+            try:
+                for name, mode in entries:
+                    relative = prefix + name
+                    if stat.S_ISDIR(mode):
+                        try:
+                            child = _open_nofollow(name, dir_fd, os.O_RDONLY | os.O_DIRECTORY)
+                        except OSError as exc:
+                            raise ScannerFailure("unsafe entry in run tree (replaced or unreadable directory)") from exc
+                        pending.append((child, relative + "/"))
+                    elif stat.S_ISREG(mode):
+                        try:
+                            fd = _open_nofollow(name, dir_fd, os.O_RDONLY | os.O_NONBLOCK)
+                        except OSError as exc:
+                            raise ScannerFailure("unsafe entry in run tree (replaced or unreadable file)") from exc
+                        try:
+                            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                                raise ScannerFailure("unsafe entry in run tree (replaced file)")
+                            with os.fdopen(fd, "rb", closefd=False) as handle:
+                                data = handle.read()
+                        finally:
+                            os.close(fd)
+                        yield relative, data
+                    else:
+                        raise ScannerFailure("unsafe entry in run tree (symlink or special file)")
+            finally:
+                os.close(dir_fd)
+    finally:
+        for dir_fd, _ in pending:
+            try:
+                os.close(dir_fd)
+            except OSError:
+                pass
 
 
 def parse_args(argv: list[str]) -> str | None:
@@ -309,16 +385,10 @@ def main(argv: list[str] | None = None) -> int:
         failure = True
     residue_files: list[str] = []
     try:
-        for relative, full in walk_files(run):
-            try:
-                data = full.read_bytes()
-            except OSError:
-                print("scanner failure: unreadable file", file=sys.stderr)
-                failure = True
-                continue
-            found, failed = bytes_have_residue(scrub, binary, data, full.name)
+        for relative, data in walk_files(run):
+            found, failed = bytes_have_residue(scrub, binary, data, os.path.basename(relative))
             if found:
-                residue_files.append(scrub(str(relative)))
+                residue_files.append(scrub(relative))
             failure = failure or failed
     except ScannerFailure as exc:
         print(f"scanner failure: {exc}", file=sys.stderr)

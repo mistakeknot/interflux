@@ -38,9 +38,11 @@ AWS_KEY = re.compile(rf"(?<!{_ID})(?:AKIA|ASIA)[A-Z0-9]{{16}}(?!{_ID})")
 SLACK_TOKEN = re.compile(rf"(?<!{_ID})(?:xoxa|xoxb|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{{10,}}(?!{_ID})")
 STRIPE_KEY = re.compile(rf"(?<!{_ID})(?:sk_live|sk_test|rk_live|rk_test)_[A-Za-z0-9_-]{{16,}}(?!{_ID})")
 # A JWT is three dot-separated segments. A fourth segment, a dotted prefix or base64
-# padding directly after the token means the text is something else.
+# padding directly after the token means the text is something else. The header
+# segment is bounded (RE2 allows 1000 at most) so that a long run of eyJ- repeats
+# cannot make every candidate start rescan the rest of the run.
 JWT_TOKEN = re.compile(
-    r"(?<![A-Za-z0-9_.])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
+    r"(?<![A-Za-z0-9_.])eyJ[A-Za-z0-9_-]{5,1000}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
     r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])(?![=]|\.[=])"
 )
 GOOGLE_KEY = re.compile(rf"(?<!{_ID})AIza[A-Za-z0-9_-]{{35}}(?!{_ID})")
@@ -85,8 +87,18 @@ UNSAFE_PATH_CHARS = re.compile(r"[$`*?\[\]{}~!]")
 LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
-def allowed_import_command(words: list[str], cwd: object = None) -> bool:
-    """Admit only `python3 -I ${CLAUDE_PLUGIN_ROOT}/scripts/<import|scan> --flag value ...`."""
+IMPORT_COMMAND_HEAD = re.compile(r'python3 -I "\$\{CLAUDE_PLUGIN_ROOT\}/scripts/[a-z-]+\.py"(?: |$)')
+
+
+def allowed_import_command(words: list[str], cwd: object = None, raw: str = "") -> bool:
+    """Admit only `python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/<import|scan>" --flag value ...`.
+
+    shlex discards quoting, so the raw text is checked too: the script word must be
+    the double-quoted expansion (a single-quoted one is a literal relative path in
+    Bash), and no single quote or backslash may appear anywhere in the command.
+    """
+    if not IMPORT_COMMAND_HEAD.match(raw) or "'" in raw or "\\" in raw:
+        return False
     if len(words) < 3 or not words[2].startswith(PLUGIN_ROOT_PREFIX):
         return False
     name = words[2].removeprefix(PLUGIN_ROOT_PREFIX)
@@ -152,7 +164,7 @@ def allowed_bash(command: str, cwd: object = None) -> bool:
     # literal ${CLAUDE_PLUGIN_ROOT}/scripts/<name> prefix is the only expansion,
     # and absolute script paths are not admitted.
     if words[0] == "python3" and len(words) >= 2 and words[1] == "-I":
-        return allowed_import_command(words, cwd)
+        return allowed_import_command(words, cwd, command)
 
     # The orchestrator may read already-guarded lens specs and generate agent
     # definitions. Match the exact generator invocation; no arbitrary Python

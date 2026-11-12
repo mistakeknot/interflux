@@ -47,11 +47,11 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shutil
 import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -76,7 +76,6 @@ OPTIONS = ("--run-dir", "--receipt", "--report", "--report-sha256")
 BUNDLE_SCHEMA = b"melange-import-v3\0"
 STAGING_RELATIVE = (".clavain", "melange-import-staging")
 RENAME_NOREPLACE = 1
-AT_FDCWD = -100
 
 BINDING_LABEL = "coordinator-asserted, receipt-consistent (verdict only)"
 APPLICABILITY_NOTE = (
@@ -436,7 +435,7 @@ def admit_labs(receipt: dict) -> tuple[str, str]:
 
 FINDING_HEADING = re.compile(
     r"^(?:#{1,6}\s+|[-+*]\s+|\d+[.)]\s+)"
-    r"(?:(?:\*\*|__)?\[?(P[0-3])(?=\]|\s|:|—|–)\]?"
+    r"(?:(?:\*\*|__)?\[?(P[0-3])(?=\]|\s|:|—|–|-\s)\]?"
     r"|(?:\*\*|__)?\[(Critical|High|Medium|Low)\]"
     r"|(?:\*\*|__)(Critical|High|Medium|Low)(?=\s+[—–]|:))",
     re.I,
@@ -449,7 +448,7 @@ TAG_START = re.compile(r"FINDINGS\s*:")
 TAG_FULL = re.compile(r"FINDINGS: (\d+) \(P0: (\d+), P1: (\d+), P2: (\d+)(?:, P3: (\d+))?\)")
 ATX = re.compile(r"^#{1,6}\s")
 LEAD_MARKERS = re.compile(r"^(?:>\s*)*(?:#{1,6}\s+|[-+*]\s+|\d+[.)]\s+)?")
-CANDIDATE_P = re.compile(r"^P\d+(?=$|[\s:\]*_—–]|-\d)", re.I)
+CANDIDATE_P = re.compile(r"^P\d+(?=$|[\s:\]*_—–]|-[\d\s])", re.I)
 CANDIDATE_WORD = re.compile(r"^(?:Critical|High|Medium|Low)(?:\s*:|\s+[-–—](?:\s|$)|\]|\*\*|__|$)", re.I)
 TABLE_CELL = re.compile(r"(?:P\d+|critical|high|medium|low)", re.I)
 LOCATION = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+:[1-9][0-9]*(?:-[1-9][0-9]*)?(?![A-Za-z0-9_./-])")
@@ -479,6 +478,13 @@ def parse_report(raw: bytes) -> dict:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         fail("report is not valid UTF-8")
+    try:
+        # An escaped credential in report prose is still a recoverable credential.
+        text = helpers()["scanner"].unescape_text(text)
+    except ImportFailure:
+        raise
+    except Exception as exc:
+        raise ImportFailure(EXIT_SCRUB, "report decode fault") from exc
     if not text.strip():
         fail("report is empty")
     if "\x00" in text or "```" in text or "~~~" in text or "<!--" in text or "-->" in text:
@@ -729,65 +735,51 @@ def scan_bytes(binary: str, items: dict[str, bytes]) -> None:
 # ------------------------------------------------------------------------ publish
 
 
-def late_import(run: Path) -> bool:
+def late_import(run_fd: int) -> bool:
+    """True when the run is past the point where a new bundle can be assimilated. Reads through the pinned run descriptor."""
     try:
-        names = [entry.name for entry in os.scandir(run)]
+        with os.scandir(run_fd) as listing:
+            names = [entry.name for entry in listing]
     except OSError as exc:
         raise ImportFailure(EXIT_RUN) from exc
     if any(name.endswith("-synthesis.md") or name == "surfaced.jsonl" for name in names):
         return True
     try:
-        state = json.loads((run / "melange-state.json").read_text(encoding="utf-8"))
+        fd = os.open("melange-state.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=run_fd)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ImportFailure(EXIT_RUN)
+            with os.fdopen(fd, "rb", closefd=False) as handle:
+                state = json.loads(handle.read().decode("utf-8"))
+        finally:
+            os.close(fd)
     except (OSError, ValueError) as exc:
         raise ImportFailure(EXIT_RUN) from exc
     return isinstance(state, dict) and "import_assimilation" in state
 
 
-def _walk_bundle(root: Path) -> dict[str, bytes]:
-    out: dict[str, bytes] = {}
-    pending = [root]
-    while pending:
-        directory = pending.pop()
-        try:
-            entries = list(os.scandir(directory))
-        except OSError as exc:
-            raise ImportFailure(EXIT_CONFLICT) from exc
-        for entry in entries:
-            try:
-                mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError as exc:
-                raise ImportFailure(EXIT_CONFLICT) from exc
-            if stat.S_ISDIR(mode):
-                pending.append(Path(entry.path))
-            elif stat.S_ISREG(mode):
-                try:
-                    fd = os.open(entry.path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-                except OSError as exc:
-                    raise ImportFailure(EXIT_CONFLICT) from exc
-                try:
-                    chunks = []
-                    while True:
-                        chunk = os.read(fd, 1 << 20)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                finally:
-                    os.close(fd)
-                out[Path(entry.path).relative_to(root).as_posix()] = b"".join(chunks)
-            else:
-                raise ImportFailure(EXIT_CONFLICT)
-    return out
+def _walk_bundle(bundle_fd: int) -> dict[str, bytes]:
+    scanner = helpers()["scanner"]
+    try:
+        return dict(scanner.walk_files(None, root_fd=bundle_fd))
+    except scanner.ScannerFailure as exc:
+        raise ImportFailure(EXIT_CONFLICT) from exc
 
 
-def revalidate_existing(dest: Path, expected: dict[str, bytes], binary: str) -> None:
+def _open_dir(name: str, dir_fd: int | None = None) -> int:
+    return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
+
+
+def revalidate_existing(imports_fd: int, bundle: str, expected: dict[str, bytes], binary: str) -> None:
     """An existing bundle is accepted only when it scans clean and equals the fresh build."""
     try:
-        info = os.lstat(dest)
+        bundle_fd = _open_dir(bundle, imports_fd)
     except OSError as exc:
         raise ImportFailure(EXIT_CONFLICT) from exc
-    if not stat.S_ISDIR(info.st_mode):
-        raise ImportFailure(EXIT_CONFLICT)
-    present = _walk_bundle(dest)
+    try:
+        present = _walk_bundle(bundle_fd)
+    finally:
+        os.close(bundle_fd)
     scan_bytes(binary, present)
     if present != expected:
         raise ImportFailure(EXIT_CONFLICT, "existing bundle differs from the fresh build")
@@ -807,33 +799,45 @@ def git_ignores(project: Path, relative: str) -> bool:
     return proc.returncode == 0
 
 
-def _renameat2(source: str, target: str) -> None:
-    """Move without replacing: renameat2 with RENAME_NOREPLACE. Any failure is an OSError."""
+def _renameat2(source_fd: int, source: str, target_fd: int, target: str) -> None:
+    """Move without replacing: renameat2 with RENAME_NOREPLACE, relative to pinned directories. Any failure is an OSError."""
     libc = ctypes.CDLL(None, use_errno=True)
     fn = getattr(libc, "renameat2", None)
     if fn is None:
         raise OSError(errno.ENOSYS, os.strerror(errno.ENOSYS))
     fn.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
     fn.restype = ctypes.c_int
-    if fn(AT_FDCWD, os.fsencode(source), AT_FDCWD, os.fsencode(target), RENAME_NOREPLACE) != 0:
+    if fn(source_fd, os.fsencode(source), target_fd, os.fsencode(target), RENAME_NOREPLACE) != 0:
         code = ctypes.get_errno()
         raise OSError(code, os.strerror(code))
 
 
-def _ensure_private_dir(path: Path) -> None:
+def _pin(path: Path) -> int:
+    """Open a directory without following a final symlink and confirm it is the entry that was inspected."""
+    info = os.lstat(path)
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    got = os.fstat(fd)
+    if (got.st_dev, got.st_ino) != (info.st_dev, info.st_ino):
+        os.close(fd)
+        raise ImportFailure(EXIT_CONFLICT, "directory replaced while it was being pinned")
+    return fd
+
+
+def _ensure_dir_at(parent_fd: int, name: str) -> int:
+    """Create (mode 0700) or open a directory under a pinned parent; it must be ours."""
     try:
-        os.mkdir(path, 0o700)
+        os.mkdir(name, 0o700, dir_fd=parent_fd)
     except FileExistsError:
         pass
-    except OSError as exc:
-        raise ImportFailure(EXIT_CONFLICT) from exc
-    info = os.lstat(path)
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+    fd = _open_dir(name, parent_fd)
+    if os.fstat(fd).st_uid != os.getuid():
+        os.close(fd)
         raise ImportFailure(EXIT_CONFLICT)
+    return fd
 
 
-def _write_file(path: Path, data: bytes) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+def _write_file_at(dir_fd: int, name: str, data: bytes) -> None:
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dir_fd)
     try:
         view = memoryview(data)
         while view:
@@ -845,47 +849,86 @@ def _write_file(path: Path, data: bytes) -> None:
 
 
 def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], binary: str) -> None:
+    """Publish the bundle through pinned directory descriptors.
+
+    The run, the project root, the staging directory and imports/ are each opened once and
+    every later step is relative to those descriptors, so replacing a path component with a
+    symlink after the checks cannot redirect the write or the rename. The late check runs
+    before staging and again after the rename: an assimilation that began in between rolls
+    the new bundle back (exit 16) instead of leaving a bundle the snapshot may have missed.
+    """
     relative = "/".join(STAGING_RELATIVE) + "/.lock"
     if not git_ignores(project, relative):
         raise ImportFailure(EXIT_CONFLICT, "staging directory is not git-ignored")
-    staging = project.joinpath(*STAGING_RELATIVE)
+    open_fds: list[int] = []
+
+    def keep(fd: int) -> int:
+        open_fds.append(fd)
+        return fd
+
+    staging_fd = -1
+    work_name: str | None = None
     try:
-        _ensure_private_dir(project / STAGING_RELATIVE[0])
-        _ensure_private_dir(staging)
-        os.chmod(staging, 0o700)
-        _ensure_private_dir(run / "imports")
-        if os.lstat(staging).st_dev != os.lstat(run / "imports").st_dev:
-            raise ImportFailure(EXIT_CONFLICT, "staging and imports are on different filesystems")
-        lock = os.open(staging / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-    except OSError as exc:
-        raise ImportFailure(EXIT_CONFLICT) from exc
-    work = None
-    try:
+        try:
+            run_fd = keep(_pin(run))
+            parent = keep(_pin(project))
+            for component in STAGING_RELATIVE:
+                parent = keep(_ensure_dir_at(parent, component))
+            staging_fd = parent
+            os.fchmod(staging_fd, 0o700)
+            imports_fd = keep(_ensure_dir_at(run_fd, "imports"))
+            if os.fstat(staging_fd).st_dev != os.fstat(imports_fd).st_dev:
+                raise ImportFailure(EXIT_CONFLICT, "staging and imports are on different filesystems")
+            lock = keep(os.open(".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=staging_fd))
+        except OSError as exc:
+            raise ImportFailure(EXIT_CONFLICT) from exc
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             raise ImportFailure(EXIT_CONFLICT, "another import holds the lock") from exc
-        dest = run / "imports" / bundle
-        if os.path.lexists(dest):
-            revalidate_existing(dest, files, binary)
+        try:
+            os.lstat(bundle, dir_fd=imports_fd)
+            exists = True
+        except FileNotFoundError:
+            exists = False
+        except OSError as exc:
+            raise ImportFailure(EXIT_CONFLICT) from exc
+        if exists:
+            revalidate_existing(imports_fd, bundle, files, binary)
             return
-        if late_import(run):
+        if late_import(run_fd):
             raise ImportFailure(EXIT_LATE)
         try:
-            work = Path(tempfile.mkdtemp(prefix=f"{bundle[:16]}-", dir=staging))
+            work_name = f"{bundle[:16]}-{secrets.token_hex(8)}"
+            os.mkdir(work_name, 0o700, dir_fd=staging_fd)
+            work_fd = keep(_open_dir(work_name, staging_fd))
             for name, data in sorted(files.items()):
-                target = work / name
-                if target.parent != work:
-                    _ensure_private_dir(target.parent)
-                _write_file(target, data)
-            _renameat2(str(work), str(dest))
-            work = None
+                *directories, leaf = name.split("/")
+                target = work_fd
+                for part in directories:
+                    target = keep(_ensure_dir_at(target, part))
+                _write_file_at(target, leaf, data)
+            _renameat2(staging_fd, work_name, imports_fd, bundle)
+            work_name = None
+            if late_import(run_fd):
+                # An assimilation began after the first check. Move the bundle back out.
+                rollback = f"rollback-{secrets.token_hex(8)}"
+                _renameat2(imports_fd, bundle, staging_fd, rollback)
+                work_name = rollback
+                raise ImportFailure(EXIT_LATE)
         except OSError as exc:
             raise ImportFailure(EXIT_CONFLICT, "could not publish the bundle") from exc
     finally:
-        if work is not None:
-            shutil.rmtree(work, ignore_errors=True)
-        os.close(lock)
+        if work_name is not None and staging_fd >= 0:
+            try:
+                shutil.rmtree(work_name, dir_fd=staging_fd)
+            except OSError:
+                pass
+        for fd in reversed(open_fds):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 # -------------------------------------------------------------------------- main
@@ -924,12 +967,6 @@ def run_import(argv: list[str]) -> str:
     binary = scan_binary()
     scan_bytes(binary, files)
 
-    dest = run / "imports" / bundle
-    if os.path.lexists(dest):
-        revalidate_existing(dest, files, binary)
-        return bundle
-    if late_import(run):
-        raise ImportFailure(EXIT_LATE)
     publish(run, project, bundle, files, binary)
     return bundle
 
