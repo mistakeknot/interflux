@@ -140,7 +140,7 @@ class PriorityMatcher:
                 unmatched_possible=unmatched,assignment_ambiguous=ambiguous,occurrence_ambiguous=ambiguous))
         finding_ambiguity=[]
         for f in sorted(self.findings):
-            possible=[row['gold_id'] for row in membership if row['finding_id']==f and row['in_some_priority_optimum']]
+            possible=sorted(row['gold_id'] for row in membership if row['finding_id']==f and row['in_some_priority_optimum'])
             unmatched=self.feasible(d,p,forbidden_edges={e for e in self.edges if e[0]==f}) is not None
             finding_ambiguity.append(dict(finding_id=f,possible_gold_ids=possible,unmatched_possible=unmatched,
                 occurrence_ambiguous=len(possible)+int(unmatched)>1))
