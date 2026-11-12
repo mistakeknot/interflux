@@ -108,8 +108,11 @@ def reconcile(inv,sources):
         row['usage']=empty_fields()
     receipts=[s for s in sources if s['format']=='clavain-receipt-v1']
     providers=[s for s in sources if s['format']!='clavain-receipt-v1']
+    sessions=set().union(*(s['_sessions'] for s in providers))
+    if len(sessions)>1:
+        row['reasons'].append('provider_session_conflict')
+        row['usage']=empty_fields()
     if receipts and providers:
-        sessions=set().union(*(s['_sessions'] for s in providers))
         for receipt in receipts:
             binding=receipt['_provider_binding']
             if binding is None:
@@ -122,7 +125,8 @@ def reconcile(inv,sources):
         'cumulative_sequence_conflict','cumulative_counter_regression','malformed_usage_record',
         'ambiguous_attempt_selection','parent_scope_unknown','model_conflict','model_identity_conflict',
         'requested_model_conflict','requested_effort_conflict','actual_effort_conflict','lifecycle_conflict',
-        'multiple_attempts','provider_session_binding_missing','provider_session_binding_conflict'}
+        'multiple_attempts','provider_session_binding_missing','provider_session_binding_conflict',
+        'provider_session_conflict'}
     if fatal & set(row['reasons']):
         row['complete']=False
         for field in row['usage'].values():

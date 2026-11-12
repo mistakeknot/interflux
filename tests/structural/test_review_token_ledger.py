@@ -508,3 +508,27 @@ def test_review_invalid_required_count_in_distinct_messages_has_reason(tmp_path)
     report,code=run(tmp_path,[invocation([s])],{'t':[first,last]})
     assert code==1 and field(report,'output')['value'] is None
     assert 'invalid_count' in report['invocations'][0]['reasons']
+
+
+@pytest.mark.parametrize('kind',['claude-assistant-v1','claude-cumulative-v1'])
+@pytest.mark.parametrize('same_session',[False,True])
+def test_review_n1_one_invocation_cannot_collapse_distinct_workers(tmp_path,kind,same_session):
+    session='session-a' if same_session else 'session-b'
+    first=source('claude-assistant-v1','a',dict(session_id='session-a',message_ids=['message-a']))
+    if kind=='claude-assistant-v1':
+        row=assistant(); row['sessionId']=session
+        second=source(kind,'b',dict(session_id=session,message_ids=['message-a']))
+    else:
+        row=dict(type='usage.cumulative',schema_version=1,dispatch_id='dispatch-a',invocation_id='inv-a',
+            session_id=session,model_identity='claude-test',sequence=1,terminal=True,complete=True,
+            input_tokens=10,cache_read_input_tokens=20,cache_creation_input_tokens=30,output_tokens=5)
+        second=source(kind,'b',dict(dispatch_id='dispatch-a',invocation_id='inv-a'))
+    report,code=run(tmp_path,[invocation([first,second])],{'a':[assistant()],'b':[row]})
+    if same_session:
+        assert code==0 and field(report,'input_total')['value']==60
+        assert 'provider_session_conflict' not in report['invocations'][0]['reasons']
+    else:
+        assert code==1 and field(report,'input_total')['value'] is None
+        assert 'provider_session_conflict' in report['invocations'][0]['reasons']
+        assert not report['totals']['input_total']['complete']
+        assert len(report['invocations'][0]['sources'])==2
