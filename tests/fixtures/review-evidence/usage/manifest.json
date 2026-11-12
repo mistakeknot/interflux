@@ -1,0 +1,1 @@
+{"schema_version":1,"review_run_id":"synthetic-review","invocations":[{"id":"call-a","pass_id":"blind-a","role":"reviewer","sources":[{"source_id":"provider","format":"claude-assistant-v1","path":"claude-messages.jsonl","selector":{"session_id":"session-a","message_ids":["message-a"]}}]}]}

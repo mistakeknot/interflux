@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-test","usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":5}}}
