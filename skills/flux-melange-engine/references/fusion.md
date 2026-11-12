@@ -79,6 +79,10 @@ Case 3 is a harder semantic judgment than a line-check (the documented open ques
 
 **Zero-emergent fusions are reported as negative results** ("security × i18n: independent here") and **steer the next round AWAY from that region** — a fusion that finds nothing is itself information.
 
+## Imported reviews are not lenses
+
+An imported review (see `import-review.md`) is external evidence. Its rows (`source.import` set, agent `fd-external-review-<H>`) get no lens record, are never selected as a fusion parent, never feed a fusion's emergence gate, and never count toward fusion-yield. Fusion runs inside the loop, and imports are assimilated only after the loop has stopped.
+
 ## Depth
 
 - **Depth-1** (fusing two base lenses) is the default.

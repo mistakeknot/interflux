@@ -108,6 +108,21 @@ Supporting references, read on demand:
 - `references/fusion.md` — candidate selection, hybrid-lens charter, emergence gate
 - `references/directive-vocabulary.md` — DEEPEN / FUSE / STEER-WIDE / PROBE-DISAGREEMENT semantics
 - `references/budget-ladder.md` — budget accumulator + per-directive fan-out scaling
+- `references/import-review.md` — importing an independently packaged review (Step 2.5)
+
+## Step 2.5: Assimilate imported reviews (only when a bundle exists)
+
+Runs once, after the loop gate leaves `should_stop == true` and the final native score has been written, and before the final report is produced. If the run has no import bundles (no `imports/<H>/` directory), skip this step entirely: ordinary runs and `--peers=off` runs are unchanged.
+
+Import bundles are made by the operator with `python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/import-melange-review.py"` (see `references/import-review.md`), not by this step. Imported rows are external, unverified evidence and follow a reduced pipeline:
+
+1. **Mark, snapshot and justify.** First write `import_assimilation` with `phase: snapshot` and an empty `bundle_ids` list through a guarded Edit: the key marks the run, and the importer refuses any newer bundle from then on. Only then list the bundles and write their sorted ids to `import_assimilation.bundle_ids`, with `phase: assay`. For each bundle, require a coordinator-written justification in `melange-state.json:import_applicability[H]` saying why the packaged review applies to this run's target. A bundle without a justification is not assimilated; record that in the report and continue.
+2. **assay** — run `phases/assay.md` once over the imported rows (import mode).
+3. **verify** — run `phases/verify.md` for cited rows only, within the remaining budget (`budget_policy: remaining-clamped`; rows it cannot cover are marked `budget-clamped`). Set `phase: verify`.
+4. **link** — run the import-only link and frontier pass from `phases/score.md`. It skips the scorer, convergence, heat, fusion and Taste. Set `phase: link`, then `phase: complete`.
+5. **synthesize** — `phases/synthesize.md` adds an "External review findings (unverified)" section, runs a separate surfaced pass, then the completion scan.
+
+If the completion scan finds residue or cannot run, set `import_scan.status` to `failed` and `import_completion` to `incomplete` in `melange-state.json` through a guarded Edit, and tell the operator. Do not report the import as complete.
 
 ## Step 3: Synthesize and report
 

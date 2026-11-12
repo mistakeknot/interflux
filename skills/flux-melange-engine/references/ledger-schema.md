@@ -96,6 +96,40 @@ Field contract:
 
 `should_stop` and `halt_reason` are written by the **loop gate** (`phases/score.md`). The orchestrator reads exactly these two fields to decide whether to re-enter `phases/retarget.md`.
 
+## Imported rows and import state
+
+An independently packaged review (see `import-review.md`) adds rows to the ledger only through the post-loop import assimilation, never during a round. Imported rows use the same fields with these differences:
+
+| Field | Imported value |
+|-------|----------------|
+| `source.import` | the bundle id `H` (absent on native rows) |
+| `source.agents` | `["fd-external-review-<H>"]` |
+| `taste_kind` | always `null`; `taste` is `0` |
+| `status` | `raw`, and it stays `raw` — never `upheld` or `refuted` |
+
+`melange-state.json` gains these keys only when a bundle exists:
+
+```json
+{
+  "import_applicability": { "<H>": "coordinator justification for why the review applies to this target" },
+  "import_assimilation": {
+    "round": 3,
+    "bundle_ids": ["<H>"],
+    "phase": "assay",
+    "budget_policy": "remaining-clamped",
+    "budget_before": 6,
+    "budget_after": 4,
+    "assay_dispatches": 1,
+    "link_dispatches": 1,
+    "verification": { "<source key>": { "result": "confirmed", "evidence": "..." } }
+  },
+  "import_scan": { "status": "clean" },
+  "import_completion": "complete"
+}
+```
+
+`phase` is one of `snapshot`, `assay`, `verify`, `link`, `complete`; `bundle_ids` is sorted. `import_scan.status` is `clean` or `failed`, and `import_completion` is `complete` or `incomplete`. The presence of `import_assimilation` marks the run as past the point where a new bundle can be imported.
+
 ## Per-round side artifacts
 
 - `round-N-directives.json` — the controller's output for round N (see `directive-vocabulary.md`).

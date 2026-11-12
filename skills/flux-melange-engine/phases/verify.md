@@ -35,6 +35,16 @@ A fusion EMERGENT finding (novelty floored at 3) always clears the gate — the 
 
 Order matters: a refuted finding (check 1) must never reach check 2, or a false interaction gets debated on its merits instead of dropped.
 
+## Import mode (Step 2.5 only)
+
+When Step 2.5 calls this phase for imported rows (`fd-external-review-<H>`), the gate above does not apply and the rows are never stamped `upheld`:
+
+- Verify **cited rows only**: rows whose `location` is a real `path:line` or `path:start-end`. Rows with no location (location-less rows) are skipped and stay `raw`.
+- The verifier receives the sanitized excerpt from the bundle, not the report copy and not the raw report.
+- Budget: verify at most `max(0, floor(remaining))` rows, in ledger order. Always record `budget_policy: remaining-clamped` (it names the policy: verification is bounded by the remaining budget). If that bound is fewer than the cited rows, mark each unverified cited row `budget-clamped`; `budget-clamped` is only ever a per-row result. With no budget left, every cited row is `budget-clamped` and nothing is dispatched.
+- Record each result in `melange-state.json:import_assimilation` under the row's source key (`confirmed`, `contradicted`, `no-location`, or `budget-clamped`) with the evidence line. Do not change the ledger row's `status`; it stays `raw`.
+- Record `budget_before`, `budget_after` and the verification count. Each row actually verified costs 1, whether a verifier subagent or the coordinator read it; decrement `budget.remaining` by that count, so a run that verified nothing leaves it unchanged. The imported rows' `round` is the last completed round plus 1; the top-level state `round` is not changed.
+
 ## Output
 
 Use Edit to stamp the ledger's `status` fields for the gated subset. Proceed to
