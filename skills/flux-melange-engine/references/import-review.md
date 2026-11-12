@@ -84,7 +84,9 @@ Imported rows carry `source.import`, `taste_kind: null`, status `raw`, and the a
 
 ## Late and second imports
 
-An import after synthesis has started is refused (exit 16): a `*-synthesis.md`, a `surfaced.jsonl`, or an `import_assimilation` key in `melange-state.json` marks the run as past the point where a new bundle can be assimilated. The importer checks again after it publishes and moves the new bundle back out if the marker appeared in between (exit 16), and the coordinator writes the marker before it lists bundles, so no bundle can be both missed by the snapshot and left in place. Re-running an identical existing import returns 0 after revalidating the bundle; a conflicting bundle returns 21.
+An import after synthesis has started is refused (exit 16): a `*-synthesis.md`, a `surfaced.jsonl`, or an `import_assimilation` key in `melange-state.json` marks the run as past the point where a new bundle can be assimilated. A second, different import is refused the same way (exit 16) while `imports/` already holds another bundle: a run takes one imported review. The importer checks the late marker again after it publishes. If the marker appeared in between, or if that check fails for any reason, it moves the new bundle back out (or deletes it) so no bundle is left that the snapshot may have missed. If the bundle can be neither moved nor deleted the importer exits 21 and says so; delete it before assimilating. The coordinator writes the marker before it lists bundles, and compares the listing again before the completion scan. Re-running an identical existing import returns 0 after revalidating the bundle; a conflicting bundle returns 21.
+
+Escape sequences in the report (`\uXXXX`, `\UXXXXXXXX`, `\xXX`) are decoded to a fixpoint before scrubbing, so an escaped credential is found at any nesting depth up to 64 (deeper is refused, exit 14). A sequence that cannot be shown as text (a control character, a surrogate or a value beyond U+10FFFF) is written as the visible placeholder `[encoded U+XXXX]` instead of a character: it neither forges line structure nor hides a credential behind a hexadecimal digit.
 
 ## Scope and Limitations
 

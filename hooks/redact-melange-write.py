@@ -38,15 +38,61 @@ AWS_KEY = re.compile(rf"(?<!{_ID})(?:AKIA|ASIA)[A-Z0-9]{{16}}(?!{_ID})")
 SLACK_TOKEN = re.compile(rf"(?<!{_ID})(?:xoxa|xoxb|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{{10,}}(?!{_ID})")
 STRIPE_KEY = re.compile(rf"(?<!{_ID})(?:sk_live|sk_test|rk_live|rk_test)_[A-Za-z0-9_-]{{16,}}(?!{_ID})")
 # A JWT is three dot-separated segments. A fourth segment, a dotted prefix or base64
-# padding directly after the token means the text is something else. The header
-# segment is bounded (RE2 allows 1000 at most) so that a long run of eyJ- repeats
-# cannot make every candidate start rescan the rest of the run.
-JWT_TOKEN = re.compile(
-    r"(?<![A-Za-z0-9_.])eyJ[A-Za-z0-9_-]{5,1000}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
-    r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])(?![=]|\.[=])"
-)
+# padding directly after the token means the text is something else. A single regular
+# expression would rescan the rest of a long `eyJ-eyJ-` run from every start, so the
+# match is made segment by segment in linear time (scrub_jwts). The import scanner's
+# Gitleaks rule states the same grammar with no length cap.
+_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+_JWT_START_BEFORE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.")
+
+
+def _jwt_spans(value: str) -> list[tuple[int, int]]:
+    segments = [(m.start(), m.end()) for m in _SEGMENT.finditer(value)]
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index + 2 < len(segments):
+        start, end = segments[index]
+        found = -1
+        at = value.find("eyJ", start, end)
+        while at != -1:
+            before = value[at - 1] if at > 0 else ""
+            if end - at >= 8 and before not in _JWT_START_BEFORE:
+                found = at
+                break
+            at = value.find("eyJ", at + 1, end)
+        if found >= 0:
+            (ps, pe), (ss, se) = segments[index + 1], segments[index + 2]
+            joined = ps == end + 1 and value[end] == "." and ss == pe + 1 and value[pe] == "."
+            if joined and pe - ps >= 8 and se - ss >= 8:
+                follow = value[se : se + 2]
+                after_dot = value[se + 1] if follow[:1] == "." and len(follow) > 1 else ""
+                tail_ok = (
+                    follow[:1] != "="
+                    and not (follow[:1] == "." and (after_dot == "=" or _SEGMENT.fullmatch(after_dot) is not None))
+                )
+                if tail_ok:
+                    spans.append((found, se))
+                    index += 3
+                    continue
+        index += 1
+    return spans
+
+
+def scrub_jwts(value: str) -> str:
+    spans = _jwt_spans(value)
+    if not spans:
+        return value
+    out: list[str] = []
+    last = 0
+    for start, end in spans:
+        out.append(value[last:start])
+        out.append(MARKER)
+        last = end
+    out.append(value[last:])
+    return "".join(out)
+
+
 GOOGLE_KEY = re.compile(rf"(?<!{_ID})AIza[A-Za-z0-9_-]{{35}}(?!{_ID})")
-NAMED_FORMATS = (AWS_KEY, SLACK_TOKEN, STRIPE_KEY, JWT_TOKEN, GOOGLE_KEY)
 
 
 def scrub(value: str) -> str:
@@ -54,9 +100,10 @@ def scrub(value: str) -> str:
     value = ASSIGNED_SECRET.sub(redact_assignment, value)
     value = TOKEN_SHAPE.sub(MARKER, value)
     value = BEARER.sub(lambda m: m.group(1) + MARKER, value)
-    for pattern in NAMED_FORMATS:
+    for pattern in (AWS_KEY, SLACK_TOKEN, STRIPE_KEY):
         value = pattern.sub(MARKER, value)
-    return value
+    value = scrub_jwts(value)
+    return GOOGLE_KEY.sub(MARKER, value)
 
 
 def redact_assignment(match: re.Match[str]) -> str:

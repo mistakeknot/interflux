@@ -62,5 +62,5 @@ secretGroup = 1
 [[rules]]
 id = "melange-jwt"
 description = "JSON web token: exactly three dot-separated segments"
-regex = '''(?:^|[^A-Za-z0-9_.])(eyJ[A-Za-z0-9_-]{5,1000}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?:$|[^A-Za-z0-9_.=-]|\.(?:$|[^A-Za-z0-9_=-]))'''
+regex = '''(?:^|[^A-Za-z0-9_.])(eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?:$|[^A-Za-z0-9_.=-]|\.(?:$|[^A-Za-z0-9_=-]))'''
 secretGroup = 1

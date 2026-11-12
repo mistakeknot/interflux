@@ -588,10 +588,44 @@ def test_jwt_matching_stays_linear_on_hostile_repeats():
     assert t_large < max(t_small, 0.01) * 12  # four times the input; quadratic growth would be near sixteen
 
 
-def test_a_real_jwt_with_a_long_header_boundary_still_scrubs():
+@pytest.mark.parametrize("header_length", [900, 1115, 5000, 100000])
+def test_a_jwt_scrubs_whatever_its_header_length(header_length):
     hook = _load_hook("hook_jwt_edge")
-    token = "ey" + "Jhbgc" + "a" * 900 + ".abcdefgh12.ABCDEFGH12"
+    token = "ey" + "Jhbgc" + "a" * header_length + ".abcdefgh12.ABCDEFGH12"
     assert hook.scrub("t=" + token) == "t=" + MARKER
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{h}hbGci.abcdefgh12.ABCDEFGH12.extra",
+        "a.{h}hbGci.abcdefgh12.ABCDEFGH12",
+        "{h}hbGci.abcdefgh12.ABCDEFGH12=",
+        "{h}hbGci.abcdefgh12.ABCDEFGH12.=",
+        "{h}hbG.abcdefgh12.ABCDEFGH1",
+        "{h}hb.abcdefgh12.ABCDEFGH12",
+        "{h}hbGci.abcdefg.ABCDEFGH12",
+    ],
+)
+def test_jwt_lookalikes_are_left_alone(text):
+    text = text.format(h="ey" + "J")
+    assert _load_hook("hook_jwt_lookalike").scrub(text) == text
+
+
+def test_the_segment_matcher_agrees_with_the_reference_expression():
+    import random
+    import re
+
+    hook = _load_hook("hook_jwt_fuzz")
+    reference = re.compile(
+        r"(?<![A-Za-z0-9_.])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
+        r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])(?![=]|\.[=])"
+    )
+    rng = random.Random(1234)
+    atoms = ["eyJ", "eyJ", "a", "-", "_", ".", ".", "=", "x", "AAAAAAAA", "eyJhbGci", "Z9", " ", "\n"]
+    for _ in range(20000):
+        text = "".join(rng.choice(atoms) for _ in range(rng.randint(1, 14)))
+        assert hook.scrub_jwts(text) == reference.sub(MARKER, text), text
 
 
 def _load_hook(name):

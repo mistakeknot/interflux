@@ -100,6 +100,8 @@ SHOULD_DETECT = {
     "url": f"https://x.test/?t={STRIPE_KEY}&u=1",
     "jwt-trailing-dot-space": JWT + ". Next",
     "jwt-in-quotes": f'"{JWT}"',
+    "jwt-long-header": "ey" + "Jhbgc" + "a" * 1200 + ".abcdefgh12.ABCDEFGH12",
+    "jwt-dash-before": "token-" + JWT,
 }
 
 SHOULD_IGNORE = {
@@ -373,3 +375,43 @@ def test_scanner_refuses_a_file_swapped_for_a_symlink_after_listing(ctx, monkeyp
     monkeypatch.setattr(mod, "_open_nofollow", swap_first)
     with pytest.raises(mod.ScannerFailure):
         list(mod.walk_files(ctx.run))
+
+
+NESTED_FORMATS = sorted(FIVE_FORMATS.items())
+
+
+def _nest(text: str, depth: int) -> str:
+    """Escape the first character of `text` as \\u00XX, then escape each backslash `depth` more times."""
+    first = "\\u%04x" % ord(text[0])
+    for _ in range(depth):
+        first = first.replace("\\", "\\u005c")
+    return first + text[1:]
+
+
+@pytest.mark.parametrize("name,secret", NESTED_FORMATS)
+def test_a_secret_behind_an_encoded_newline_is_found(ctx, name, secret):
+    (ctx.run / "round-1-synthesis.md").write_text("see \\u000a" + secret + "\\u000a end\n")
+    assert scan(ctx).returncode == 20
+
+
+@pytest.mark.parametrize("prefix", ["\\u0000", "\\ud800", "\\U00110000", "\\x1b", "\\u007f", "\\u0085"])
+def test_any_undisplayable_escape_before_a_secret_is_found(ctx, prefix):
+    (ctx.run / "round-1-synthesis.md").write_text(prefix + AWS_KEY + "\n")
+    assert scan(ctx).returncode == 20
+
+
+@pytest.mark.parametrize("depth", [5, 20, 60])
+def test_deeply_nested_escapes_are_resolved(ctx, depth):
+    (ctx.run / "round-1-synthesis.md").write_text(_nest(AWS_KEY, depth) + "\n")
+    assert scan(ctx).returncode == 20
+
+
+def test_escapes_nested_beyond_the_decode_limit_are_a_scanner_failure(ctx):
+    (ctx.run / "round-1-synthesis.md").write_text(_nest(AWS_KEY, 200) + "\n")
+    assert scan(ctx).returncode == 22
+
+
+def test_a_long_header_jwt_is_found_in_the_run_tree(ctx):
+    token = "ey" + "Jhbgc" + "a" * 1200 + ".abcdefgh12.ABCDEFGH12"
+    (ctx.run / "round-1-synthesis.md").write_text("t " + token + "\n")
+    assert scan(ctx).returncode == 20

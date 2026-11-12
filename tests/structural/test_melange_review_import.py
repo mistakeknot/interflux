@@ -914,14 +914,18 @@ def test_rerun_with_residue_in_an_existing_bundle_is_exit_20(ctx):
     assert again.returncode in (20, 21)
 
 
-def test_a_different_import_publishes_a_second_bundle(ctx):
-    assert do_import(ctx)[0].returncode == 0
+def test_a_different_second_import_is_exit_16_and_leaves_one_bundle(ctx):
+    first, receipt_path, report_path, sha = do_import(ctx)
+    assert first.returncode == 0
     other = make_receipt(pr=43, head_sha="7" * 40)
-    receipt_path = write_receipt(ctx.inputs, other)
-    report_path, sha = write_report(ctx.inputs, tagged("## Other", counts={}), name="other.md")
-    proc = run_script(IMPORT_SCRIPT, import_argv(ctx, receipt_path, report_path, sha), cwd=ctx.tmp)
-    assert proc.returncode == 0, proc.stderr
-    assert len([p for p in ctx.imports.iterdir() if p.is_dir()]) == 2
+    other_receipt = write_receipt(ctx.inputs, other)
+    other_report, other_sha = write_report(ctx.inputs, tagged("## Other", counts={}), name="other.md")
+    proc = run_script(IMPORT_SCRIPT, import_argv(ctx, other_receipt, other_report, other_sha), cwd=ctx.tmp)
+    assert proc.returncode == 16, proc.stderr
+    assert len([p for p in ctx.imports.iterdir() if p.is_dir()]) == 1
+    assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")
+    again = run_script(IMPORT_SCRIPT, import_argv(ctx, receipt_path, report_path, sha), cwd=ctx.tmp)
+    assert again.returncode == 0, again.stderr
 
 
 # ------------------------------------------------------------ late import
@@ -1163,3 +1167,113 @@ def test_assimilation_that_starts_after_the_first_check_rolls_the_bundle_back(ct
     assert calls["renames"] == 2
     assert not any(ctx.imports.iterdir())
     assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")
+
+
+ESCAPED_SECRET_PREFIXES = ["\\u000a", "\\u0000", "\\ud800", "\\x1b", "\\U00110000", "\\u0085"]
+
+
+@pytest.mark.parametrize("name,secret", sorted(FIVE_FORMATS.items()))
+@pytest.mark.parametrize("prefix", ESCAPED_SECRET_PREFIXES)
+def test_a_secret_behind_an_undisplayable_escape_is_scrubbed(ctx, name, secret, prefix):
+    report = tagged("### P1: Leaks", f"src/x.py:5 key{prefix}{secret} end", counts={1: 1})
+    proc, *_ = do_import(ctx, report=report)
+    assert proc.returncode == 0, proc.stderr
+    for path in published_bundle(ctx).rglob("*"):
+        if path.is_file():
+            assert secret not in path.read_text(), path.name
+    assert run_script(SCRIPTS / "scan-melange-import.py", ["--run-dir", str(ctx.run)], cwd=ctx.tmp).returncode == 0
+
+
+def _nested(text: str, depth: int) -> str:
+    first = "\\u%04x" % ord(text[0])
+    for _ in range(depth):
+        first = first.replace("\\", "\\u005c")
+    return first + text[1:]
+
+
+def test_a_secret_behind_twenty_nested_escapes_is_scrubbed(ctx):
+    report = tagged("### P1: Leaks", f"src/x.py:5 {_nested(AWS_KEY, 20)} end", counts={1: 1})
+    proc, *_ = do_import(ctx, report=report)
+    assert proc.returncode == 0, proc.stderr
+    for path in published_bundle(ctx).rglob("*"):
+        if path.is_file():
+            assert AWS_KEY not in path.read_text(), path.name
+    assert run_script(SCRIPTS / "scan-melange-import.py", ["--run-dir", str(ctx.run)], cwd=ctx.tmp).returncode == 0
+
+
+def test_escapes_nested_beyond_the_decode_limit_are_refused_with_nothing_published(ctx):
+    report = tagged("### P1: Leaks", f"src/x.py:5 {_nested(AWS_KEY, 200)} end", counts={1: 1})
+    proc, *_ = do_import(ctx, report=report)
+    assert proc.returncode == 14
+    assert not ctx.imports.exists() or not any(ctx.imports.iterdir())
+
+
+def test_a_long_header_jwt_in_the_report_is_scrubbed(ctx):
+    token = "ey" + "Jhbgc" + "a" * 1200 + ".abcdefgh12.ABCDEFGH12"
+    proc, *_ = do_import(ctx, report=tagged("### P1: Leaks", f"src/x.py:5 {token}", counts={1: 1}))
+    assert proc.returncode == 0, proc.stderr
+    for path in published_bundle(ctx).rglob("*"):
+        if path.is_file():
+            assert token not in path.read_text(), path.name
+
+
+# ------------------------------------------- review follow-up: failure-safe publication
+
+
+def test_a_failing_second_late_check_rolls_the_bundle_back(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_late = mod.late_import
+    calls = {"n": 0}
+
+    def late_then_corrupt(run_fd):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            (ctx.run / "melange-state.json").write_text("not json")
+        return real_late(run_fd)
+
+    monkeypatch.setattr(mod, "late_import", late_then_corrupt)
+    assert mod.main(argv) == 23
+    assert not any(ctx.imports.iterdir())
+    assert not any(p for p in ctx.staging.iterdir() if p.name != ".lock")
+
+
+def test_a_failing_rollback_rename_still_removes_the_bundle(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_rename = mod._renameat2
+    calls = {"n": 0}
+
+    def rename_then_fail_rollback(*args):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(errno.ENOSPC, "no space")
+        real_rename(*args)
+        if calls["n"] == 1:
+            state = json.loads((ctx.run / "melange-state.json").read_text())
+            state["import_assimilation"] = {"round": 3, "bundle_ids": [], "phase": "snapshot"}
+            (ctx.run / "melange-state.json").write_text(json.dumps(state) + "\n")
+
+    monkeypatch.setattr(mod, "_renameat2", rename_then_fail_rollback)
+    assert mod.main(argv) == 16
+    assert not any(ctx.imports.iterdir())
+
+
+def test_an_unremovable_published_bundle_is_reported_not_hidden(ctx, monkeypatch):
+    mod, argv = _inprocess(ctx, monkeypatch)
+    real_rename = mod._renameat2
+    calls = {"n": 0}
+
+    def rename_then_fail(*args):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(errno.ENOSPC, "no space")
+        real_rename(*args)
+        state = json.loads((ctx.run / "melange-state.json").read_text())
+        state["import_assimilation"] = {"round": 3, "bundle_ids": [], "phase": "snapshot"}
+        (ctx.run / "melange-state.json").write_text(json.dumps(state) + "\n")
+
+    def rmtree_fails(*args, **kwargs):
+        raise OSError(errno.EBUSY, "busy")
+
+    monkeypatch.setattr(mod, "_renameat2", rename_then_fail)
+    monkeypatch.setattr(mod.shutil, "rmtree", rmtree_fails)
+    assert mod.main(argv) == 21

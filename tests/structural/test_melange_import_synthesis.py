@@ -171,6 +171,16 @@ def test_synthesize_runs_the_completion_scan_after_synthesis():
     assert "incomplete" in body
 
 
+def test_a_bundle_set_mismatch_stops_before_the_scan_and_never_completes():
+    body = text(PHASES / "synthesize.md")
+    mismatch = body.index("must equal `import_assimilation.bundle_ids`")
+    scan = body.index("scan-melange-import.py")
+    stop = body.index("stop here", mismatch)
+    assert mismatch < stop < scan
+    assert re.search(r"never set `complete`", body[stop:scan])
+    assert re.search(r"only when the bundle-set check[^.\n]*matched", body[scan:])
+
+
 def test_imported_rows_never_reach_upheld_surfaced_scorer_heat_or_taste():
     combined = text(IMPORT_REF)
     for phrase in ("upheld", "surfaced.jsonl", "scorer", "convergence", "heat", "fusion", "Taste"):

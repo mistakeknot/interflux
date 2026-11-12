@@ -192,28 +192,33 @@ def json_strings(value) -> list[str]:
 
 
 ESCAPE = re.compile(r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2}))")
+MAX_DECODE_PASSES = 64
 
 
 def unescape_text(text: str) -> str:
-    """Decode \\uXXXX, \\UXXXXXXXX and \\xXX sequences (repeatedly, so nested escapes resolve).
+    """Decode \\uXXXX, \\UXXXXXXXX and \\xXX sequences until nothing changes.
 
-    Control characters stay encoded (no named secret contains one, and decoding them
-    would change line structure). Over-decoding is deliberate: this feeds a scan view and the importer's report text,
-    and an escaped credential in Markdown is still a recoverable credential.
+    A code point that cannot be shown as plain text (a control character, a surrogate or a
+    value beyond U+10FFFF) becomes the visible placeholder `[encoded U+XXXX]` instead of a
+    character, so it neither changes line structure nor leaves a hexadecimal digit next to a
+    secret (which would hide the secret from the identifier boundary). Escapes nested more
+    than MAX_DECODE_PASSES deep cannot be proven clean: that raises ScannerFailure.
     """
 
     def one(match: re.Match[str]) -> str:
         point = int(match.group(1) or match.group(2) or match.group(3), 16)
         if point < 0x20 or 0x7F <= point <= 0x9F or point > 0x10FFFF or 0xD800 <= point <= 0xDFFF:
-            return match.group(0)
+            return f"[encoded U+{point:04X}]"
         return chr(point)
 
-    for _ in range(4):
+    for _ in range(MAX_DECODE_PASSES):
         decoded = ESCAPE.sub(one, text)
         if decoded == text:
-            break
+            return text
         text = decoded
-    return text
+    if ESCAPE.search(text) is None:
+        return text
+    raise ScannerFailure("escape sequences are nested too deeply to resolve")
 
 
 def decoded_view(data: bytes, name: str) -> str | None:
@@ -252,12 +257,16 @@ def bytes_have_residue(scrub, binary: str | None, data: bytes, name: str) -> tup
         residue = residue or scrub(decoded) != decoded
         views.append(decoded.encode("utf-8"))
         candidates.append(decoded)
+    failed = False
     for candidate in candidates:
-        unescaped = unescape_text(candidate)
+        try:
+            unescaped = unescape_text(candidate)
+        except ScannerFailure:
+            failed = True
+            continue
         if unescaped != candidate:
             residue = residue or scrub(unescaped) != unescaped
             views.append(unescaped.encode("utf-8"))
-    failed = False
     if binary is None:
         return residue, True
     for view in views:

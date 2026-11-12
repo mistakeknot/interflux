@@ -114,7 +114,7 @@ Alongside the markdown, write `{OUTPUT_ROOT}/surfaced.jsonl` — one line per fi
 
 When the run has import bundles, the surfaced pass is a separate pass pinned to the native five views. Start a fresh agent with `--surfaced` semantics: it reads the finished synthesis, includes only native rows (never any `fd-external-review-` row, which is also excluded from the union), and the pass requires that `surfaced.jsonl` is written before anything else continues. Do not mark the run complete until `surfaced.jsonl` exists.
 
-Before the scan, list `imports/` again. The sorted bundle ids on disk must equal `import_assimilation.bundle_ids`. A difference means a bundle appeared or vanished after the snapshot, which only happens when an import raced the marker; set `import_completion` to `incomplete`, tell the operator, and do not describe the import as complete.
+Before the scan, list `imports/` again. The sorted bundle ids on disk must equal `import_assimilation.bundle_ids`. A difference means a bundle appeared or vanished after the snapshot, which only happens when an import raced the marker. Set `import_completion` to `incomplete`, tell the operator, and **stop here: do not run the completion scan and never set `complete` for this run**. A clean scan does not repair a bundle-set mismatch.
 
 Then run the completion scan, once, after both files are written:
 
@@ -122,7 +122,7 @@ Then run the completion scan, once, after both files are written:
 python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py" --run-dir {OUTPUT_ROOT}
 ```
 
-Exit 0 means the whole run tree is clean. Any other exit (residue 20, scanner failure 22, invalid run 23) means the import is not complete: use a guarded Edit to set `import_scan.status` to `failed` and `import_completion` to `incomplete` in `melange-state.json`, report the exit code and the file names the scanner printed (it never prints the matched text), and do not describe the run as clean. On exit 0, set `import_scan.status` to `clean` and `import_completion` to `complete`.
+Exit 0 means the whole run tree is clean. Any other exit (residue 20, scanner failure 22, invalid run 23) means the import is not complete: use a guarded Edit to set `import_scan.status` to `failed` and `import_completion` to `incomplete` in `melange-state.json`, report the exit code and the file names the scanner printed (it never prints the matched text), and do not describe the run as clean. On exit 0, and only when the bundle-set check above matched, set `import_scan.status` to `clean` and `import_completion` to `complete`.
 
 ## Then → Phase 8 Report
 

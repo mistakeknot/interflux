@@ -848,6 +848,31 @@ def _write_file_at(dir_fd: int, name: str, data: bytes) -> None:
         os.close(fd)
 
 
+def other_bundles(imports_fd: int, bundle: str) -> bool:
+    """True when imports/ holds anything besides this bundle: a second distinct import is refused."""
+    try:
+        with os.scandir(imports_fd) as listing:
+            return any(entry.name != bundle for entry in listing)
+    except OSError as exc:
+        raise ImportFailure(EXIT_CONFLICT) from exc
+
+
+def _take_back(imports_fd: int, bundle: str, staging_fd: int) -> str | None:
+    """Move a published bundle back to staging. Returns the staging name to clean up, or raises exit 21 when it cannot be removed."""
+    rollback = f"rollback-{secrets.token_hex(8)}"
+    try:
+        _renameat2(imports_fd, bundle, staging_fd, rollback)
+        return rollback
+    except OSError:
+        pass
+    try:
+        shutil.rmtree(bundle, dir_fd=imports_fd)
+        return None
+    except OSError:
+        pass
+    raise ImportFailure(EXIT_CONFLICT, "the published bundle could not be removed; delete it before assimilating")
+
+
 def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], binary: str) -> None:
     """Publish the bundle through pinned directory descriptors.
 
@@ -896,7 +921,7 @@ def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], bina
         if exists:
             revalidate_existing(imports_fd, bundle, files, binary)
             return
-        if late_import(run_fd):
+        if late_import(run_fd) or other_bundles(imports_fd, bundle):
             raise ImportFailure(EXIT_LATE)
         try:
             work_name = f"{bundle[:16]}-{secrets.token_hex(8)}"
@@ -910,14 +935,16 @@ def publish(run: Path, project: Path, bundle: str, files: dict[str, bytes], bina
                 _write_file_at(target, leaf, data)
             _renameat2(staging_fd, work_name, imports_fd, bundle)
             work_name = None
-            if late_import(run_fd):
-                # An assimilation began after the first check. Move the bundle back out.
-                rollback = f"rollback-{secrets.token_hex(8)}"
-                _renameat2(imports_fd, bundle, staging_fd, rollback)
-                work_name = rollback
-                raise ImportFailure(EXIT_LATE)
         except OSError as exc:
             raise ImportFailure(EXIT_CONFLICT, "could not publish the bundle") from exc
+        # The bundle is visible now. Any failure from here on must take it back out, so that
+        # no admissible bundle is left that an assimilation snapshot may have missed.
+        try:
+            if late_import(run_fd):
+                raise ImportFailure(EXIT_LATE)
+        except BaseException:
+            work_name = _take_back(imports_fd, bundle, staging_fd)
+            raise
     finally:
         if work_name is not None and staging_fd >= 0:
             try:
