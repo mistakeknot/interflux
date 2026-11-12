@@ -118,7 +118,7 @@ Import bundles are made by the operator with `python3 -I "${CLAUDE_PLUGIN_ROOT}/
 
 1. **Snapshot and justify.** List the bundles and write their sorted ids to `melange-state.json:import_assimilation.bundle_ids` with `phase: assay`. For each bundle, require a coordinator-written justification in `melange-state.json:import_applicability[H]` saying why the packaged review applies to this run's target. A bundle without a justification is not assimilated; record that in the report and continue.
 2. **assay** — run `phases/assay.md` once over the imported rows (import mode).
-3. **verify** — run `phases/verify.md` for cited rows only, within the remaining budget (clamped, reason `remaining-clamped`/`budget-clamped`). Set `phase: verify`.
+3. **verify** — run `phases/verify.md` for cited rows only, within the remaining budget (`budget_policy: remaining-clamped`; rows it cannot cover are marked `budget-clamped`). Set `phase: verify`.
 4. **link** — run the import-only link and frontier pass from `phases/score.md`. It skips the scorer, convergence, heat, fusion and Taste. Set `phase: link`, then `phase: complete`.
 5. **synthesize** — `phases/synthesize.md` adds an "External review findings (unverified)" section, runs a separate surfaced pass, then the completion scan.
 
