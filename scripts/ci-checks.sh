@@ -32,7 +32,8 @@ install -m 0755 "$work/gitleaks" "$HOME/.local/bin/gitleaks"
 echo "== pytest =="
 # test_public_files_carry_no_private_task_local_denylist_terms needs a private term list that is
 # never committed (MELANGE_IMPORT_PRIVATE_DENYLIST), so it cannot run in CI; it is the only
-# deselected test and it stays a local check.
+# deselected test and it stays a local check. Collection follows tests/pyproject.toml testpaths,
+# exactly as the GitHub workflow's `uv run pytest -q` does; -ra lists every skip with its reason.
 cd tests
-python3 -m pytest -q \
+python3 -m pytest -q -ra \
   --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms
