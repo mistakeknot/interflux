@@ -62,6 +62,21 @@ Write in direct technical prose. Name agents/lenses when attributing. Rank by HE
 (novelty × risk), never by severity alone.
 ```
 
+## Imported reviews (only when Step 2.5 ran)
+
+When the run has import bundles, add a seventh block after the five views and before the Spice Trail, and tell the synthesis agent (in the prompt above) to exclude every row whose agent starts with `fd-external-review-` from the five views, the frontier, the fusions and the "If you read one thing" line:
+
+```
+## External review findings (unverified)
+For each bundle: the bundle id, the manifest label, and its applicability justification.
+List its rows with severity, claim, location, and any verification result from
+melange-state.json:import_assimilation (confirmed / contradicted / no-location /
+budget-clamped). State that these are one external reviewer's claims, not the run's
+findings, and that rows marked confirmed were only checked against the cited location.
+```
+
+Imported rows never appear in `surfaced.jsonl`, and the section states that.
+
 ## Output
 
 Write to `{OUTPUT_ROOT}/{DATE}-synthesis.md` with frontmatter:
@@ -94,6 +109,18 @@ Alongside the markdown, write `{OUTPUT_ROOT}/surfaced.jsonl` — one line per fi
 `views` is any subset of `frontier` | `fusion` | `taste` | `convergence` | `disagreement` | `if-you-read-one-thing`. A finding surfaced by the risk axis of view 1 OR the taste view OR the fusions view all belong here — the surfaced set is the **union** of the five views, not a single Pareto front. Refuted findings never appear. This file is the eval target for `scripts/_melange_score.py`.
 
 **Do not write it in the same agent turn as the report.** A run without `surfaced.jsonl` cannot be scored at all, and it is the cheapest artifact of the phase — so it must never queue behind the most expensive one. Write the report, *then* start a fresh pass for the surfacing record; if the report-writing pass has run long, hand the extraction to a new agent. The historical Workflow ordering is documented in `references/workflow-args.md`, but that runtime is disabled until its subagent writes have a before-disk guard.
+
+## Import-aware surfaced pass and completion scan
+
+When the run has import bundles, the surfaced pass is a separate pass pinned to the native five views. Start a fresh agent with `--surfaced` semantics: it reads the finished synthesis, includes only native rows (never any `fd-external-review-` row, which is also excluded from the union), and the pass requires that `surfaced.jsonl` is written before anything else continues. Do not mark the run complete until `surfaced.jsonl` exists.
+
+Then run the completion scan, once, after both files are written:
+
+```bash
+python3 -I "${CLAUDE_PLUGIN_ROOT}/scripts/scan-melange-import.py" --run-dir {OUTPUT_ROOT}
+```
+
+Exit 0 means the whole run tree is clean. Any other exit (residue 20, scanner failure 22, invalid run 23) means the import is not complete: use a guarded Edit to set `import_scan.status` to `failed` and `import_completion` to `incomplete` in `melange-state.json`, report the exit code and the file names the scanner printed (it never prints the matched text), and do not describe the run as clean. On exit 0, set `import_scan.status` to `clean` and `import_completion` to `complete`.
 
 ## Then → Phase 8 Report
 

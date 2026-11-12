@@ -36,6 +36,18 @@ append with shell redirection. The schema is in `references/ledger-schema.md`.
 Set `status = raw` (the verify phase will stamp `upheld`/`refuted` for the
 high-novelty/high-risk subset).
 
+## Import mode (Step 2.5 only)
+
+When `skills/flux-melange-engine/SKILL.md` Step 2.5 calls this phase for imported review bundles, run it **once**, after the final native score, over `imports/<H>/findings/fd-external-review-<H>.md` and `imports/<H>/findings.jsonl` for the snapshotted bundles. Imports are never part of a loop round, so the loop's own assay never sees them. This pass differs from the normal one:
+
+- Use the sanitized excerpt and claim from `findings.jsonl`; never open the report copy under `external-evidence/` for scoring.
+- Allocate ledger ids after the ledger maximum, as in step 0, and keep the bundle file path plus local id as the source key.
+- Set `source.import` to the bundle id, the agent to `fd-external-review-<H>`, `taste = 0` and `taste_kind = null`. Score no Taste.
+- Score novelty and risk against the run's existing ledger. Cluster imported rows with the run's rows by the same deterministic location pre-filter; a cluster that holds an imported row is marked as an import cluster.
+- Skip the emergence gate. An imported row has no fused-lens parents.
+- Keep `status = raw`. This phase never stamps `upheld` or `refuted`.
+- Record `assay_dispatches` and the bundle ids in `melange-state.json:import_assimilation`. The assay runs once; a resumed run that finds `assay_dispatches` already set must not repeat it.
+
 ## Refresh lens records
 
 Append this round's new finding ids to the relevant `lenses/{agent}.json` records, and create records for any newly generated lenses (probe lenses, fused lenses) so the next `retarget` sees an up-to-date lens graph.

@@ -56,3 +56,7 @@ Before any LLM same-claim judgment, the Assayer groups candidate findings by **l
 - **yield_density** (per region) = sum of `heat` of new-cluster findings in that region ÷ probes spent there. This is what the heat map ranks regions by, and what STEER-WIDE watches for decay.
 - **|taste|** — magnitude, for the Taste Calls view (both elegance and smell are interesting).
 - **fusion-yield** — emergent findings produced ÷ fusions attempted.
+
+## Imported rows are excluded
+
+Rows from an imported review (`source.import` set, agent `fd-external-review-<H>`; see `import-review.md`) take no part in any derived quantity above. They are assayed once after the loop, with `taste = 0`, and are left out of heat, yield, yield_density, |taste|, fusion-yield, `novel_cluster_rate`, the `frontier` and every convergence or disagreement stamp. An imported row that shares a cluster with a native row is a cross-reference only.
