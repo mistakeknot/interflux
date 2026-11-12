@@ -446,6 +446,24 @@ def test_the_scrubber_finds_a_jwt_too_long_for_gitleaks_and_gitleaks_is_not_aske
     assert _alone(scanner, text.decode()) == (False, False)
 
 
+@pytest.mark.parametrize("glue", ["\u00e9", "\u00fc", "\u4e2d"])
+@pytest.mark.parametrize("token", ["npm_" + "E" * 36, "ghp_" + "E" * 36, "sk-" + "E" * 48])
+def test_a_legacy_token_glued_to_a_non_ascii_letter_in_an_oversized_stretch_is_residue(glue, token):
+    scanner = load_module("scan_ascii_boundary", SCAN_SCRIPT)
+    text = glue + token + "=" * 82000
+    # The stretch is too long to cut, so Gitleaks is not asked; the scrubber's own Unicode word
+    # boundary does not see the token, Gitleaks' ASCII boundary would.
+    assert list(scanner.gitleaks_pieces(text.encode())) == []
+    assert _scrub()(text) == text
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (True, False)
+
+
+def test_a_non_ascii_oversized_stretch_without_a_token_is_not_residue():
+    scanner = load_module("scan_ascii_boundary_clean", SCAN_SCRIPT)
+    text = "\u00e9" + "word" + "=" * 82000
+    assert scanner.bytes_have_residue(_scrub(), str(GITLEAKS), text.encode(), "x.md") == (False, False)
+
+
 @pytest.mark.parametrize("tail", ["=", ".fourthpart", ".="])
 def test_a_rejected_jwt_shape_in_a_huge_run_is_not_residue(tail):
     scanner = load_module("scan_rejected_shape", SCAN_SCRIPT)
