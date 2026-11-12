@@ -49,14 +49,22 @@ fi
 export PYTHONDONTWRITEBYTECODE=1
 # test_public_files_carry_no_private_task_local_denylist_terms needs a private term list that is
 # never committed (MELANGE_IMPORT_PRIVATE_DENYLIST), so it cannot run in CI; it is the only
-# deselected test and it stays a local check. The explicit `.` collects every test
-# under tests/, including the top-level modules that tests/pyproject.toml testpaths leaves out;
-# -ra lists every skip with its reason.
+# deselected test and it stays a local check. The test lives in
+# structural/test_melange_import_synthesis.py, which not every admitted commit carries yet. Where
+# the file is present the test is deselected and exactly one deselection is required below; where
+# the file is absent there is nothing to deselect and none may be reported. The explicit `.`
+# collects every test under tests/, including the top-level modules that tests/pyproject.toml
+# testpaths leaves out; -ra lists every skip with its reason.
 cd tests
 out="$work/pytest.out"
+deselect_args=()
+deselect_expected=0
+if [[ -f structural/test_melange_import_synthesis.py ]]; then
+  deselect_args=(--deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms)
+  deselect_expected=1
+fi
 set +e
-python3 -m pytest -q -ra -p no:cacheprovider . \
-  --deselect structural/test_melange_import_synthesis.py::test_public_files_carry_no_private_task_local_denylist_terms \
+python3 -m pytest -q -ra -p no:cacheprovider . "${deselect_args[@]}" \
   2>&1 | tee "$out"
 rc=("${PIPESTATUS[@]}")
 set -e
@@ -64,8 +72,12 @@ set -e
 [[ ${rc[1]} -eq 0 ]] || { echo "could not record the pytest report" >&2; exit 2; }
 # A green run must not hide a skip or a deselection that was meant to run. The only accepted skips
 # are tests whose optional inputs (Linsenkasten source, Hermes, the real spec corpora) are absent
-# from the guest; anything else, and an unmatched --deselect, fails the check.
-grep -qE '(^|, )1 deselected( |,|$)' "$out" || { echo "expected exactly the one deselected test" >&2; exit 2; }
+# from the guest; anything else, an unmatched --deselect and an unexpected deselection fail the check.
+if [[ "$deselect_expected" -eq 1 ]]; then
+  grep -qE '(^|, )1 deselected( |,|$)' "$out" || { echo "expected exactly the one deselected test" >&2; exit 2; }
+else
+  ! grep -qE '(^|, )[0-9]+ deselected( |,|$)' "$out" || { echo "unexpected deselected tests" >&2; exit 2; }
+fi
 accepted='Linsenkasten source package is unavailable|hermes not installed|real (brainstorm )?spec corpus not present'
 if grep -E '^SKIPPED' "$out" | grep -vE "$accepted"; then
   echo "unexpected skipped tests (listed above)" >&2; exit 2
