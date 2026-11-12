@@ -111,6 +111,9 @@ Fences use indentation relative to the list content column. Fences, thematic
 breaks and Setext underlines pop list context only to their own container:
 column-zero blocks end list context, while blocks inside an item preserve the
 enclosing list so later nested bullets and paragraphs remain prose.
+A list-relative fence ends implicitly on a nonblank line indented less than its
+container's content column. That line is then parsed afresh; a column-zero fence
+delimiter there opens a new top-level block. Blank lines alone do not end a fence.
 An unclosed opening frontmatter delimiter produces an explicit diagnostic and
 the source is parsed as Markdown. Multiline Setext headings are explicitly
 unsupported and diagnosed across their whole block, without guessing a shorter

@@ -105,6 +105,13 @@ def markdown_regions(text, diagnostics=None):
     for n, line in enumerate(lines):
         stripped = line.rstrip('\r\n')
         kind = 'prose'
+        # A fence is owned by its list container. A nonblank dedent ends that
+        # container (and its fence) before the current line is parsed afresh.
+        # Blank lines alone cannot close it; top-level fences have no container.
+        if fence and fence[2] > 0 and stripped.strip():
+            indent_text = re.match(r'[ \t]*',stripped)[0]
+            if len(indent_text.expandtabs(4)) < fence[2]:
+                fence = None
         if front_end is not None and n <= front_end:
             kind = 'excluded'
         elif fence:
