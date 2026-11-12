@@ -113,7 +113,7 @@ def resolve_sections(row,gold):
     ids={s['section_id'] for s in gold['index']['sections']}
     require(declared is None or set(declared)<=ids,'unknown_finding_section')
     derived=[]; diagnostics=[]
-    match=re.fullmatch(r'(.+):(\d+)(?:-(\d+))?',row['location'])
+    match=re.fullmatch(r'(.+):([0-9]+)(?:-([0-9]+))?',row['location'])
     if not match:
         diagnostics.append('location_unparseable')
     else:

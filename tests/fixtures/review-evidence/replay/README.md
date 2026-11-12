@@ -37,6 +37,7 @@ Optional finding `pass_id`/`pass_ids` must lie within the declared scope.
 Finding records require `id`, `claim` and `location`. The shared findings loader
 handles full-row ledger stamps, duplicate records and immutable-field conflicts.
 Locations use a rightmost numeric `path:line` or `path:start-end` suffix.
+Line numbers use ASCII digits only; other numeral spellings are unparseable.
 Paths are canonical repository-relative identities; line ranges must be positive,
 ordered and in bounds. All intersected direct section owners are retained.
 Optional declared `sections` are validated and kept alongside derived sections;

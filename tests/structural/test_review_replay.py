@@ -523,3 +523,14 @@ def test_candidates_top_level_reports_semantic_and_unavailable_scope_limits(tmp_
     report,code=evaluate(tmp_path)
     assert code==0 and 'semantic_review_not_evaluated' in report['limitations']
     assert ('ablation_unavailable' in report['limitations'])==unavailable_ablation
+
+
+@pytest.mark.parametrize('suffix',['٢','2-٤','２','२-4'])
+def test_non_ascii_location_digits_do_not_infer_sections(tmp_path,suffix):
+    prepare(tmp_path,findings=[dict(id='f',claim='Issue.',location='docs/example.md:'+suffix)])
+    report,code=evaluate(tmp_path); scope=report['runs'][0]
+    assert code==0 and not scope['candidates']
+    assert scope['findings'][0]['diagnostics']==['location_unparseable']
+    judgments(tmp_path,report,[('f','g-d','same_issue')],coverage=True)
+    scored,code=evaluate(tmp_path,'score')
+    assert code==0 and scored['runs'][0]['matching']['decision_matches']==1
