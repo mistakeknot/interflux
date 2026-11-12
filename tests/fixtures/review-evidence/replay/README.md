@@ -126,6 +126,11 @@ adjudication or agreement from at least three declared model families completes
 extra validity coverage. Family diversity is an external provenance assertion,
 not independently verified model-service evidence. Disagreement has no majority
 shortcut: an explicit resolution must supersede conflicting judgments.
+Extra-validity judgments supplied for an accepted-gold match remain visible in
+`matched_finding_validity`, with the chosen gold ID and explicit diagnostics for
+invalid or unresolved validity. These diagnostics do not rewrite semantic edges,
+the matching assignment or recall: matching and validity are separate judgments.
+Such findings remain matched rather than appearing in the unmatched `extras`.
 
 ## Ablations and costs
 

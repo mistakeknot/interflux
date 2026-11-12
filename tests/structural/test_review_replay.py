@@ -493,3 +493,21 @@ def test_coverage_resolution_requires_same_group_acyclic_current_binding(tmp_pat
     if problem=='stale': row['inputs_sha256']='0'*64
     data['resolutions']=[row]; (tmp_path/'judgments.json').write_text(json.dumps(data))
     assert evaluate(tmp_path,'score')[1]==2
+
+
+@pytest.mark.parametrize('verdict,diagnostic',[
+    ('invalid','matched_finding_invalid'),('uncertain','matched_finding_validity_unresolved'),('valid',None)])
+def test_matched_findings_keep_extra_validity_and_explicit_diagnostics(tmp_path,verdict,diagnostic):
+    prepare(tmp_path); candidates,_=evaluate(tmp_path)
+    data=judgments(tmp_path,candidates,[('f','g-d','same_issue')],[('f',verdict,'human')],True)
+    report,code=evaluate(tmp_path,'score'); scope=report['runs'][0]
+    assert code==0 and assignment(scope['matching']['assignment'])=={'g-d':'f'} and not scope['extras']
+    validity=scope['matched_finding_validity'][0]
+    assert validity['finding_id']=='f' and validity['gold_id']=='g-d'
+    assert validity['status']==verdict and validity['judgment_ids']==['j-1']
+    assert validity['diagnostics']==([diagnostic] if diagnostic else [])
+    resolution=dict(data['judgments'][1],id='validity-resolution',verdict='valid',supersedes=['j-1'])
+    data['resolutions']=[resolution]; (tmp_path/'judgments.json').write_text(json.dumps(data))
+    report,code=evaluate(tmp_path,'score')
+    assert code==0 and report['runs'][0]['matched_finding_validity'][0]['diagnostics']==[]
+    assert len(report['judgments'])==3

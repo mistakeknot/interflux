@@ -302,23 +302,31 @@ def score_scope(scope,gold,groups):
     rejected={g['id'] for g in gold['items'] if g['disposition']=='rejected'}
     rejected_relations=[dict(finding_id=f,gold_id=g,judgment_ids=sorted(r['id'] for r in rows))
         for (f,g),rows in sorted(matches.items()) if g in rejected and resolved(rows)=='same_issue']
-    extras=[]; used=set(chosen.values()); by_f={r['finding_id']:r for r in result['ambiguity']['per_finding']}
-    for f in sorted(set(fids)-used):
+    extras=[]; matched_validity=[]; by_f={r['finding_id']:r for r in result['ambiguity']['per_finding']}
+    matched_gold={f:g for g,f in chosen.items()}
+    for f in sorted(fids):
         rows=groups.get((run,ablation,'extra',f,None),[])
+        if f in matched_gold and not rows:
+            continue
         verdict=resolved(rows) if rows else 'unverified'
         families=sorted({r['judge']['family'] for r in rows if r['judge']['kind']=='model'})
         human=any(r['judge']['kind']=='human' for r in rows)
-        extras.append(dict(finding_id=f,status=verdict,judgment_ids=sorted(r['id'] for r in rows),
+        validity=dict(finding_id=f,status=verdict,judgment_ids=sorted(r['id'] for r in rows),
             model_families=families,three_family_coverage=len(families)>=3,
             family_coverage_basis='declared_judge_provenance',
             complete=verdict in ('valid','invalid') and (human or len(families)>=3),
-            occurrence_ambiguous=by_f[f]['occurrence_ambiguous']))
+            occurrence_ambiguous=by_f[f]['occurrence_ambiguous'])
+        if f in matched_gold:
+            diagnostics=['matched_finding_invalid'] if verdict=='invalid' else ['matched_finding_validity_unresolved'] if verdict=='uncertain' else []
+            matched_validity.append(dict(validity,gold_id=matched_gold[f],diagnostics=diagnostics))
+        else:
+            extras.append(validity)
     by_g={r['gold_id']:r for r in result['ambiguity']['per_gold']}
     unmatched=[dict(gold_id=g,status='unresolved' if not semantic or not gold['labels_complete'] else
         'assignment_dependent' if by_g[g]['occurrence_ambiguous'] else 'missed') for g in sorted(eligible) if g not in chosen]
     return dict(result,labels_complete=gold['labels_complete'],semantic_coverage_complete=semantic,metrics=metrics,
         recall_status='incomplete_labels' if not gold['labels_complete'] else 'complete' if semantic else 'confirmed_recall_lower_bound',
-        unmatched_gold=unmatched,rejected_relations=rejected_relations,extras=extras,
+        unmatched_gold=unmatched,rejected_relations=rejected_relations,extras=extras,matched_finding_validity=matched_validity,
         complete=gold['labels_complete'] and semantic and all(e['complete'] for e in extras))
 
 
