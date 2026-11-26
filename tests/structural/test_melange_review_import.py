@@ -1271,8 +1271,15 @@ def test_an_unremovable_published_bundle_is_reported_not_hidden(ctx, monkeypatch
         state["import_assimilation"] = {"round": 3, "bundle_ids": [], "phase": "snapshot"}
         (ctx.run / "melange-state.json").write_text(json.dumps(state) + "\n")
 
+    real_rmtree = mod.shutil.rmtree
+
     def rmtree_fails(*args, **kwargs):
-        raise OSError(errno.EBUSY, "busy")
+        # Fail only the importer's descriptor-relative bundle removal. The
+        # shutil module is shared, so the scanner's TemporaryDirectory cleanup
+        # also lands here (with dir_fd=None on Python 3.13) and must succeed.
+        if kwargs.get("dir_fd") is not None:
+            raise OSError(errno.EBUSY, "busy")
+        return real_rmtree(*args, **kwargs)
 
     monkeypatch.setattr(mod, "_renameat2", rename_then_fail)
     monkeypatch.setattr(mod.shutil, "rmtree", rmtree_fails)
