@@ -13,7 +13,14 @@ jobs:
         with:
           egress-policy: audit
 
+      # Full history plus a local `main` branch: the melange import hygiene
+      # tests diff against `git merge-base HEAD main`, which fails on the
+      # default shallow single-ref checkout ("Not a valid object name main").
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Ensure local main branch
+        run: git rev-parse --verify -q main >/dev/null || git branch main origin/main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
