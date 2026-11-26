@@ -146,6 +146,26 @@ routing:
     esoteric: sonnet       # Lens application: defined frontier lens
   synthesis: opus          # Highest judgment: convergence + quality filtering
 
+# --- Cross-Track Convergence Weighting (issue #52) -------------------------
+#
+# Cross-track agreement is only independent corroboration when the tracks ran
+# on different model families. Track reviews route to sonnet/opus (one family),
+# so a raw track head-count overstates confidence. scripts/cross_track_convergence.py
+# reads these knobs; see docs/spec/core/synthesis.md Step 4b.
+#
+#   credit(f) = 1 + same_family_track_bonus * (tracks_in_family_f - 1)
+#   weighted  = credit(top family) + cross_family_weight * sum(credit(other families))
+#
+# A convergent finding whose tracks all share one family is labelled
+# "Correlated" and is never "High", whatever its track count.
+#
+convergence:
+  cross_family_weight: 1.5       # same multiplier as single-run synthesis Step 4
+  same_family_track_bonus: 0.25  # each extra same-family track (distinct semantic distance)
+  high_threshold: 2.5            # needs >= 2 families: max single-family score is 1.75
+  medium_threshold: 1.5
+  default_model_family: claude   # assumed when track provenance is missing (never adds independence)
+
 # --- Cost Reference ---------------------------------------------------------
 #
 # Approximate cost per configuration (assumes ~100k tokens per track):
