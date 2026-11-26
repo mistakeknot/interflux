@@ -186,6 +186,8 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
         for qi,q,status,reason in members:
             result = dict(finding_id=fid,quote_index=qi,section_id=q.get('section_id') if isinstance(q,dict) else None,
                 status=status,reason=reason,match_mode=None,spans=[],diagnostics=[],support='unverified',occurrence_ambiguous=False)
+            if not loc:
+                result['diagnostics'].append(dict(code='location_unparseable',count=1,spans=[]))
             if uncertain or loc and prefix_uncertain(target_spelling(loc[0],doc_id),doc_id):
                 result['diagnostics'].append(dict(code='location_uncertain',count=1,spans=[]))
             def fail(why):
@@ -232,7 +234,7 @@ def check_document(data, doc_id, expected, index, rows, input_mode='snapshot'):
                         if markup:
                             result['diagnostics'].append(dict(code='markup_drop_match',count=len(markup),spans=[span(text,a,b) for a,b in markup]))
                     if not loc:
-                        result['diagnostics'].append(dict(code='location_unparseable',count=1,spans=[]))
+                        pass  # Absence was diagnosed independently of quote presence.
                     elif prefix_uncertain(target_spelling(loc[0],doc_id),doc_id):
                         pass  # The uncertainty signal above does not establish line agreement.
                     elif target_spelling(loc[0],doc_id) != doc_id:
