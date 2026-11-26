@@ -49,6 +49,7 @@ This spec serves two audiences:
 | [extensions/budget-system.md](extensions/budget-system.md) | ~60 | Token budget enforcement: per-type budgets, historical cost estimation, billing vs total token split, reaction cap. |
 | [extensions/cross-model-dispatch.md](extensions/cross-model-dispatch.md) | ~55 | Evidence-proportional model tier routing: expansion score → tier, safety floors, downgrade caps, shadow/enforce modes. |
 | [extensions/agent-dropout.md](extensions/agent-dropout.md) | ~45 | Redundancy filter: domain convergence + adjacency saturation scoring, exempt agents, advisory-only pruning. |
+| [extensions/phase-review.md](extensions/phase-review.md) | ~165 | **Draft proposal.** Advisory cognitive review at brainstorm→PRD→plan transitions: caller-owned triggering, `--profile=phase-review`, prior-phase dedup, `phase_review` output block. |
 
 ### Host / adapter doctrine (Informational)
 
