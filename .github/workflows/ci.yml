@@ -23,6 +23,41 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cd tests && uv sync
+      # The melange review-import scanner and its tests require this exact
+      # gitleaks version at ~/.local/bin/gitleaks (see
+      # tests/structural/test_melange_import_scan.py). Pinned by checksum.
+      - name: Install gitleaks
+        shell: bash
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "${RUNNER_TEMP}/${tarball}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}" gitleaks
+          install -D -m 0755 "${RUNNER_TEMP}/gitleaks" "$HOME/.local/bin/gitleaks"
+          "$HOME/.local/bin/gitleaks" version
+
+      # The private-term hygiene test reads its terms from a file that must
+      # never be committed. CI supplies it from the repository secret
+      # MELANGE_IMPORT_PRIVATE_DENYLIST_TERMS (one term per line).
+      - name: Write private denylist
+        shell: bash
+        env:
+          DENYLIST_TERMS: ${{ secrets.MELANGE_IMPORT_PRIVATE_DENYLIST_TERMS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DENYLIST_TERMS}" ]; then
+            umask 077
+            printf '%s\n' "${DENYLIST_TERMS}" > "${RUNNER_TEMP}/melange-private-denylist.txt"
+            echo "MELANGE_IMPORT_PRIVATE_DENYLIST=${RUNNER_TEMP}/melange-private-denylist.txt" >> "${GITHUB_ENV}"
+          else
+            echo "::warning::MELANGE_IMPORT_PRIVATE_DENYLIST_TERMS secret is not set; the private-term hygiene test will fail."
+          fi
+
       - name: Run tests
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
