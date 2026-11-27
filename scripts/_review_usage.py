@@ -181,13 +181,13 @@ def adapt_receipt(out,records,selector,related):
         requested_model=model(row.get('model')),requested_effort=effort(row.get('effort')),lifecycle=state(row.get('outcome')))
     raw={k:row[v] for k,v in RECEIPT_KEYS.items() if v in row}
     out['raw_counts']=[native_counts(row)]
+    if status=='unavailable':
+        out['reasons'].append('usage_unavailable'); return
     if out['basis']=='codex-input-includes-cached' or row.get('backend')=='codex':
         out['reasons'].append('usage_scope_unknown')
         # This gate follows the accounting basis even if backend metadata is
         # missing or inconsistent. Ambient receipt.session_id is never a join.
         return
-    if status=='unavailable':
-        out['reasons'].append('usage_unavailable'); return
     # Older Claude adapters may have supplied these zeros for absent fields.
     if row.get('backend')=='claude':
         for key in list(raw):
@@ -362,6 +362,11 @@ def adapt(source,directory):
             out['reasons'].append('format_unsupported')
     except (ValueError,TypeError,KeyError,AttributeError):
         out['reasons'].append('malformed_usage_record')
+    # An explicitly requested worker session must have matched evidence even
+    # when another alternative view supplies all required counters.
+    session=selector.get('session_id')
+    if fmt!='clavain-receipt-v1' and isinstance(session,str) and session not in out['_sessions']:
+        out['reasons'].append('provider_session_unmatched')
     if {'capture_damaged','malformed_usage_record'} & set(out['reasons']):
         for f in out['usage'].values():
             f['complete']=False

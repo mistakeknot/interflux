@@ -68,3 +68,19 @@ Remaining adapter limits are explicit: partial receipts can contain display-deri
 fallback counts (kept incomplete), and Claude terminal results with `modelUsage`
 stay incomplete because whole-parent/subagent inclusion is not established by
 that adapter. These observations are not promoted into exact totals or pricing.
+
+Hardening dispositions (mk-d0h1j.2.4), reproduced in the focused ledger tests:
+
+- An unmatched requested provider session alongside a complete alternative is a
+  defect: `provider_session_unmatched` now keeps the invocation incomplete while
+  preserving observed counters.
+- Receipt-only/provider-only invocations with `unresolved_overlap` intentionally
+  withhold their subtotals. Without a proven worker relationship, adding those
+  observations could charge the same usage twice; this behavior is unchanged.
+- An explicitly unavailable Codex receipt now reports `usage_unavailable` before
+  the scope gate. Counts remain unknown; available Codex receipts still require
+  independent scope evidence.
+- TTL cost estimation now requires the aggregate cache-write field to be complete
+  as well as complete, matching TTL subsets. A direct estimator test reproduces
+  the missing guard; it does not establish a provider capture that reaches this
+  inconsistent field-completeness combination.

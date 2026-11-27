@@ -560,3 +560,61 @@ def test_store_review_codex_resume_across_streams_is_not_additive(tmp_path,same_
     else:
         assert code==0 and report['totals']['input_total']['known_subtotal']==200
     assert 'worker-thread-' not in json.dumps(report)
+
+
+@pytest.mark.parametrize('fmt,selector',[
+    ('claude-assistant-v1',dict(session_id='unmatched',message_ids=['message-a'])),
+    ('codex-events-v1',dict(session_id='unmatched',record_indices=[1])),
+    ('claude-result-v1',dict(session_id='unmatched',record_indices=[0])),
+])
+def test_hardening_unmatched_provider_session_cannot_hide_behind_complete_view(tmp_path,fmt,selector):
+    good=source('claude-assistant-v1','good',dict(session_id='session-a',message_ids=['message-a']))
+    bad=source(fmt,'bad',selector)
+    records={
+        'claude-assistant-v1':[assistant()],
+        'codex-events-v1':[dict(type='thread.started',thread_id='session-a'),
+            dict(type='turn.completed',usage=dict(input_tokens=10,output_tokens=5))],
+        'claude-result-v1':[dict(type='result',session_id='session-a',usage={})],
+    }
+    report,code=run(tmp_path,[invocation([good,bad])],{'good':[assistant()],'bad':records[fmt]})
+    assert code==1
+    assert 'provider_session_unmatched' in report['invocations'][0]['reasons']
+    assert field(report,'output')['value']==5
+    assert not field(report,'output')['complete']
+
+
+def test_hardening_unresolved_overlap_intentionally_withholds_subtotals(tmp_path):
+    # Without worker binding these may be two views of the same charge.
+    r=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    t=source('claude-assistant-v1','t',dict(session_id='session-a',message_ids=['message-a']))
+    report,code=run(tmp_path,[invocation([r],'receipt'),invocation([t],'provider')],
+        {'r':[receipt()],'t':[assistant()]})
+    assert code==1
+    assert all('unresolved_overlap' in row['reasons'] for row in report['invocations'])
+    assert report['totals']['input_total']['known_subtotal']==0
+    assert report['totals']['input_total']['unknown_invocations']==2
+
+
+def test_hardening_codex_unavailable_receipt_reports_unavailable(tmp_path):
+    r=receipt(); r.update(backend='codex',usage_basis='codex-input-includes-cached',usage_status='unavailable')
+    s=source('clavain-receipt-v1','r',dict(dispatch_id='dispatch-a'))
+    report,code=run(tmp_path,[invocation([s])],{'r':[r]})
+    assert code==1
+    assert 'usage_unavailable' in report['invocations'][0]['reasons']
+    assert 'usage_scope_unknown' not in report['invocations'][0]['reasons']
+    assert field(report,'output')['value'] is None
+
+
+def test_hardening_ttl_cost_requires_complete_cache_write_aggregate():
+    from review_token_ledger import estimate_cost
+    from _review_usage import empty_fields
+    usage=empty_fields()
+    for key,value in dict(input_uncached=10,cache_read=20,output=5,cache_write=30,
+                          cache_write_5m=10,cache_write_1h=20).items():
+        usage[key]=dict(value=value,quality='measured',complete=True)
+    usage['cache_write']['complete']=False
+    prices=dict(currency='USD',effective_date='2026-01-01',models={'claude-test':dict(
+        input_uncached=1,cache_read=1,output=1,cache_write_5m=1,cache_write_1h=1)})
+    cost=estimate_cost([dict(actual_model='claude-test',usage=usage)],prices)
+    assert not cost['complete'] and cost['value'] is None
+    assert cost['known_subtotal']==pytest.approx(35/1_000_000)

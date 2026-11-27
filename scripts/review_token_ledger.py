@@ -126,7 +126,7 @@ def reconcile(inv,sources):
         'ambiguous_attempt_selection','parent_scope_unknown','model_conflict','model_identity_conflict',
         'requested_model_conflict','requested_effort_conflict','actual_effort_conflict','lifecycle_conflict',
         'multiple_attempts','provider_session_binding_missing','provider_session_binding_conflict',
-        'provider_session_conflict'}
+        'provider_session_conflict','provider_session_unmatched'}
     if fatal & set(row['reasons']):
         row['complete']=False
         for field in row['usage'].values():
@@ -148,7 +148,7 @@ def estimate_cost(rows,prices):
         write=usage['cache_write']
         if write['value']==0 and write['complete']:
             pass
-        elif all(usage[k]['value'] is not None and usage[k]['complete'] for k in ('cache_write_5m','cache_write_1h')) and write['value']==usage['cache_write_5m']['value']+usage['cache_write_1h']['value']:
+        elif write['complete'] and all(usage[k]['value'] is not None and usage[k]['complete'] for k in ('cache_write_5m','cache_write_1h')) and write['value']==usage['cache_write_5m']['value']+usage['cache_write_1h']['value']:
             for key in ('cache_write_5m','cache_write_1h'):
                 if usage[key]['value']==0:
                     continue
