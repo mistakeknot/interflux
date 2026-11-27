@@ -11,7 +11,7 @@ The capability already exists and has been validated. The five cognitive agents 
 ## Goals
 
 1. Review each planning document once per phase transition, at low enough cost and noise that the review stays on by default.
-2. Keep phase ownership with the caller. Per `CLAUDE.md`, phase tracking is the caller's responsibility and interflux does not source `lib-gates.sh`. interflux only exposes a review profile, and Clavain/intercore decide when to call it.
+2. Keep phase ownership with Interphase. Per `CLAUDE.md`, phase tracking is the caller's responsibility and interflux does not source `lib-gates.sh`. interflux only exposes a review profile; Interphase decides when to call it.
 3. Avoid re-flagging issues the previous phase already raised and resolved.
 4. Produce a short, machine-readable result the host can show in one or two lines.
 
@@ -26,12 +26,12 @@ The capability already exists and has been validated. The five cognitive agents 
 
 | Concern | Owner |
 |---|---|
-| Detecting a phase transition and deciding whether to review | Caller (Clavain lfg pipeline / intercore) |
-| Choosing the document and locating the prior phase's review | Caller |
+| Detecting a phase transition and deciding whether to review | Interphase |
+| Choosing the document and locating the prior phase's review | Interphase, using its own state |
 | Triage, dispatch, synthesis | interflux (`flux-drive`) |
 | Deduplicating against prior-phase findings | interflux, given the prior `findings.json` by the caller |
-| Showing results and linking them to beads | Caller (uses the existing `beads` integration in `integration.json`) |
-| Persisting the opt-in/opt-out setting | Caller config |
+| Showing results and optionally linking them to beads | Interphase (uses the existing `beads` integration in `integration.json` when a bead exists) |
+| Persisting the opt-in/opt-out setting | Interphase config |
 
 ## Trigger points
 
@@ -65,7 +65,7 @@ Applies a named bundle of settings so callers don't have to replicate them:
 
 | Setting | Value | Why |
 |---|---|---|
-| Roster | Cognitive agents, plus **one** technical agent chosen by phase: none for `brainstorm-review`, `fd-user-product` for `prd-review`, `fd-architecture` for `plan-review` | A plan also carries technical design, and a PRD carries user-facing scope. The rest of the technical roster adds noise at this stage. |
+| Roster | Cognitive agents, plus `fd-user-product` for `prd-review`. For `plan-review`, include `fd-architecture` only when Interphase can establish that quality-gates will not review the same plan; otherwise omit it and record the reason. No technical agent runs for `brainstorm-review`. | A plan may need technical design review, but duplicate architecture coverage adds noise and cost. |
 | Slot ceiling | 4 (brainstorm), 5 (prd, plan) | Keeps cost and output size bounded. The normal dynamic ceiling is 4–10. |
 | Stage 2 expansion | Disabled | Advisory reviews don't escalate. |
 | Reaction round | Disabled | Halves synthesis cost. Reactions add little to cognitive findings. |
@@ -77,12 +77,12 @@ Triage scoring is unchanged. Within the restricted roster, agents are still scor
 
 ### New option: `--prior-findings=<path>`
 
-The caller passes the previous phase's `findings.json`, for example the brainstorm review when reviewing the PRD. Synthesis classifies each new finding against it:
+Interphase stores the previous phase's `findings.json` path in its own state and passes it to interflux, for example the brainstorm review when reviewing the PRD. A bead field is not required. Synthesis classifies each new finding against it:
 
 | Class | Rule | Shown to the user? |
 |---|---|---|
 | `new` | No match in the prior findings | Yes |
-| `repeated` | Matches a prior finding: same agent family, and a section/title similarity at or above the existing dedup threshold | Only if severity **rose**. Otherwise counted, not listed. |
+| `repeated` | Matches a prior finding: same agent family, and a section/title similarity at or above the existing dedup threshold | Show if severity rose or current severity is P0, even when unchanged. Mark an unchanged P0 as repeated. Other unchanged findings are counted, not listed. |
 | `resolved` | A prior finding with no match now | Listed as a one-line "addressed since <phase>" note |
 
 Matching reuses the synthesis dedup machinery (`core/synthesis.md` Step 3). No new matcher is introduced. If `--prior-findings` is absent or unreadable, every finding is `new`, and the run still succeeds.
@@ -114,7 +114,7 @@ The run produces the normal `findings.json` and `summary.md`. This extension add
 ```
 
 - `advisory` is always `true` under this profile. A caller **must not** turn `verdict` into a blocking outcome when `phase_review.advisory` is true.
-- `headline` holds at most 3 findings: the highest-severity `new` or escalated findings. This is what the caller shows inline.
+- `headline` holds every repeated P0, including unchanged P0s marked `repeated`, plus at most 3 other highest-severity `new` or escalated findings. The repeated P0s are not removed by the three-item cap. Interphase shows these inline.
 - Once PR #53 (issue #52) merges, its cross-model confidence labels apply here too, so an all-Claude roster can't present correlated agreement as "High".
 
 **Caller display (recommended):** one line at the transition, for example `Phase review (PRD): 4 new · 3 resolved since brainstorm · top: [P1] Success gate is not operationalized — summary: <path>`. Details stay in `summary.md`. The caller may link `headline` findings to the work item via the `beads` integration.
@@ -124,7 +124,7 @@ The run produces the normal `findings.json` and `summary.md`. This extension add
 | Risk | Source | Mitigation |
 |---|---|---|
 | **Strategy inflation**: easier validation of strategy docs increases their volume (a Jevons effect) | fd-decisions FD-04 on the cognitive-agents PRD | Advisory only. Brainstorm review is opt-in. Track document volume per sprint before and after rollout (see Validation). |
-| Noise and alert fatigue | — | Restricted roster, slot cap, three-item headline, `repeated` suppression, size gate |
+| Noise and alert fatigue | — | Restricted roster, slot cap on non-P0 headlines, suppression of unchanged repeated findings below P0, size gate |
 | Cost creep across many transitions | — | Existing per-type budgets, no Stage 2, no reaction round, content-hash skip |
 | Correlated agreement presented as confidence | review finding C-4 | Weighted cross-model convergence from #52 (PR #53, pending merge) |
 | Re-flagging resolved issues every phase | — | `--prior-findings` classification |
@@ -151,16 +151,16 @@ The cognitive-agents PRD review (FD-01, FD-05) asked for pre-committed, operatio
 4. `docs/spec/core/synthesis.md`: document the `phase_review` block. Add a `docs/spec/README.md` row for this extension.
 5. Tests: profile parsing, roster restriction per phase, prior-findings classification (`new`/`repeated`/`escalated`/`resolved`), and the advisory flag.
 
-### Caller (Clavain / intercore — tracked in that repo)
+### Caller (Interphase — tracked in that repo)
 1. Hook the brainstorm→PRD, PRD→plan and plan→execute transitions.
 2. Apply the skip conditions, then invoke `flux-drive` with the contract above.
-3. Store each phase's `findings.json` path so the next transition can pass it as `--prior-findings`.
+3. Store each phase's `findings.json` path in Interphase's own state so the next transition can pass it as `--prior-findings`; do not require a bead field.
 4. Show the one-line result, and optionally link `headline` findings to beads.
 5. Add config: `phase_review.enabled`, per-transition toggles, and the size threshold.
 
-## Open questions
+## Draft design choices
 
-1. **Which component owns the hook: interphase or intercore?** `integration.json` lists "phase tracking on review completion" under interphase and "sprint gate enforcement" under intercore. An advisory review fits interphase better. This needs a decision in the Clavain repo.
-2. **Should `plan-review` include `fd-architecture`, or should all technical review stay at implementation time?** Including it catches design flaws earlier, but it overlaps with quality-gates.
-3. **Where does the prior-phase pointer live?** Options are a bead field or the caller's own state. Beads make it survive across sessions.
-4. **Does a `repeated` P0 deserve resurfacing even without escalation?** The current proposal says no. A P0 left untouched across two phases might warrant an explicit nudge.
+1. Interphase owns the phase-transition hook. Intercore's sprint gates remain separate.
+2. A plan review includes `fd-architecture` only when quality-gates will not cover the same plan. If Interphase cannot establish that condition, it omits the agent and records why.
+3. Interphase owns the prior-review pointer in its own state and passes an explicit path; interflux does not require a bead field.
+4. An unchanged repeated P0 remains visible in the brief result and full report, marked `repeated`. The review stays advisory and never blocks a transition.
