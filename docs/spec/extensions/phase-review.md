@@ -124,7 +124,7 @@ The run produces the normal `findings.json` and `summary.md`. This extension add
 - `advisory` is always `true` under this profile. A caller **must not** turn `verdict` into a blocking outcome when `phase_review.advisory` is true.
 - For a `plan-review`, `architecture` records `included`, the caller's `quality_gates_plan_coverage` value, and a reason when omitted. For other phases the value is `not_applicable`. `prior_findings_status` is `matched`, `absent`, `unreadable` or `lineage_mismatch`; only `matched` permits comparison.
 - Each `headline` entry carries `severity` and `class` (`new`, `repeated` or `escalated`). An escalated finding also counts as repeated. `headline` holds **every P0**, whether new, unchanged repeated or escalated to P0, followed by at most 3 highest-severity non-P0 `new` or escalated findings. P0 visibility is deliberately uncapped. Interphase shows every P0 inline; if the display needs more than two lines, it expands rather than hiding a P0.
-- Once PR #53 (issue #52) merges, its cross-model confidence labels apply here too, so an all-Claude roster can't present correlated agreement as "High".
+- Cross-model confidence labels from merged PR #53 (issue #52) apply here too, so an all-Claude roster can't present correlated agreement as "High".
 
 **Caller display (recommended):** `Phase review (PRD): 4 new · 3 resolved since brainstorm · P0: [repeated] Unresolved critical risk · top non-P0: [P1] Success gate is not operationalized — summary: <path>`. Show every P0 from `headline`, including repeated ones, before the capped non-P0 summary. Details stay in `summary.md`. The caller may link `headline` findings to the work item via the `beads` integration.
 
@@ -135,7 +135,7 @@ The run produces the normal `findings.json` and `summary.md`. This extension add
 | **Strategy inflation**: easier validation of strategy docs increases their volume (a Jevons effect) | fd-decisions FD-04 on the cognitive-agents PRD | Advisory only. Brainstorm review is opt-in. Track document volume per sprint before and after rollout (see Validation). |
 | Noise and alert fatigue | — | Restricted roster and agent slot ceiling, three-item cap on non-P0 headlines, suppression of unchanged repeated findings below P0, size gate |
 | Cost creep across many transitions | — | Existing per-type budgets, no Stage 2, no reaction round, content-hash skip |
-| Correlated agreement presented as confidence | review finding C-4 | Weighted cross-model convergence from #52 (PR #53, pending merge) |
+| Correlated agreement presented as confidence | review finding C-4 | Weighted cross-model convergence from #52 (merged PR #53) |
 | Re-flagging resolved issues every phase | — | `--prior-findings` classification |
 | Pressure to turn advisory into a gate | — | `advisory: true` contract, plus an explicit non-goal in this spec |
 
