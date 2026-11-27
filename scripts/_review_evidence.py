@@ -69,8 +69,15 @@ def load_findings(rows, mode='snapshot'):
         if kind in ('metadata', 'event'):
             skipped.append({'row_index':i, 'reason':'non_finding'})
             continue
-        if kind not in (None, 'finding') or not all(isinstance(row.get(k), str) and row[k]
-                                                   for k in ('id', 'claim', 'location')):
+        # The importer explicitly records findings with no cited location.
+        # Keep that absence distinct from malformed fields or native empty locations.
+        imported_without_location = (
+            row.get('location') == '' and row.get('location_kind') == 'none'
+            and isinstance(row.get('source'), dict) and 'import' in row['source'])
+        if (kind not in (None, 'finding')
+                or not all(isinstance(row.get(k), str) and row[k] for k in ('id', 'claim'))
+                or not isinstance(row.get('location'), str)
+                or not (row['location'] or imported_without_location)):
             raise ValueError('invalid_finding_row')
         key = row['id']
         if key in found and row != found[key]:

@@ -154,3 +154,50 @@ def test_duplicate_json_keys_rejected():
     for bad in ('/absolute','../escape','C:\\private',''):
         with pytest.raises(ValueError):
             document_id(bad)
+
+
+@pytest.mark.parametrize('imported_quote,expected', [
+    (None, ('missing', 'absent')),
+    ({'section_id': 'a', 'text': 'door'}, ('unverifiable', 'transformation_unknown')),
+    ({'section_id': 'a', 'text': 'door', 'provenance': {'text_state': 'original'}},
+     ('matched', 'literal')),
+])
+def test_mixed_snapshot_import_without_location(imported_quote, expected):
+    """mk-shn5e.1: one imported row must not hide native quote evaluations."""
+    from _review_evidence import digest
+    text = '# A\nThe “blue” door.\n# B\nOther words.\n'
+    native = dict(claim='Synthetic claim', location='docs/example.md:2')
+    rows = [dict(native, id='native-match', quote={'section_id': 'a', 'text': 'door'}),
+            dict(id='imported', claim='Imported claim', location='', location_kind='none',
+                 source={'import': {'evidence_class': 'external-review'}}, quote=imported_quote),
+            dict(native, id='native-mismatch', quote={'section_id': 'a', 'text': 'absent'}),
+            dict(native, id='native-unknown', quote={'section_id': 'unknown', 'text': 'door'})]
+    report, code = module().check_document(text.encode(), 'docs/example.md',
+                                         digest(text.encode()), index(text), rows)
+    assert report['run_status'] == 'complete'
+    assert code == 1  # The native unknown section remains unverifiable.
+    results = {r['finding_id']: r for r in report['results']}
+    assert {fid: (r['status'], r['reason']) for fid, r in results.items()} == {
+        'native-match': ('matched', 'literal'), 'imported': expected,
+        'native-mismatch': ('mismatched', 'not_present'),
+        'native-unknown': ('unverifiable', 'unknown_section')}
+    assert results['imported']['diagnostics'] == [
+        {'code': 'location_unparseable', 'count': 1, 'spans': []}]
+    assert all(r['support'] == 'unverified' for r in report['results'])
+    assert not results['native-match']['diagnostics']
+    assert not results['native-mismatch']['diagnostics']
+
+
+@pytest.mark.parametrize('changes', [
+    {'id': ''}, {'claim': ''}, {'claim': None}, {'location': None},
+    {'location': 42}, {'record_type': 'bogus'}, {'location_kind': 'cited'},
+    {'source': None},
+])
+def test_import_without_location_keeps_structural_validation(changes):
+    module()
+    from _review_evidence import load_findings
+    row = dict(id='imported', claim='Claim', location='', location_kind='none',
+               source={'import': {}})
+    row.update(changes)
+    with pytest.raises(ValueError, match='invalid_finding_row'):
+        load_findings([row])
