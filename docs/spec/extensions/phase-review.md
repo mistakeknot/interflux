@@ -55,7 +55,9 @@ The caller passes the transition as `--phase` using the values below. Today `--p
 /interflux:flux-drive <document> \
   --phase=<brainstorm|prd|plan>-review \
   --profile=phase-review \
+  [--quality-gates-plan-coverage=<covered|not-covered|unknown>] \
   [--prior-findings=<path to previous phase's findings.json>] \
+  [--prior-source-path=<canonical path> --prior-source-sha256=<64 lowercase hex digits>] \
   [--output-dir=<caller-chosen stable dir>]
 ```
 
@@ -65,7 +67,7 @@ Applies a named bundle of settings so callers don't have to replicate them:
 
 | Setting | Value | Why |
 |---|---|---|
-| Roster | Cognitive agents, plus `fd-user-product` for `prd-review`. For `plan-review`, include `fd-architecture` only when Interphase can establish that quality-gates will not review the same plan; otherwise omit it and record the reason. No technical agent runs for `brainstorm-review`. | A plan may need technical design review, but duplicate architecture coverage adds noise and cost. |
+| Roster | Cognitive agents, plus `fd-user-product` for `prd-review`. For `plan-review`, include `fd-architecture` only when Interphase passes `--quality-gates-plan-coverage=not-covered`; otherwise omit it and record the reason. No technical agent runs for `brainstorm-review`. | A plan may need technical design review, but duplicate architecture coverage adds noise and cost. |
 | Slot ceiling | 4 (brainstorm), 5 (prd, plan) | Keeps cost and output size bounded. The normal dynamic ceiling is 4–10. |
 | Stage 2 expansion | Disabled | Advisory reviews don't escalate. |
 | Reaction round | Disabled | Halves synthesis cost. Reactions add little to cognitive findings. |
@@ -75,17 +77,19 @@ Applies a named bundle of settings so callers don't have to replicate them:
 
 Triage scoring is unchanged. Within the restricted roster, agents are still scored and pre-filtered as `core/scoring.md` describes. Document-type detection already gives cognitive agents base score 2 for PRD/brainstorm/plan (`skills/flux-engine/SKILL.md`, cognitive pre-filter).
 
+For `plan-review`, Interphase passes `--quality-gates-plan-coverage=not-covered` only after establishing that quality-gates will not review this plan. `covered` means it will; `unknown` means Interphase cannot establish either state. Omitted or malformed values are treated as `unknown`. interflux omits `fd-architecture` for `covered` and `unknown` and records the value and omission reason in `phase_review.architecture`. Other phases ignore this option and never add `fd-architecture` through it.
+
 ### New option: `--prior-findings=<path>`
 
-Interphase stores the previous phase's `findings.json` path in its own state and passes it to interflux, for example the brainstorm review when reviewing the PRD. A bead field is not required. Synthesis classifies each new finding against it:
+Interphase stores the previous phase's `findings.json` path in its own state alongside the source document's canonical path and SHA-256, and passes all three values to interflux, for example the brainstorm review when reviewing the PRD. A bead field is not required. The prior findings carry that source path and hash as lineage. Interphase passes the pointer only when its stored lineage matches the intended preceding document; interflux compares the two `--prior-source-*` values with the prior findings' lineage before classifying. If any of the three options is missing, the lineage is missing, or the values disagree, treat the pointer as absent and report a diagnostic. Synthesis classifies each new finding against a validated prior file:
 
 | Class | Rule | Shown to the user? |
 |---|---|---|
 | `new` | No match in the prior findings | Yes |
-| `repeated` | Matches a prior finding: same agent family, and a section/title similarity at or above the existing dedup threshold | Show if severity rose or current severity is P0, even when unchanged. Mark an unchanged P0 as repeated. Other unchanged findings are counted, not listed. |
+| `repeated` | Matches a prior finding: same agent family, and a section/title similarity at or above the existing dedup threshold | Show if severity rose or current severity is P0, even when unchanged. A rise is the `escalated` subcase of repeated; it contributes to `repeated` and `repeated_escalated` counts. Mark an unchanged P0 as repeated. Other unchanged findings are counted, not listed. |
 | `resolved` | A prior finding with no match now | Listed as a one-line "addressed since <phase>" note |
 
-Matching reuses the synthesis dedup machinery (`core/synthesis.md` Step 3). No new matcher is introduced. If `--prior-findings` is absent or unreadable, every finding is `new`, and the run still succeeds.
+Matching reuses the synthesis dedup machinery (`core/synthesis.md` Step 3). No new matcher is introduced. If `--prior-findings` is absent, unreadable or has mismatched or missing lineage, every finding is `new`, and the run still succeeds.
 
 ### Skip conditions (caller-side signal gate)
 
@@ -106,25 +110,30 @@ The run produces the normal `findings.json` and `summary.md`. This extension add
   "advisory": true,
   "profile": "phase-review",
   "prior_findings": "docs/research/flux-drive/<brainstorm-stem>-<hash>/findings.json",
+  "prior_findings_status": "matched",
+  "source_document": {"path": "docs/design/example-prd.md", "sha256": "<64 lowercase hex digits>"},
+  "architecture": {"included": false, "quality_gates_plan_coverage": "not_applicable", "reason": "phase is prd-review"},
   "counts": {"new": 4, "repeated": 2, "repeated_escalated": 0, "resolved": 3},
   "headline": [
-    {"id": "P1-1", "agent": "fd-decisions", "title": "Success gate is not operationalized"}
+    {"id": "P0-1", "agent": "fd-resilience", "severity": "P0", "class": "repeated", "title": "Unresolved critical risk"},
+    {"id": "P1-1", "agent": "fd-decisions", "severity": "P1", "class": "new", "title": "Success gate is not operationalized"}
   ]
 }
 ```
 
 - `advisory` is always `true` under this profile. A caller **must not** turn `verdict` into a blocking outcome when `phase_review.advisory` is true.
-- `headline` holds every repeated P0, including unchanged P0s marked `repeated`, plus at most 3 other highest-severity `new` or escalated findings. The repeated P0s are not removed by the three-item cap. Interphase shows these inline.
+- For a `plan-review`, `architecture` records `included`, the caller's `quality_gates_plan_coverage` value, and a reason when omitted. For other phases the value is `not_applicable`. `prior_findings_status` is `matched`, `absent`, `unreadable` or `lineage_mismatch`; only `matched` permits comparison.
+- Each `headline` entry carries `severity` and `class` (`new`, `repeated` or `escalated`). An escalated finding also counts as repeated. `headline` holds **every P0**, whether new, unchanged repeated or escalated to P0, followed by at most 3 highest-severity non-P0 `new` or escalated findings. P0 visibility is deliberately uncapped. Interphase shows every P0 inline; if the display needs more than two lines, it expands rather than hiding a P0.
 - Once PR #53 (issue #52) merges, its cross-model confidence labels apply here too, so an all-Claude roster can't present correlated agreement as "High".
 
-**Caller display (recommended):** one line at the transition, for example `Phase review (PRD): 4 new · 3 resolved since brainstorm · top: [P1] Success gate is not operationalized — summary: <path>`. Details stay in `summary.md`. The caller may link `headline` findings to the work item via the `beads` integration.
+**Caller display (recommended):** `Phase review (PRD): 4 new · 3 resolved since brainstorm · P0: [repeated] Unresolved critical risk · top non-P0: [P1] Success gate is not operationalized — summary: <path>`. Show every P0 from `headline`, including repeated ones, before the capped non-P0 summary. Details stay in `summary.md`. The caller may link `headline` findings to the work item via the `beads` integration.
 
 ## Risks and mitigations
 
 | Risk | Source | Mitigation |
 |---|---|---|
 | **Strategy inflation**: easier validation of strategy docs increases their volume (a Jevons effect) | fd-decisions FD-04 on the cognitive-agents PRD | Advisory only. Brainstorm review is opt-in. Track document volume per sprint before and after rollout (see Validation). |
-| Noise and alert fatigue | — | Restricted roster, slot cap on non-P0 headlines, suppression of unchanged repeated findings below P0, size gate |
+| Noise and alert fatigue | — | Restricted roster and agent slot ceiling, three-item cap on non-P0 headlines, suppression of unchanged repeated findings below P0, size gate |
 | Cost creep across many transitions | — | Existing per-type budgets, no Stage 2, no reaction round, content-hash skip |
 | Correlated agreement presented as confidence | review finding C-4 | Weighted cross-model convergence from #52 (PR #53, pending merge) |
 | Re-flagging resolved issues every phase | — | `--prior-findings` classification |
@@ -147,14 +156,14 @@ The cognitive-agents PRD review (FD-01, FD-05) asked for pre-committed, operatio
 ### interflux (this repo)
 1. `skills/flux-engine/SKILL.md`: parse `--profile=phase-review` and `--prior-findings`, and document the `--phase` values above.
 2. Triage: apply the profile's roster restriction and slot ceiling, and disable Stage 2 and the reaction round under the profile.
-3. Synthesis: classify findings against `--prior-findings`, and emit the `phase_review` block and `headline`.
+3. Synthesis: validate the prior-source lineage and classify findings against matching `--prior-findings`, then emit the `phase_review` block and `headline`.
 4. `docs/spec/core/synthesis.md`: document the `phase_review` block. Add a `docs/spec/README.md` row for this extension.
-5. Tests: profile parsing, roster restriction per phase, prior-findings classification (`new`/`repeated`/`escalated`/`resolved`), and the advisory flag.
+5. Tests: profile and coverage-option parsing; roster restriction per phase, including `fd-architecture` inclusion only for `not-covered` and recorded omission reasons for `covered`/`unknown`; prior-findings lineage match and mismatch; classification (`new`/`repeated`/`escalated`/`resolved`); all new, repeated and escalated P0s in the headline and caller display without a cap; `class`/`severity` markers; the three-item non-P0 cap; and `advisory: true` with a repeated P0.
 
 ### Caller (Interphase — tracked in that repo)
 1. Hook the brainstorm→PRD, PRD→plan and plan→execute transitions.
 2. Apply the skip conditions, then invoke `flux-drive` with the contract above.
-3. Store each phase's `findings.json` path in Interphase's own state so the next transition can pass it as `--prior-findings`; do not require a bead field.
+3. Store each phase's `findings.json` path with its source document path and SHA-256 in Interphase's own state so the next transition can pass a matching pointer as `--prior-findings`; do not require a bead field. Determine the quality-gates plan-coverage value for `plan-review`, defaulting to `unknown`.
 4. Show the one-line result, and optionally link `headline` findings to beads.
 5. Add config: `phase_review.enabled`, per-transition toggles, and the size threshold.
 
