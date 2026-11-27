@@ -5,7 +5,7 @@ description: Invoked from /flux-review — runs multi-track deep review across s
 
 # Flux-Review — Multi-Track Deep Review Engine
 
-Run a fan-out / fan-in review across **multiple semantic-distance tiers**. Each track generates specialized agents at a different distance from the target's domain, runs flux-drive independently, then a synthesis step merges findings — highlighting cross-track convergence as the highest-confidence signal.
+Run a fan-out / fan-in review across **multiple semantic-distance tiers**. Each track generates specialized agents at a different distance from the target's domain, runs flux-drive independently, then a synthesis step merges findings — highlighting cross-track convergence, weighted by model-family independence (same-family agreement is correlated, not independent; issue #52).
 
 ## Portable reasoning contract
 
@@ -145,7 +145,7 @@ Tracks: {TRACK_COUNT} ({triage_reason})
 
 {for each active track:}
   Track {letter} ({name}): {N} agents, {findings} findings
-Cross-track convergence: {convergent_count} findings appeared in 2+ tracks
+Cross-track convergence: {convergent_count} findings appeared in 2+ tracks ({High/Medium/Low/Correlated counts}; single model family: {single_family})
 
 Synthesis: docs/research/flux-review/{SLUG}/{DATE}-synthesis.md
 
@@ -160,7 +160,7 @@ To regenerate a track: /flux-gen --from-specs .claude/flux-gen-specs/{SLUG}-{tra
 ## Notes
 
 - All tracks run flux-drive independently and in parallel — they share the same triage/scoring pipeline but operate on different agent pools.
-- Cross-track convergence (same issue surfaced from independent reasoning paths at different semantic distances) is the highest-confidence signal — rank by convergence score (N tracks agreeing).
+- Cross-track convergence (same issue surfaced at different semantic distances) is ranked by **family-weighted convergence** from `scripts/cross_track_convergence.py`, not raw track count: tracks sharing one model family count as ~one source plus a small per-track bonus, cross-family agreement gets the single-run 1.5x multiplier. All-one-family convergence is labelled `Correlated` (never `High`) and the synthesis carries a standing caveat (issue #52; `docs/spec/core/synthesis.md` Step 4b).
 - Track count is triaged from target characteristics but can be overridden (`--tracks=N` or `--creative`).
 - Model routing is track-aware by default (`--quality=balanced`): Opus for creative design (C/D), deep reviews (A), and synthesis; Sonnet for routine design (A/B) and lens-application reviews (B/C/D). Override with `--quality=economy` (all Sonnet) or `--quality=max` (all Opus).
 - The `--creative` flag is shorthand for `--tracks=4 --quality=max`.

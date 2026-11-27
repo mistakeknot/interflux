@@ -159,7 +159,7 @@ Example: A finding reported by 3 agents (2 Claude + 1 DeepSeek):
 - Cross-family convergence: 2 (claude, deepseek)
 - Weighted convergence: 2 + (1 × 1.5) = 3.5
 
-Include `cross_family_convergence` in findings.json. When all agents share a model family, this field is 1 (or 0 if single agent) and the weight multiplier has no effect.
+Include `cross_family_convergence` in findings.json. When all agents share a model family, this field is 1 (or 0 if single agent) and the weight multiplier has no effect. For multi-track reviews, where that no-op would let same-family tracks look independent, see Step 4b.
 
 **Verification flagging for non-top-tier providers:**
 
@@ -187,6 +187,48 @@ When agents received different content slices:
 - Track content routing decisions in orchestrator metadata: `{agent: string, files_received: string[]}`
 - When computing convergence for a finding in `file.ts:42`, check which agents received `file.ts`
 - Adjust M dynamically: `M = agents_completed.filter(a => a.files_received.includes(finding.file)).length`
+
+### Step 4b: Cross-Track Convergence Weighting (flux-review)
+
+Multi-track reviews (`skills/flux-review-engine`) merge several independent flux-drive runs ("tracks") and treat findings that recur across tracks as convergent. Tracks differ in *semantic distance* (adjacent → esoteric lenses) but normally share one base model family, so cross-track agreement is the same correlated-error case the cross-family multiplier above exists to discount — and on a single-family run that multiplier is a no-op. A raw head-count of tracks MUST NOT drive the cross-track confidence label (issue #52).
+
+**Model-family signal.** Each track's family set comes only from that track's `findings.json` provenance (`findings[].provenance[agent].model_family`, else flat `findings[].model_family`), which the orchestrator injects from dispatch metadata. Family claims in LLM-written synthesis output are ignored. Missing provenance resolves to `convergence.default_model_family` (default `claude`, the family flux-review track reviews route to) and is reported as unresolved — it can never add independence.
+
+**Weighting.** For a convergent finding, group contributing tracks by model family (a track counts once per distinct family among its contributing agents). With `n_f` tracks in family `f`:
+
+```
+credit(f) = 1 + same_family_track_bonus × (n_f − 1)
+weighted  = credit(f1) + cross_family_weight × Σ_{f ≠ f1} credit(f)
+            f1 = family with highest credit (ties: alphabetical)
+```
+
+This is the single-run formula (`same_family_count + cross_family_bonus × 1.5`) with the same-family count replaced by a de-correlated credit: N same-family tracks ≈ one source plus a modest bonus for distinct semantic distances; each additional family gets the same 1.5x cross-family multiplier as Step 4.
+
+| Knob (`config/flux-review/defaults.yaml` `convergence:`) | Default |
+|---|---|
+| `cross_family_weight` | 1.5 (same as Step 4) |
+| `same_family_track_bonus` | 0.25 |
+| `high_threshold` | 2.5 |
+| `medium_threshold` | 1.5 |
+| `default_model_family` | `claude` |
+
+**Labels.**
+
+| Condition | Label |
+|---|---|
+| < 2 tracks | `Single-track` (not convergent) |
+| All contributing tracks share one family | `Correlated` — never `High`, whatever the count |
+| `weighted ≥ high_threshold` | `High` |
+| `weighted ≥ medium_threshold` | `Medium` |
+| otherwise | `Low` |
+
+Examples (defaults): 3/3 tracks, all `claude` → 1.5, `Correlated`. 2 tracks, `claude` + `deepseek` → 2.5, `High`. 3 tracks, 2 `claude` + 1 `deepseek` → 1.25 + 1.5 = 2.75, `High`. With the default bonus the single-family maximum (4 tracks) is 1.75, so `High` always requires at least two families.
+
+**Standing caveat.** When every convergent track in the review shares one model family, the synthesis MUST carry a caveat stating that cross-track agreement is correlated evidence from a shared base model, not independent corroboration.
+
+**Reference implementation.** `scripts/cross_track_convergence.py REVIEW_DIR [--write-synthesis FILE]` reads `REVIEW_DIR/cross-track-convergence.json` (convergent clusters written by the synthesis subagent: `{"clusters": [{"id", "title", "tracks": {"<letter>": [{"agent", "finding_id"}]}}]}`) and each `REVIEW_DIR/track-{letter}/findings.json`, writes `cross-track-convergence.scored.json`, and inserts the weighted table and caveat under the synthesis's `## Cross-Track Convergence` heading.
+
+Hearsay weighting (`config/flux-drive/reaction.yaml` `hearsay_detection`) is a within-run reaction-round concept and does not apply across tracks: tracks run blind to each other.
 
 ### Step 4a: Low-Confidence Gate (Option A)
 
