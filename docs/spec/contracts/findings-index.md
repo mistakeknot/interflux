@@ -131,7 +131,7 @@ These fields are **not part of the Findings Index text format** (agents don't wr
 - **Quality tracking**: Per-`model_id` finding recall and precision over time, enabling data-driven routing decisions.
 - **Verification flagging**: Single-source P0/P1 findings from non-top-tier providers are flagged `verification_recommended`.
 
-When all agents run on the same provider (single-family mode), these fields are still populated but cross-family weighting has no effect.
+When all agents run on the same provider (single-family mode), these fields are still populated but cross-family weighting has no effect. Multi-track flux-review reads `model_family` from each track's `findings.json` provenance to down-weight same-family cross-track agreement (`docs/spec/core/synthesis.md` Step 4b).
 
 ## interflux Reference
 
